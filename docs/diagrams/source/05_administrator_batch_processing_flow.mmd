@@ -1,0 +1,13 @@
+flowchart TD
+  Start["Admin starts batch"] --> Role["Validate ADMINISTRATOR/WRITER"]
+  Role --> Version["Read published version and checksum"]
+  Version --> Backup["Create local backup"]
+  Backup --> Copy["Copy Access snapshot outside OneDrive"]
+  Copy --> Import["Import pending requests"]
+  Import --> Review["Approve / reject / quarantine"]
+  Review --> Apply["Apply approved non-conflicting changes"]
+  Apply --> Verify["Verify Access and referential integrity"]
+  Verify --> Export["Generate official Excel outputs"]
+  Export --> Publish["Publish versioned snapshot + manifest"]
+  Publish --> Archive["Archive processed requests"]
+  Archive --> Summary["Batch summary and audit"]

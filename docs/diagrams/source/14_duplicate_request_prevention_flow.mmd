@@ -1,0 +1,6 @@
+flowchart TD
+  File["Request file"] --> UUID["Read request_id"]
+  UUID --> Registry{"Already imported/applied?"}
+  Registry -- Yes --> Duplicate["Quarantine duplicate"]
+  Registry -- No --> Import["Import and record idempotency key"]
+  Import --> Process["Review and process once"]

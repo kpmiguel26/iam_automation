@@ -1,0 +1,8 @@
+flowchart TD
+  Failure["Batch failure"] --> Stage{"Failure stage"}
+  Stage --> BeforePublish["Before publication"]
+  Stage --> AfterPublish["After publication"]
+  BeforePublish --> Keep["Keep requests recoverable"]
+  BeforePublish --> Restore["Discard or restore local copy"]
+  AfterPublish --> Reconcile["Reconcile manifest, Access, request folders"]
+  Reconcile --> Summary["Recovery report"]

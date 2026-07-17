@@ -1,0 +1,8 @@
+flowchart TD
+  Batch["Batch starts"] --> Backup["Timestamped backup"]
+  Backup --> Journal["Batch journal"]
+  Journal --> Apply["Apply local changes"]
+  Apply --> Verify{"Verification ok?"}
+  Verify -- Yes --> Publish["Publish snapshot"]
+  Verify -- No --> Restore["Restore backup / keep requests pending"]
+  Publish --> Archive["Archive requests after success"]

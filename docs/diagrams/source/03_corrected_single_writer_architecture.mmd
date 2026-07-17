@@ -1,0 +1,12 @@
+flowchart TD
+  U1["Client App - Requester"] --> RQ["Immutable JSON Request"]
+  U2["Client App - Reviewer"] --> RQ
+  RQ --> Pending["SharePoint requests/pending"]
+  Pending --> Admin["Authorized Administrator/Writer"]
+  Admin --> Workspace["Local Workspace outside OneDrive"]
+  Workspace --> Approval["Validation and Approval Workflow"]
+  Approval --> Access["Access Master Snapshot"]
+  Access --> Snapshot["Versioned Snapshot + Manifest"]
+  Snapshot --> SP["SharePoint Library"]
+  Approval --> Audit["Audit JSONL + Access Audit"]
+  Approval --> Excel["Official Excel Outputs"]

@@ -1,0 +1,28 @@
+[paths]
+# Must be the local synchronized OneDrive path that mirrors the SharePoint document library.
+published_access_db_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/iam_automation.accdb"
+sharepoint_root_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation"
+
+# Must stay outside OneDrive so database work happens on a local copy first.
+workspace_path = "C:/Users/E385201/AppData/Local/IAMAutomation/workspace"
+
+backup_folder_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/backups"
+audit_folder_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/audit"
+generated_templates_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/generated_templates"
+
+[requests]
+pending_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/pending"
+imported_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/imported"
+approved_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/approved"
+rejected_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/rejected"
+applied_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/applied"
+failed_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/failed"
+quarantine_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/quarantine"
+
+[security]
+approved_users_path = "config/approved_users.sample.csv"
+
+[poc]
+lock_timeout_minutes = 20
+application_version = "0.1.0-poc"
+minimum_supported_client_version = "0.1.0-poc"

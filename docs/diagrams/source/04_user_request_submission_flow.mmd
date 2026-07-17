@@ -1,0 +1,8 @@
+flowchart TD
+  Start["User starts app"] --> Identity["Capture Windows user"]
+  Identity --> Role["Validate REQUESTER role"]
+  Role --> Read["Read latest snapshot"]
+  Read --> Prepare["Prepare proposed change"]
+  Prepare --> Validate["Validate request schema and business inputs"]
+  Validate --> File["Write immutable request JSON"]
+  File --> Pending["SharePoint requests/pending"]

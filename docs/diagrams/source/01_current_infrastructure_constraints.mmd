@@ -1,0 +1,7 @@
+flowchart TD
+  W["Windows Workstations"] --> A["Installed IAM App per User"]
+  A --> O["OneDrive Sync"]
+  O <--> SP["SharePoint Document Libraries"]
+  SP --> ACC["Versioned Access Snapshots"]
+  SP --> XL["Excel Outputs"]
+  X["Unavailable: server, VM, API, service, DB engine"] -. constraint .-> A

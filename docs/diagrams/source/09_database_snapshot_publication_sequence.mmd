@@ -1,0 +1,14 @@
+sequenceDiagram
+  participant A as Admin
+  participant L as Local Workspace
+  participant S as SharePoint
+  A->>S: Read current manifest
+  A->>L: Copy Access snapshot
+  A->>L: Apply approved requests
+  A->>L: Validate and checksum
+  A->>S: Re-read manifest
+  alt version unchanged
+    A->>S: Publish versioned ACCDB and manifest
+  else version changed
+    A-->>A: Abort and reconcile
+  end

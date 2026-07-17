@@ -1,0 +1,13 @@
+sequenceDiagram
+  participant R as Request
+  participant A as Admin Batch
+  participant DB as Access Employee
+  R->>A: expected_record_version = 4
+  A->>DB: UPDATE WHERE EmployeeID and RecordVersion = 4
+  alt current version is 4
+    DB-->>A: 1 row updated, version becomes 5
+    A-->>R: APPLIED
+  else current version changed
+    DB-->>A: 0 rows updated
+    A-->>R: CONFLICT
+  end

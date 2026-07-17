@@ -1,0 +1,11 @@
+sequenceDiagram
+  participant B as Batch
+  participant M as Manifest
+  B->>M: Read version 41 checksum A
+  B->>B: Process locally
+  B->>M: Re-read before publish
+  alt version 41 checksum A
+    B->>M: Publish version 42 checksum B
+  else changed
+    B-->>B: Abort publication
+  end

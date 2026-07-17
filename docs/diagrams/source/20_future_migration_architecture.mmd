@@ -1,0 +1,7 @@
+flowchart LR
+  Client["Client Apps"] --> API["Future Central API"]
+  API --> DB["SQL Server or PostgreSQL"]
+  API --> Workflow["Workflow / Approval Engine"]
+  API --> Audit["Central Audit Store"]
+  API --> Exports["Template Generator"]
+  Exports --> SP["SharePoint Documents and Exports"]

@@ -1,0 +1,9 @@
+flowchart TD
+  Draft["User drafts change"] --> Request["Immutable request JSON"]
+  Request --> Pending["Pending folder"]
+  Pending --> Import["Imported into Access request table"]
+  Import --> Decision["Approved / rejected / quarantined"]
+  Decision --> Apply["Approved change applied"]
+  Apply --> Snapshot["Versioned master snapshot"]
+  Snapshot --> Export["Excel provisioning output"]
+  Snapshot --> Retention["Retention and archive"]

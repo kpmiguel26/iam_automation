@@ -1,0 +1,10 @@
+erDiagram
+  tbl_Users ||--o{ tbl_UserRoles : has
+  tbl_Roles ||--o{ tbl_UserRoles : grants
+  tbl_Employees ||--o{ tbl_ChangeRequests : targets
+  tbl_ChangeRequests ||--o{ tbl_RequestDecisions : reviewed_by
+  tbl_Batches ||--o{ tbl_ChangeRequests : imports
+  tbl_Batches ||--o{ tbl_AuditEvents : records
+  tbl_Batches ||--o{ tbl_DatabaseVersions : publishes
+  tbl_SystemProfiles ||--o{ tbl_TemplateMappings : maps
+  tbl_ExportRuns }o--|| tbl_Batches : generated_by

@@ -1,0 +1,10 @@
+flowchart TD
+  Imported["Imported Request"] --> Review["Business Review"]
+  Review --> Valid{"Valid and authorized?"}
+  Valid -- No --> Reject["Reject with decision notes"]
+  Valid -- Yes --> Risk{"High risk?"}
+  Risk -- Yes --> Second["Second approval if required"]
+  Risk -- No --> Approve["Approve"]
+  Second --> Approve
+  Reject --> Audit["Audit decision"]
+  Approve --> Audit

@@ -1,0 +1,16 @@
+flowchart LR
+  subgraph UserZone["User workstation"]
+    Client["Requester Client"]
+  end
+  subgraph SharePointZone["SharePoint / OneDrive sync"]
+    Pending["Request files"]
+    Snapshots["Published snapshots"]
+  end
+  subgraph AdminZone["Admin workstation"]
+    Admin["Batch processor"]
+    Workspace["Local workspace outside OneDrive"]
+  end
+  Client --> Pending
+  Pending --> Admin
+  Admin --> Workspace
+  Admin --> Snapshots

@@ -1,0 +1,11 @@
+flowchart TD
+  Start["Start app"] --> Win["Read Windows username + computer"]
+  Win --> Users["Approved-user source"]
+  Users --> Active{"Active user?"}
+  Active -- No --> Deny["Deny"]
+  Active -- Yes --> Role["Load roles"]
+  Role --> Capability{"Role capability"}
+  Capability --> Requester["Submit request"]
+  Capability --> Reviewer["Review"]
+  Capability --> Writer["Batch process and publish"]
+  Capability --> Auditor["Read-only audit"]

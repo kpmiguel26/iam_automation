@@ -1,0 +1,6 @@
+flowchart TD
+  Event["Workflow Event"] --> Build["Build audit event"]
+  Build --> AccessAudit["tbl_AuditEvents"]
+  Build --> Jsonl["Append-only JSONL"]
+  Jsonl --> SP["SharePoint audit folder"]
+  AccessAudit --> Snapshot["Versioned Access snapshot"]

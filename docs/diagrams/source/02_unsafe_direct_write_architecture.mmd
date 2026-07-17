@@ -1,0 +1,7 @@
+flowchart TD
+  U1["User App A"] --> DB["Synced Access DB"]
+  U2["User App B"] --> DB
+  U3["User App C"] --> DB
+  DB <--> OD["OneDrive Sync"]
+  OD <--> SP["SharePoint"]
+  DB --> R["Risk: conflicts, corruption, stale overwrite"]
