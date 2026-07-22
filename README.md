@@ -58,6 +58,14 @@ The web login never uses the Windows username as application credentials and nev
 
 For an interactive bootstrap that keeps the password out of the command history, use `scripts/create_app_user.py` and enter the password when prompted.
 
+To stop the local Flask/Waitress process cleanly, run:
+
+```text
+python scripts/stop_app.py
+```
+
+On Windows, `run_windows_hidden.vbs` starts the same launcher without displaying a console window. Keep `run_windows.bat` for setup diagnostics and troubleshooting.
+
 The Access database initializer requires Windows with the Microsoft Access Database Engine and ODBC driver. On macOS, inspect the generated Access schema without creating a fake database file:
 
 ```bash

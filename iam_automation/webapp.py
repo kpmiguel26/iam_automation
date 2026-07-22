@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import errno
+import json
 import multiprocessing
+import os
 import queue
 import secrets
 import threading
 import webbrowser
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 from .identity import CurrentUser, validate_app_user_from_sqlite
@@ -84,6 +87,21 @@ h1 { color: #0e2046; font-size: 32px; margin: 0 0 10px; }
 """
 
 
+def webapp_pid_path() -> Path:
+    return Path(__file__).resolve().parents[1] / ".iam_webapp.pid"
+
+
+def stop_local_webapp() -> str:
+    data = json.loads(webapp_pid_path().read_text(encoding="utf-8"))
+    request = Request(
+        f"http://127.0.0.1:{int(data['port'])}/__internal/shutdown",
+        method="POST",
+        headers={"X-IAM-Shutdown-Token": str(data["token"])},
+    )
+    with urlopen(request, timeout=3) as response:
+        return response.read().decode("utf-8")
+
+
 DASHBOARD_TEMPLATE = """
 <!doctype html>
 <html lang="en">
@@ -149,6 +167,8 @@ def create_app(
     preflight_result: PreflightResult,
     *,
     app_authenticator: Callable[[str, str], CurrentUser] | None = None,
+    shutdown_callback: Callable[[], None] | None = None,
+    shutdown_token: str | None = None,
 ):
     if Flask is None:
         raise RuntimeError("Flask is required to start the local webapp. Install the UI dependencies first.")
@@ -161,6 +181,14 @@ def create_app(
         if not preflight_result.ok:
             return {"status": "blocked", "message": "SharePoint preflight has not passed."}, 503
         return {"status": "ok"}
+
+    @app.post("/__internal/shutdown")
+    def shutdown():
+        if not shutdown_token or request.headers.get("X-IAM-Shutdown-Token") != shutdown_token:
+            return {"status": "forbidden"}, 403
+        if shutdown_callback:
+            threading.Thread(target=shutdown_callback, name="iam-webapp-shutdown", daemon=True).start()
+        return {"status": "stopping"}
 
     @app.get("/")
     def index():
@@ -271,14 +299,29 @@ def launch_local_webapp(preflight_result: PreflightResult, *, open_browser: bool
 
 def _serve_webapp_process(preflight_result: PreflightResult, ready_queue) -> None:
     """Run Flask in the standalone child process after the Qt launcher exits."""
-    app = create_app(preflight_result)
+    shutdown_token = secrets.token_urlsafe(32)
+    server_holder = {}
+
+    def shutdown_server() -> None:
+        server_holder["server"].stop()
+
+    app = create_app(preflight_result, shutdown_callback=shutdown_server, shutdown_token=shutdown_token)
     server = LocalWebAppServer(app)
+    server_holder["server"] = server
     url = server.start()
+    webapp_pid_path().write_text(
+        json.dumps({"pid": os.getpid(), "port": server.port, "token": shutdown_token}) + "\n",
+        encoding="utf-8",
+    )
     ready_queue.put(url)
     try:
         server._thread.join()  # type: ignore[union-attr]
     finally:
         server.stop()
+        try:
+            webapp_pid_path().unlink()
+        except FileNotFoundError:
+            pass
 
 
 def launch_local_webapp_process(
