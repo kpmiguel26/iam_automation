@@ -27,7 +27,7 @@ Microsoft Access is treated as a versioned master snapshot published to SharePoi
 
 The startup shell is a local MVC component, not a central service. Its controller coordinates path discovery, environment validation, settings persistence, and identity handoff. The Qt view displays status and selection controls but does not inspect files directly. Flask defines the local WSGI application and Waitress serves it on loopback, avoiding the Flask development server while preserving a simple path to a future deployment configuration. `Open App` starts Flask and Waitress in an independent local process, opens the browser, closes the PySide6 window, and terminates the desktop launcher process.
 
-For development and test environments, an explicit `IAM_DEV_AUTO_APPROVE_USERS` flag may register the current operating-system identity in the runtime SQLite and publish it with backup/audit metadata. This removes setup friction across VDI, Windows, and macOS test machines without changing the production hard-gate behavior when the flag is disabled.
+For the current development and test phase, the preflight registers the current operating-system identity in the runtime SQLite and publishes it with backup/audit metadata. This removes setup friction across VDI, Windows, and macOS test machines. A strict approved-user hard gate is reserved for production hardening after the SharePoint/AD integration is available.
 
 The startup gate rejects web URLs, unrelated local folders, missing Access or runtime SQLite snapshots, invalid SQLite integrity/checksum, unreadable files, and workspaces located inside OneDrive. Missing operational folders are created idempotently after both database files are found; database files are never created or replaced by this step.
 

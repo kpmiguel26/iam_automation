@@ -5,7 +5,6 @@ set "ROOT_DIR=%~dp0"
 for %%I in ("%ROOT_DIR%") do set "ROOT_DIR=%%~fI"
 cd /d "%ROOT_DIR%"
 
-if not defined IAM_DEV_AUTO_APPROVE_USERS set "IAM_DEV_AUTO_APPROVE_USERS=1"
 if not defined IAM_DEV_DEFAULT_ROLE set "IAM_DEV_DEFAULT_ROLE=REQUESTER"
 
 echo [IAM] Checking for Python 3.10 or newer...
