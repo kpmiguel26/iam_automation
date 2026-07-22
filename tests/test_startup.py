@@ -76,7 +76,9 @@ class StartupTests(unittest.TestCase):
                 validate_user.assert_not_called()
             result = controller.validate_environment()
             self.assertTrue(result.ok)
-            with patch("iam_automation.startup.validate_current_user", side_effect=lambda path: object()) as validate_user:
+            with patch.dict("os.environ", {"IAM_DEV_AUTO_APPROVE_USERS": "0"}, clear=False), patch(
+                "iam_automation.startup.validate_current_user", side_effect=lambda path: object()
+            ) as validate_user:
                 controller.continue_to_login()
                 validate_user.assert_called_once()
 
