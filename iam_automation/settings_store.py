@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,16 @@ def load_user_settings(path: Path | None = None) -> dict[str, Any]:
     try:
         with settings_path.open("rb") as handle:
             data = tomllib.load(handle)
-    except (OSError, ValueError):
+    except Exception:
+        # A partially written settings file must never prevent the launcher
+        # from starting. Preserve it for diagnostics, then recover cleanly.
+        try:
+            backup = settings_path.with_name(
+                f"{settings_path.name}.corrupt-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            )
+            settings_path.replace(backup)
+        except OSError:
+            pass
         return {}
     return data if isinstance(data, dict) else {}
 

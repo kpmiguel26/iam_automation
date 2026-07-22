@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from iam_automation.sharepoint_discovery import discover_candidates
 from iam_automation.startup import StartupController, StartupState
+from iam_automation.settings_store import load_user_settings
 
 
 def make_sharepoint_root(base: Path, name: str = "OneDrive - Test/IAMAutomation") -> Path:
@@ -25,6 +26,14 @@ def make_sharepoint_root(base: Path, name: str = "OneDrive - Test/IAMAutomation"
 
 
 class StartupTests(unittest.TestCase):
+    def test_corrupt_user_settings_are_backed_up_and_recovered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.toml"
+            path.write_text("[paths\ninvalid", encoding="utf-8")
+            self.assertEqual(load_user_settings(path), {})
+            self.assertFalse(path.exists())
+            self.assertEqual(len(tuple(path.parent.glob("settings.toml.corrupt-*"))), 1)
+
     def test_discovers_single_onedrive_candidate(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = make_sharepoint_root(Path(tmp))
