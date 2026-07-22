@@ -18,8 +18,22 @@ class WebAppTests(unittest.TestCase):
         app = webapp.create_app(self.make_result(False))
         self.assertEqual(app.test_client().get("/login").status_code, 503)
 
+    def test_web_login_creates_local_session_and_opens_dashboard(self):
+        user = type("User", (), {"username": "DOMAIN\\user", "roles": ("REQUESTER",)})()
+        app = webapp.create_app(self.make_result(True), app_authenticator=lambda username, password: user)
+        client = app.test_client()
+        self.assertEqual(client.get("/login").status_code, 200)
+        response = client.post("/login", data={"username": "app-user", "password": "secret"}, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Workspace overview", response.data)
+        self.assertIn(b"DOMAIN\\user", response.data)
+        dashboard = client.get("/dashboard")
+        self.assertIn(b"Workspace overview", dashboard.data)
+        self.assertEqual(client.get("/logout").status_code, 302)
+        self.assertEqual(client.get("/dashboard").status_code, 302)
+
     def test_local_server_uses_loopback_and_ephemeral_port(self):
-        app = webapp.create_app(self.make_result(True), identity_validator=lambda _: type("User", (), {"username": "DOMAIN\\user", "roles": ("REQUESTER",)})())
+        app = webapp.create_app(self.make_result(True))
         server = webapp.LocalWebAppServer(app)
         try:
             url = server.start()

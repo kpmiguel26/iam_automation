@@ -1,7 +1,7 @@
 {
   "file": "iam_runtime.sqlite",
-  "published_at_utc": "2026-07-22T18:59:05.375186+00:00",
-  "published_by": "mac-bootstrap-migue",
+  "published_at_utc": "2026-07-22T22:14:01.553749+00:00",
+  "published_by": "schema-migration-app-login",
   "schema_version": "1.0.0",
-  "sha256": "db477593725b10d20ab65cb106726e2b3c2fd012024335b8d4f9bdbc129d96ae"
+  "sha256": "8caf0b6c849f73cafaef8de1e42f06cd988d66bc24a9c49890202721d3f93ae5"
 }

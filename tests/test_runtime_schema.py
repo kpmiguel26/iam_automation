@@ -17,7 +17,7 @@ class RuntimeSchemaTests(unittest.TestCase):
             connection = sqlite3.connect(path)
             tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
             connection.close()
-            self.assertTrue({"app_metadata", "approved_users", "roles", "user_roles"}.issubset(tables))
+            self.assertTrue({"app_metadata", "approved_users", "app_users", "roles", "user_roles"}.issubset(tables))
 
 
 if __name__ == "__main__":

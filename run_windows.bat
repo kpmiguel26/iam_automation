@@ -6,25 +6,29 @@ for %%I in ("%ROOT_DIR%") do set "ROOT_DIR=%%~fI"
 cd /d "%ROOT_DIR%"
 
 echo [IAM] Checking for Python 3.10 or newer...
-set "PYTHON_EXE="
+set "PYTHON_EXE=%IAM_PYTHON_BIN%"
 
-where py >nul 2>&1
-if not errorlevel 1 (
-    py -3.10 -c "import sys" >nul 2>&1
-    if not errorlevel 1 (
-        for /f "delims=" %%P in ('py -3.10 -c "import sys; print(sys.executable)"') do set "PYTHON_EXE=%%P"
-    )
-    if not defined PYTHON_EXE (
-        for /f "delims=" %%P in ('py -3 -c "import sys; print(sys.executable)"') do set "PYTHON_EXE=%%P"
+if not defined PYTHON_EXE (
+    where py >nul 2>&1
+    if not errorlevel 1 for /f "delims=" %%P in ('py -3 -c "import sys; print(sys.executable if sys.version_info >= (3,10) else '')"') do set "PYTHON_EXE=%%P"
+)
+
+if not defined PYTHON_EXE (
+    for %%C in (python.exe python3.exe) do (
+        where %%C >nul 2>&1
+        if not errorlevel 1 for /f "delims=" %%P in ('%%C -c "import sys; print(sys.executable if sys.version_info >= (3,10) else '')"') do if not defined PYTHON_EXE set "PYTHON_EXE=%%P"
     )
 )
 
 if not defined PYTHON_EXE (
-    where python >nul 2>&1
-    if not errorlevel 1 (
-        for /f "delims=" %%P in ('python -c "import sys; print(sys.executable)"') do set "PYTHON_EXE=%%P"
-    )
+    for /d %%D in ("%LocalAppData%\Programs\Python\Python3*") do if exist "%%~D\python.exe" set "PYTHON_EXE=%%~D\python.exe"
 )
+
+if not defined PYTHON_EXE if exist "%ProgramFiles%\Python314\python.exe" set "PYTHON_EXE=%ProgramFiles%\Python314\python.exe"
+if not defined PYTHON_EXE if exist "%ProgramFiles%\Python313\python.exe" set "PYTHON_EXE=%ProgramFiles%\Python313\python.exe"
+if not defined PYTHON_EXE if exist "%ProgramFiles%\Python312\python.exe" set "PYTHON_EXE=%ProgramFiles%\Python312\python.exe"
+if not defined PYTHON_EXE if exist "%ProgramFiles%\Python311\python.exe" set "PYTHON_EXE=%ProgramFiles%\Python311\python.exe"
+if not defined PYTHON_EXE if exist "%ProgramFiles%\Python310\python.exe" set "PYTHON_EXE=%ProgramFiles%\Python310\python.exe"
 
 if not defined PYTHON_EXE (
     echo [ERROR] Python 3.10 or newer was not found. Install Python and enable the Python launcher.

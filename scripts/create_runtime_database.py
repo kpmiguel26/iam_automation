@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from iam_automation.database import initialize_runtime_database
 from iam_automation.runtime_sync import project_runtime_path, publish_runtime_snapshot
 from iam_automation.workspace_layout import ensure_sharepoint_structure
+from werkzeug.security import generate_password_hash
 
 
 def main() -> int:
@@ -20,6 +21,8 @@ def main() -> int:
     parser.add_argument("--actor", default="initial-bootstrap")
     parser.add_argument("--username", help="Optional initial approved username for local development.")
     parser.add_argument("--role", default="REQUESTER", help="Role for --username.")
+    parser.add_argument("--app-username", help="Optional application login username.")
+    parser.add_argument("--app-password", help="Application login password; stored only as a hash.")
     args = parser.parse_args()
     local = initialize_runtime_database(args.path)
     if args.username:
@@ -35,6 +38,25 @@ def main() -> int:
         connection.execute(
             "INSERT OR IGNORE INTO user_roles (username, role_name) VALUES (?, ?)",
             (args.username, args.role.upper()),
+        )
+        connection.commit()
+        connection.close()
+    if args.app_username or args.app_password:
+        if not args.app_username or not args.app_password:
+            parser.error("--app-username and --app-password must be provided together")
+        connection = sqlite3.connect(local)
+        connection.execute(
+            "INSERT INTO app_users (username, display_name, password_hash, active) VALUES (?, ?, ?, 1) "
+            "ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, active = 1, updated_at_utc = datetime('now')",
+            (args.app_username, args.app_username, generate_password_hash(args.app_password)),
+        )
+        connection.execute(
+            "INSERT INTO roles (role_name, description, active) VALUES (?, '', 1) ON CONFLICT(role_name) DO UPDATE SET active = 1",
+            (args.role.upper(),),
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO user_roles (username, role_name) VALUES (?, ?)",
+            (args.app_username, args.role.upper()),
         )
         connection.commit()
         connection.close()

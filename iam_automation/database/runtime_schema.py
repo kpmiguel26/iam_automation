@@ -25,6 +25,14 @@ def initialize_runtime_database(path: Path) -> Path:
                 display_name TEXT NOT NULL DEFAULT '',
                 active INTEGER NOT NULL DEFAULT 1
             );
+            CREATE TABLE IF NOT EXISTS app_users (
+                username TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL DEFAULT '',
+                password_hash TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at_utc TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             CREATE TABLE IF NOT EXISTS roles (
                 role_name TEXT PRIMARY KEY,
                 description TEXT NOT NULL DEFAULT '',

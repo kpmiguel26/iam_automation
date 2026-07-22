@@ -8,6 +8,11 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from werkzeug.security import check_password_hash
+except ModuleNotFoundError:  # pragma: no cover - optional until Flask is installed
+    check_password_hash = None  # type: ignore[assignment]
+
 
 ROLE_REQUESTER = "REQUESTER"
 ROLE_REVIEWER = "REVIEWER"
@@ -111,3 +116,38 @@ def validate_current_user_from_sqlite(path: Path) -> CurrentUser:
     if roles is None:
         raise PermissionError(f"Current user is not approved in runtime SQLite: {windows_username()}")
     return CurrentUser(username=windows_username(), computer=computer_name(), roles=roles)
+
+
+def validate_app_user_from_sqlite(path: Path, username: str, password: str) -> CurrentUser:
+    """Validate application credentials separately from the Windows identity gate."""
+    if check_password_hash is None:
+        raise PermissionError("Application password validation requires Werkzeug.")
+    normalized = username.strip().lower()
+    if not normalized or not password:
+        raise PermissionError("Application username and password are required.")
+    try:
+        connection = sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True)
+        try:
+            row = connection.execute(
+                "SELECT username, password_hash FROM app_users WHERE lower(username) = ? AND active = 1",
+                (normalized,),
+            ).fetchone()
+            if not row or not check_password_hash(str(row[1]), password):
+                raise PermissionError("Invalid application username or password.")
+            roles = tuple(
+                str(item[0]).strip().upper()
+                for item in connection.execute(
+                    "SELECT role_name FROM user_roles WHERE username = ? ORDER BY role_name",
+                    (row[0],),
+                ).fetchall()
+                if str(item[0]).strip()
+            ) or (ROLE_AUDITOR,)
+        finally:
+            connection.close()
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc).lower():
+            raise PermissionError("Application users are not configured in runtime SQLite.") from exc
+        raise PermissionError(f"Application login database could not be read: {exc}") from exc
+    except sqlite3.Error as exc:
+        raise PermissionError(f"Application login database could not be read: {exc}") from exc
+    return CurrentUser(username=str(row[0]), computer=computer_name(), roles=roles)

@@ -8,13 +8,13 @@ from .startup import PreflightResult, StartupController, StartupState
 from .webapp import launch_local_webapp_process
 
 try:  # Optional until the desktop/web UI dependencies are installed.
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import Qt, QThread, Signal
     from PySide6.QtGui import QPixmap
     from PySide6.QtWidgets import QApplication, QFileDialog, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
 except ModuleNotFoundError:  # pragma: no cover - exercised when optional UI deps are absent
     QApplication = None  # type: ignore[assignment,misc]
     QFileDialog = None  # type: ignore[assignment,misc]
-    Qt = QPixmap = None  # type: ignore[assignment,misc]
+    Qt = QPixmap = QThread = Signal = None  # type: ignore[assignment,misc]
     QLabel = QLineEdit = QPlainTextEdit = QPushButton = QScrollArea = QVBoxLayout = QWidget = None  # type: ignore[assignment,misc]
 
 
@@ -114,6 +114,12 @@ class StartupWindow:
         self.start_button.setEnabled(False)
         self.open_button.setEnabled(True)
 
+    def mark_webapp_starting(self) -> None:
+        self.status_label.setText("STARTING: Local Flask/Waitress webapp...")
+        self._log("[WEBAPP] Starting Flask/Waitress process...")
+        self.start_button.setEnabled(False)
+        self.open_button.setEnabled(False)
+
     def open_app(self) -> None:
         if not self.webapp_url:
             return
@@ -141,24 +147,50 @@ class StartupWindow:
             self.on_ready(result)
 
 
+if QThread is not None:
+    class WebAppStartupWorker(QThread):
+        ready = Signal(object, str)
+        failed = Signal(str)
+
+        def __init__(self, result: PreflightResult):
+            super().__init__()
+            self.result = result
+
+        def run(self) -> None:
+            try:
+                process, url = launch_local_webapp_process(self.result, open_browser=False)
+            except Exception as exc:  # pragma: no cover - depends on local process startup
+                self.failed.emit(str(exc))
+                return
+            self.ready.emit(process, url)
+else:  # pragma: no cover - only used when the optional UI dependency is absent
+    WebAppStartupWorker = None  # type: ignore[assignment,misc]
+
+
 def run_desktop_app(controller: StartupController | None = None) -> int:
     if QApplication is None:
         raise RuntimeError("PySide6 is required to run IAM Automation.")
     application = QApplication.instance() or QApplication([])
     startup_controller = controller or StartupController()
     server_holder = []
+    startup_workers = []
 
     def start_webapp(result: PreflightResult) -> None:
-        try:
-            process, url = launch_local_webapp_process(result, open_browser=False)
-        except Exception as exc:
-            window.status_label.setText(f"WEBAPP_ERROR: {exc}")
-            window.details_label.setText(window.details_label.text() + f"\nWebapp startup failed: {exc}")
-            window.start_button.setEnabled(True)
-            window.open_button.setEnabled(False)
+        if WebAppStartupWorker is None:
+            window.status_label.setText("WEBAPP_ERROR: PySide6 worker support is unavailable.")
             return
-        server_holder.append(process)
-        window.mark_webapp_started(process, url)
+        window.mark_webapp_starting()
+        worker = WebAppStartupWorker(result)
+        startup_workers.append(worker)
+        worker.ready.connect(lambda process, url: (server_holder.append(process), window.mark_webapp_started(process, url)))
+        worker.failed.connect(lambda message: (
+            window.status_label.setText(f"WEBAPP_ERROR: {message}"),
+            window.details_label.setText(window.details_label.text() + f"\nWebapp startup failed: {message}"),
+            window.start_button.setEnabled(True),
+            window.open_button.setEnabled(False),
+        ))
+        worker.finished.connect(lambda: startup_workers.remove(worker) if worker in startup_workers else None)
+        worker.start()
 
     window = StartupWindow(startup_controller, on_ready=start_webapp)
     window.show()

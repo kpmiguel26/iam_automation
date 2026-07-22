@@ -46,6 +46,14 @@ macOS:
 
 Both launchers require Python 3.10 or newer, create or reuse `.venv`, upgrade the package tools, update the project dependencies, and start the desktop preflight shell.
 
+The startup preflight validates the current Windows identity separately from the IAM Automation application login. Application accounts are stored in the runtime SQLite database with password hashes. Create the first application account with:
+
+```text
+python scripts/create_runtime_database.py --path runtime.sqlite --publish-root "C:\path\to\SharePoint" --app-username iam.admin --app-password "choose-a-password" --role ADMINISTRATOR
+```
+
+The web login never uses the Windows username as application credentials and never stores a plaintext password.
+
 The Access database initializer requires Windows with the Microsoft Access Database Engine and ODBC driver. On macOS, inspect the generated Access schema without creating a fake database file:
 
 ```bash
