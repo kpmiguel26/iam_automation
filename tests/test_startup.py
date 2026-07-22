@@ -65,7 +65,7 @@ class StartupTests(unittest.TestCase):
             )
             settings_path = base / "settings.toml"
             controller = StartupController(config_path=config_path, settings_path=settings_path)
-            with patch.dict("os.environ", {"IAM_SHAREPOINT_ROOT_PATH": str(root)}, clear=False), patch(
+            with patch.dict("os.environ", {"IAM_SHAREPOINT_ROOT_PATH": str(root), "IAM_DEV_AUTO_APPROVE_USERS": "0"}, clear=False), patch(
                 "iam_automation.startup.project_runtime_path", return_value=base / "runtime.sqlite"
             ):
                 result = controller.discover_sharepoint()
