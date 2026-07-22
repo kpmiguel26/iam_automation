@@ -8,43 +8,37 @@ cd /d "%ROOT_DIR%"
 echo [IAM] Checking for Python 3.10 or newer...
 set "PYTHON_EXE=%IAM_PYTHON_BIN%"
 
-if not defined PYTHON_EXE (
-    where py >nul 2>&1
-    if not errorlevel 1 for /f "delims=" %%P in ('py -3 -c "import sys; print(sys.executable if sys.version_info >= (3,10) else '')"') do set "PYTHON_EXE=%%P"
-)
+if defined PYTHON_EXE "%PYTHON_EXE%" -c "import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
+if defined PYTHON_EXE if errorlevel 1 set "PYTHON_EXE="
+if defined PYTHON_EXE goto :python_found
 
-if not defined PYTHON_EXE (
-    for %%C in (python.exe python3.exe) do (
-        where %%C >nul 2>&1
-        if not errorlevel 1 for /f "delims=" %%P in ('%%C -c "import sys; print(sys.executable if sys.version_info >= (3,10) else '')"') do if not defined PYTHON_EXE set "PYTHON_EXE=%%P"
-    )
-)
+where py >nul 2>&1
+if not errorlevel 1 for /f "delims=" %%P in ('py -3 -c "import sys; print(sys.executable)" 2^>nul') do call :try_python "%%P"
+if defined PYTHON_EXE goto :python_found
 
-if not defined PYTHON_EXE (
-    for /d %%D in ("%LocalAppData%\Programs\Python\Python3*") do if exist "%%~D\python.exe" set "PYTHON_EXE=%%~D\python.exe"
+for %%C in (python.exe python3.exe) do (
+    where %%C >nul 2>&1
+    if not errorlevel 1 for /f "delims=" %%P in ('%%C -c "import sys; print(sys.executable)" 2^>nul') do call :try_python "%%P"
 )
+if defined PYTHON_EXE goto :python_found
 
-if not defined PYTHON_EXE (
-    for /f "tokens=2,*" %%A in ('reg query "HKCU\Software\Python\PythonCore" /s /v ExecutablePath 2^>nul ^| findstr /i "ExecutablePath"') do if not defined PYTHON_EXE set "PYTHON_EXE=%%B"
-)
-if not defined PYTHON_EXE (
-    for /f "tokens=2,*" %%A in ('reg query "HKLM\Software\Python\PythonCore" /s /v ExecutablePath 2^>nul ^| findstr /i "ExecutablePath"') do if not defined PYTHON_EXE set "PYTHON_EXE=%%B"
-)
-if not defined PYTHON_EXE (
-    for /f "tokens=2,*" %%A in ('reg query "HKLM\Software\WOW6432Node\Python\PythonCore" /s /v ExecutablePath 2^>nul ^| findstr /i "ExecutablePath"') do if not defined PYTHON_EXE set "PYTHON_EXE=%%B"
-)
+for /d %%D in ("%LocalAppData%\Programs\Python\Python*") do call :try_python "%%~D\python.exe"
+for /d %%D in ("%ProgramFiles%\Python*") do call :try_python "%%~D\python.exe"
+for /d %%D in ("%ProgramFiles(x86)%\Python*") do call :try_python "%%~D\python.exe"
+if defined PYTHON_EXE goto :python_found
 
-if not defined PYTHON_EXE if exist "%ProgramFiles%\Python314\python.exe" set "PYTHON_EXE=%ProgramFiles%\Python314\python.exe"
-if not defined PYTHON_EXE if exist "%ProgramFiles%\Python313\python.exe" set "PYTHON_EXE=%ProgramFiles%\Python313\python.exe"
-if not defined PYTHON_EXE if exist "%ProgramFiles%\Python312\python.exe" set "PYTHON_EXE=%ProgramFiles%\Python312\python.exe"
-if not defined PYTHON_EXE if exist "%ProgramFiles%\Python311\python.exe" set "PYTHON_EXE=%ProgramFiles%\Python311\python.exe"
-if not defined PYTHON_EXE if exist "%ProgramFiles%\Python310\python.exe" set "PYTHON_EXE=%ProgramFiles%\Python310\python.exe"
+for /f "tokens=2,*" %%A in ('reg query "HKCU\Software\Python\PythonCore" /s /v InstallPath 2^>nul ^| findstr /i "InstallPath"') do call :try_python "%%B\python.exe"
+for /f "tokens=2,*" %%A in ('reg query "HKLM\Software\Python\PythonCore" /s /v InstallPath 2^>nul ^| findstr /i "InstallPath"') do call :try_python "%%B\python.exe"
+for /f "tokens=2,*" %%A in ('reg query "HKLM\Software\WOW6432Node\Python\PythonCore" /s /v InstallPath 2^>nul ^| findstr /i "InstallPath"') do call :try_python "%%B\python.exe"
+if defined PYTHON_EXE goto :python_found
 
 if not defined PYTHON_EXE (
     echo [ERROR] Python 3.10 or newer was not found. Install Python and enable the Python launcher.
     pause
     exit /b 1
 )
+
+:python_found
 
 "%PYTHON_EXE%" -c "import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)"
 if errorlevel 1 (
@@ -82,6 +76,13 @@ if errorlevel 1 goto :setup_failed
 echo [IAM] Starting IAM Automation preflight and local webapp...
 "%VENV_PYTHON%" "%ROOT_DIR%\run_app.py"
 exit /b %errorlevel%
+
+:try_python
+if defined PYTHON_EXE exit /b 0
+if not exist "%~1" exit /b 0
+"%~1" -c "import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
+if not errorlevel 1 set "PYTHON_EXE=%~1"
+exit /b 0
 
 :setup_failed
 echo [ERROR] Environment setup failed. Check the message above and your network/package access.
