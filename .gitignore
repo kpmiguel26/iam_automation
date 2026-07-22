@@ -6,3 +6,12 @@ __pycache__/
 .venv/
 *.lock.json
 
+# SQLite sidecar files are temporary and must not be synchronized.
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite.tmp-*
+
+# Runtime backups remain local during the GitHub-based development phase.
+runtime_backups/
+database/snapshots/backups/
+tests/fixtures/sharepoint_simulated/database/snapshots/backups/

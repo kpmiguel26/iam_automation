@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config
+from .database import initialize_runtime_database
 from .identity import CurrentUser, auto_approve_current_user_for_development, load_approved_users_from_sqlite, validate_current_user, validate_current_user_from_sqlite
 from .runtime_sync import find_published_access_db, find_published_runtime_db, project_runtime_path, publish_runtime_snapshot, sync_runtime_snapshot
 from .settings_store import load_user_settings, save_user_settings, user_settings_path
@@ -162,6 +163,7 @@ class StartupController:
         if ok:
             try:
                 snapshot = sync_runtime_snapshot(self.settings.published_runtime_db_path, self.settings.local_runtime_db_path)
+                initialize_runtime_database(snapshot.local_path)
                 resources.append({
                     "key": "runtime_sync",
                     "label": "Local runtime SQLite synchronization",
