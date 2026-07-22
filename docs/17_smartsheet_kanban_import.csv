@@ -3,8 +3,8 @@ D01,,0,Deliverable,1,Phase 0-2,Scope & Architecture Baseline,Scope and architect
 D01.1,D01,1,Subtask,1,Phase 0-2,Scope & Architecture Baseline,Confirm end-to-end workflow phases 0-9,Architect,Backlog,0.75,,Workflow steps and ownership are documented,,
 D01.2,D01,1,Subtask,1,Phase 0-2,Scope & Architecture Baseline,Confirm MVP scope and Python 3.10 compatibility,Architect,Backlog,0.75,D01.1,MVP boundaries and runtime constraint are recorded,,
 D01.3,D01,1,Subtask,1,Phase 0-2,Scope & Architecture Baseline,Document single-writer rule and source of truth,Architect,Backlog,0.5,D01.2,Access snapshot and controlled write path are identified,Foundation baseline complete,
-D02,,0,Deliverable,1,Phase 2,Configuration & SharePoint Paths,Configuration and SharePoint path model,Developer,Backlog,2,D01,All required paths validate and reflect the automation route,,
-D02.1,D02,1,Subtask,1,Phase 2,Configuration & SharePoint Paths,Define incoming roster and template folders,Developer,Backlog,0.75,D01,Incoming roster and template locations are configurable,,
+D02,,0,Deliverable,1,Phase 2,Configuration & SharePoint Paths,Configuration and SharePoint path model,Developer,Backlog,2,D01,All required paths validate and reflect the automation route,,Includes startup discovery, manual selection, local settings persistence, and preflight validation.
+D02.1,D02,1,Subtask,1,Phase 2,Configuration & SharePoint Paths,Discover and configure the local SharePoint synchronized path,Developer,Backlog,0.75,D01,OneDrive candidates are ranked and a manual folder can be selected,,
 D02.2,D02,1,Subtask,1,Phase 2,Configuration & SharePoint Paths,Define pending imported quarantine export and archive folders,Developer,Backlog,0.75,D02.1,Operational folders and naming rules are configurable,,
 D02.3,D02,1,Subtask,1,Phase 2,Configuration & SharePoint Paths,Add path validation and route visibility,Developer,Backlog,0.5,D02.2,Validation reports the resolved SharePoint or synced local route,,
 D03,,0,Deliverable,1,Phase 1 4 6 7,Template Inventory & Verification,Template inventory and validation checklist,BA / Developer,Backlog,4,D01,Required sheets headers fields and validation rules are documented,,
@@ -23,7 +23,7 @@ D06,,0,Deliverable,1,Phase 1-4,Fieldglass Ingestion POC,Fieldglass ingestion pro
 D06.1,D06,1,Subtask,1,Phase 1,Fieldglass Ingestion POC,Map roster lock fields to Fieldglass staging fields,Developer / IAM,Backlog,1,D05,Field mapping is documented and implemented,,
 D06.2,D06,1,Subtask,1,Phase 3-4,Fieldglass Ingestion POC,Load validated records into staging structure,Developer / IAM,Backlog,1,D06.1,Validated records are available for worker creation,,
 D06.3,D06,1,Subtask,1,Phase 4,Fieldglass Ingestion POC,Run sample and capture rejected-record evidence,Developer / IAM,Backlog,1,D06.2,Sample run is repeatable and rejection reasons are retained,Week 1 ingestion baseline complete,
-D07,,0,Deliverable,1,Phase 3 9,User Validation & Roles,User identity and role validation,Developer / IAM,Backlog,2,D01,Unauthorized actions are blocked and roles are enforced,,
+D07,,0,Deliverable,1,Phase 3 9,User Validation & Roles,User identity and role validation,Developer / IAM,Backlog,2,D01,Unauthorized actions are blocked and roles are enforced,,Windows identity validation runs only after the SharePoint preflight hard gate.
 D07.1,D07,1,Subtask,1,Phase 3,User Validation & Roles,Capture Windows username and execution context,Developer / IAM,Backlog,0.5,D01,Actor identity is available to workflow operations,,
 D07.2,D07,1,Subtask,1,Phase 9,User Validation & Roles,Define requester reviewer writer auditor and monitor permissions,Developer / IAM,Backlog,1,D07.1,Role matrix matches operational responsibilities,,
 D07.3,D07,1,Subtask,1,Phase 9,User Validation & Roles,Validate access before request approval import and publish actions,Developer / IAM,Backlog,0.5,D07.2,Unauthorized operations fail with an auditable reason,Week 1 foundation complete,

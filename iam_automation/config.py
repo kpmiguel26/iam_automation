@@ -27,6 +27,7 @@ class PathResource:
 
 RESOURCES = [
     PathResource("published_access_db_path", "Published Access database", "file", True, ".accdb"),
+    PathResource("published_runtime_db_path", "Published runtime SQLite database", "file", True, ".sqlite"),
     PathResource("sharepoint_root_path", "SharePoint library root", "folder", True),
     PathResource("workspace_path", "Local workspace", "folder", True),
     PathResource("backup_folder_path", "Backup folder", "folder", True),
@@ -36,6 +37,7 @@ RESOURCES = [
 
 ENV_KEYS = {
     "published_access_db_path": "IAM_PUBLISHED_ACCESS_DB_PATH",
+    "published_runtime_db_path": "IAM_PUBLISHED_RUNTIME_DB_PATH",
     "sharepoint_root_path": "IAM_SHAREPOINT_ROOT_PATH",
     "workspace_path": "IAM_WORKSPACE_PATH",
     "backup_folder_path": "IAM_BACKUP_FOLDER_PATH",
@@ -62,6 +64,7 @@ def _config_defaults(config_path: Path = DEFAULT_CONFIG_PATH) -> dict[str, str]:
     security = data.get("security", {}) if isinstance(data.get("security"), dict) else {}
     return {
         "published_access_db_path": str(paths.get("published_access_db_path", "") or ""),
+        "published_runtime_db_path": str(paths.get("published_runtime_db_path", "") or ""),
         "sharepoint_root_path": str(paths.get("sharepoint_root_path", "") or ""),
         "workspace_path": str(paths.get("workspace_path", "") or ""),
         "backup_folder_path": str(paths.get("backup_folder_path", "") or ""),
@@ -137,11 +140,6 @@ def validation_payload(
             elif resource.extension and path.suffix.lower() != resource.extension:
                 status = "invalid_extension"
                 message = f"{resource.label} must be a {resource.extension} file: {raw_path}"
-            elif resource.key in {"published_access_db_path", "sharepoint_root_path"} and not looks_like_onedrive_path(raw_path):
-                status = "outside_onedrive"
-                message = (
-                    f"{resource.label} must be inside the local OneDrive sync folder, not a standalone local path: {raw_path}"
-                )
             elif resource.key == "workspace_path" and looks_like_onedrive_path(raw_path):
                 status = "workspace_in_onedrive"
                 message = f"{resource.label} must be outside the OneDrive sync folder: {raw_path}"

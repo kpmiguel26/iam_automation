@@ -1,6 +1,7 @@
 [paths]
 # Must be the local synchronized OneDrive path that mirrors the SharePoint document library.
 published_access_db_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/iam_automation.accdb"
+published_runtime_db_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/database/snapshots/iam_runtime.sqlite"
 sharepoint_root_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation"
 
 # Must stay outside OneDrive so database work happens on a local copy first.

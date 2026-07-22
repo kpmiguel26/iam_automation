@@ -1,6 +1,6 @@
 # Development
 
-Use Python 3.10, 3.11, or 3.12 for the POC. Python 3.10 compatibility is required. Do not assume Python 3.13 compatibility with Access ODBC libraries until tested on the target Windows machine.
+Use Python 3.10 or newer for the POC. Python 3.10 compatibility is required; newer versions are accepted by the launchers. Validate Microsoft Access ODBC compatibility separately on the target Windows machine.
 
 Install:
 
@@ -23,3 +23,4 @@ Code conventions:
 - Keep local working copies outside OneDrive.
 - Do not store plaintext passwords.
 - Do not introduce a central API, persistent service, server, VM, Docker, or database engine in the current architecture.
+- The local PySide6 launcher and loopback-only Flask webapp are allowed as presentation components. They must bind only to `127.0.0.1` and must not become a shared service.

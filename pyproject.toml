@@ -2,10 +2,13 @@
 name = "iam-automation-poc"
 version = "0.1.0"
 description = "Proof of concept for IAM employee-data automation using immutable requests, single-writer Access publication, SharePoint-synced paths, user validation, and recovery controls."
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10"
 dependencies = [
   "openpyxl>=3.1.5",
   "pydantic>=2.8",
+  "Flask>=3.0,<4",
+  "waitress>=3.0,<4",
+  "PySide6>=6.7,<7",
 ]
 
 [project.optional-dependencies]

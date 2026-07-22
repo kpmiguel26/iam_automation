@@ -31,9 +31,12 @@ class ConfigTests(unittest.TestCase):
             workspace.mkdir()
             db = root / "iam.accdb"
             db.write_text("", encoding="utf-8")
+            runtime = root / "iam_runtime.sqlite"
+            runtime.write_bytes(b"sqlite-placeholder")
             payload = config.validation_payload(
                 {
                     "published_access_db_path": str(db),
+                    "published_runtime_db_path": str(runtime),
                     "sharepoint_root_path": str(root),
                     "workspace_path": str(workspace),
                     "backup_folder_path": str(root / "backups"),
@@ -54,9 +57,12 @@ class ConfigTests(unittest.TestCase):
                 folder.mkdir(parents=True)
             db = root / "iam.accdb"
             db.write_text("", encoding="utf-8")
+            runtime = root / "iam_runtime.sqlite"
+            runtime.write_bytes(b"sqlite-placeholder")
             payload = config.validation_payload(
                 {
                     "published_access_db_path": str(db),
+                    "published_runtime_db_path": str(runtime),
                     "sharepoint_root_path": str(root),
                     "workspace_path": str(workspace),
                     "backup_folder_path": str(backup),
