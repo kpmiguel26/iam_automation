@@ -48,7 +48,7 @@ ENV_KEYS = {
 
 
 def dev_auto_approve_users_enabled() -> bool:
-    return os.environ.get("IAM_DEV_AUTO_APPROVE_USERS", "0").strip().lower() in {"1", "true", "yes", "y"}
+    return os.environ.get("IAM_DEV_AUTO_APPROVE_USERS", "1").strip().lower() in {"1", "true", "yes", "y"}
 
 
 def dev_default_role() -> str:
