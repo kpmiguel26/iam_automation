@@ -132,7 +132,12 @@ def validate_app_user_from_sqlite(path: Path, username: str, password: str) -> C
                 "SELECT username, password_hash FROM app_users WHERE lower(username) = ? AND active = 1",
                 (normalized,),
             ).fetchone()
-            if not row or not check_password_hash(str(row[1]), password):
+            if not row:
+                configured = connection.execute("SELECT 1 FROM app_users WHERE active = 1 LIMIT 1").fetchone()
+                if not configured:
+                    raise PermissionError("No active application accounts are configured.")
+                raise PermissionError("Invalid application username or password.")
+            if not check_password_hash(str(row[1]), password):
                 raise PermissionError("Invalid application username or password.")
             roles = tuple(
                 str(item[0]).strip().upper()

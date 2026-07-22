@@ -54,6 +54,8 @@ python scripts/create_runtime_database.py --path runtime.sqlite --publish-root "
 
 The web login never uses the Windows username as application credentials and never stores a plaintext password.
 
+For an interactive bootstrap that keeps the password out of the command history, use `scripts/create_app_user.py` and enter the password when prompted.
+
 The Access database initializer requires Windows with the Microsoft Access Database Engine and ODBC driver. On macOS, inspect the generated Access schema without creating a fake database file:
 
 ```bash
