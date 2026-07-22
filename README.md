@@ -46,6 +46,8 @@ macOS:
 
 Both launchers require Python 3.10 or newer, create or reuse `.venv`, upgrade the package tools, update the project dependencies, and start the desktop preflight shell.
 
+During local development, both launchers enable `IAM_DEV_AUTO_APPROVE_USERS=1` so the current VDI, Windows, or macOS identity can be registered in the runtime SQLite automatically. The default development role is `REQUESTER`; set `IAM_DEV_DEFAULT_ROLE=ADMINISTRATOR` when needed for testing. Disable auto-approval for controlled environments with `IAM_DEV_AUTO_APPROVE_USERS=0`.
+
 The startup preflight validates the current Windows identity separately from the IAM Automation application login. Application accounts are stored in the runtime SQLite database with password hashes. Create the first application account with:
 
 ```text

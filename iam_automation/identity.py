@@ -156,3 +156,28 @@ def validate_app_user_from_sqlite(path: Path, username: str, password: str) -> C
     except sqlite3.Error as exc:
         raise PermissionError(f"Application login database could not be read: {exc}") from exc
     return CurrentUser(username=str(row[0]), computer=computer_name(), roles=roles)
+
+
+def auto_approve_current_user_for_development(path: Path, role: str = ROLE_REQUESTER) -> CurrentUser:
+    """Register the current OS identity for local development only."""
+    username = windows_username()
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute(
+            "INSERT INTO approved_users (username, display_name, active) VALUES (?, ?, 1) "
+            "ON CONFLICT(username) DO UPDATE SET active = 1",
+            (username, username),
+        )
+        connection.execute(
+            "INSERT INTO roles (role_name, description, active) VALUES (?, '', 1) "
+            "ON CONFLICT(role_name) DO UPDATE SET active = 1",
+            (role.upper(),),
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO user_roles (username, role_name) VALUES (?, ?)",
+            (username, role.upper()),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    return validate_current_user_from_sqlite(path)

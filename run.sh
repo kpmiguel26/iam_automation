@@ -4,6 +4,9 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+export IAM_DEV_AUTO_APPROVE_USERS="${IAM_DEV_AUTO_APPROVE_USERS:-1}"
+export IAM_DEV_DEFAULT_ROLE="${IAM_DEV_DEFAULT_ROLE:-REQUESTER}"
+
 echo "[IAM] Checking for Python 3.10 or newer..."
 PYTHON_BIN="${IAM_PYTHON_BIN:-}"
 

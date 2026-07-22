@@ -238,8 +238,8 @@ class LocalWebAppServer:
             self._server.run()  # type: ignore[union-attr]
         except OSError as exc:
             # Waitress closes its selector during shutdown; Python can surface
-            # that expected wake-up as EBADF from the serving thread.
-            if exc.errno != errno.EBADF:
+            # that expected wake-up as EBADF/WSAENOTSOCK from the serving thread.
+            if exc.errno != errno.EBADF and getattr(exc, "winerror", None) != 10038:
                 raise
 
     def start(self) -> str:

@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from . import config
-from .identity import CurrentUser, load_approved_users_from_sqlite, validate_current_user, validate_current_user_from_sqlite
-from .runtime_sync import find_published_access_db, find_published_runtime_db, project_runtime_path, sync_runtime_snapshot
+from .identity import CurrentUser, auto_approve_current_user_for_development, load_approved_users_from_sqlite, validate_current_user, validate_current_user_from_sqlite
+from .runtime_sync import find_published_access_db, find_published_runtime_db, project_runtime_path, publish_runtime_snapshot, sync_runtime_snapshot
 from .settings_store import load_user_settings, save_user_settings, user_settings_path
 from .sharepoint_discovery import DiscoveryCandidate, discover_candidates
 from .workspace_layout import ensure_sharepoint_structure
@@ -183,16 +183,31 @@ class StartupController:
         if self.state != StartupState.READY or not self.result or not self.result.ok:
             raise RuntimeError("SharePoint preflight must pass before login.")
         approved_path = self.settings.approved_users_path if self.settings else None
-        if not approved_path:
-            self.state = StartupState.UNAUTHORIZED_USER
-            raise PermissionError("Approved users path is not configured.")
         try:
             runtime_users = load_approved_users_from_sqlite(self.settings.local_runtime_db_path) if self.settings else {}
-            user = (
-                validate_current_user_from_sqlite(self.settings.local_runtime_db_path)
-                if runtime_users
-                else validate_current_user(approved_path)
-            )
+            if runtime_users:
+                try:
+                    user = validate_current_user_from_sqlite(self.settings.local_runtime_db_path)
+                except PermissionError:
+                    if not config.dev_auto_approve_users_enabled():
+                        raise
+                    user = auto_approve_current_user_for_development(self.settings.local_runtime_db_path, config.dev_default_role())
+                    publish_runtime_snapshot(
+                        self.settings.local_runtime_db_path,
+                        self.settings.published_runtime_db_path,
+                        actor=f"development-auto-approval:{user.username}",
+                    )
+            elif config.dev_auto_approve_users_enabled():
+                user = auto_approve_current_user_for_development(self.settings.local_runtime_db_path, config.dev_default_role())
+                publish_runtime_snapshot(
+                    self.settings.local_runtime_db_path,
+                    self.settings.published_runtime_db_path,
+                    actor=f"development-auto-approval:{user.username}",
+                )
+            elif approved_path:
+                user = validate_current_user(approved_path)
+            else:
+                raise PermissionError("No approved Windows identities are configured.")
         except PermissionError:
             self.state = StartupState.UNAUTHORIZED_USER
             raise
