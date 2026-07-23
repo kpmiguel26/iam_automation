@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import Boolean, ForeignKey, String, create_engine, select
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 
@@ -75,6 +75,38 @@ class DelegationModel(Base):
     created_by: Mapped[str] = mapped_column(String)
     created_at_utc: Mapped[str] = mapped_column(String, default="")
     revoked_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class ChangeRequestModel(Base):
+    __tablename__ = "change_requests"
+
+    request_id: Mapped[str] = mapped_column(String, primary_key=True)
+    created_at_utc: Mapped[str] = mapped_column(String)
+    created_by: Mapped[str] = mapped_column(String)
+    computer_name: Mapped[str] = mapped_column(String)
+    application_version: Mapped[str] = mapped_column(String)
+    operation_type: Mapped[str] = mapped_column(String)
+    entity_type: Mapped[str] = mapped_column(String)
+    entity_id: Mapped[str] = mapped_column(String)
+    expected_record_version: Mapped[int] = mapped_column(Integer, default=0)
+    payload_json: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, default="PENDING")
+    assigned_to: Mapped[str | None] = mapped_column(String, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class ApprovalAssignmentModel(Base):
+    __tablename__ = "approval_assignments"
+
+    assignment_id: Mapped[str] = mapped_column(String, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String)
+    assigned_to: Mapped[str] = mapped_column(String)
+    assigned_by: Mapped[str] = mapped_column(String)
+    assigned_at_utc: Mapped[str] = mapped_column(String, default="")
+    reason: Mapped[str] = mapped_column(Text)
 
 
 def create_engine_for_sqlite(database_path: Path):

@@ -18,6 +18,15 @@
 - Added strict-mode behavior that records the identity and blocks access until admin approval.
 - Added an approval action that promotes a pending JSON discovery into the approved identity SQLite records.
 
+### Requests and Approval Queue
+
+- Added ORM-backed `change_requests` and `approval_assignments` tables.
+- Added request creation and requester history views.
+- Added reviewer/Application Admin approval queue.
+- Added approve/reject decisions with mandatory review notes.
+- Blocked requesters from deciding their own requests.
+- Kept publication and single-writer application as a separate downstream control.
+
 ### Windows Identity CRUD
 
 - Added ORM-backed Windows identity repository and application service.

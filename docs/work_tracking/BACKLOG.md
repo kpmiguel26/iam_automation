@@ -12,7 +12,8 @@
 - [ ] Add notification unread counter to the avatar and notification resolution routes.
 - [ ] Add delegation queue reassignment without duplicating request IDs.
 - [ ] Add application session revocation and expiration rules.
-- [ ] Add full request, approval and reviewer workflow.
+- [~] Complete request, approval and reviewer workflow; initial CRUD is implemented, delegation and SLA remain.
+- [ ] Add queue reassignment and delegation integration to approval workflow.
 
 ## Data Operations
 

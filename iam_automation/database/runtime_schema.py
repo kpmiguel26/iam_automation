@@ -64,6 +64,26 @@ def initialize_runtime_database(path: Path) -> Path:
                 assigned_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
                 reason TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS change_requests (
+                request_id TEXT PRIMARY KEY,
+                created_at_utc TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                computer_name TEXT NOT NULL,
+                application_version TEXT NOT NULL,
+                operation_type TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                expected_record_version INTEGER NOT NULL DEFAULT 0,
+                payload_json TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                assigned_to TEXT,
+                reviewed_by TEXT,
+                review_note TEXT,
+                updated_at_utc TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_change_requests_queue
+                ON change_requests (status, assigned_to, created_at_utc);
             CREATE TABLE IF NOT EXISTS notifications (
                 notification_id TEXT PRIMARY KEY,
                 recipient_username TEXT NOT NULL,

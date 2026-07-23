@@ -32,7 +32,7 @@ Build the first maintainable local web application increment with:
 | D09.1 | Windows identity CRUD | Completed | `/admin/windows-identities`, `IdentityService` |
 | D10 | Notifications and delegation workflows | In progress | Services and initial views exist; audit/reassignment remains |
 | D11 | Audit-integrated administrative operations | Pending | Add immutable events for every critical operation |
-| D12 | Approval queue and request lifecycle | Pending | Implement request, assignment and approval aggregates |
+| D12 | Approval queue and request lifecycle | In progress | `RequestService`, `/requests`, `/admin/approvals`; publication remains separate |
 | D13 | Import, validation, quarantine and templates | Pending | Fieldglass/Excel ingestion and mappings |
 | D14 | Explicit publication, backup and restore | Pending | Checksum, manifest, backup and recovery workflow |
 | D15 | User acceptance, Windows validation and handoff | Pending | Cross-platform test evidence and sign-off |

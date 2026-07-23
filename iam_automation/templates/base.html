@@ -24,6 +24,8 @@
         <li><hr class="dropdown-divider"></li>
         <li><a class="dropdown-item" href="{{ url_for('dashboard') }}">Workspace</a></li>
         {% if session.get('is_admin') %}<li><a class="dropdown-item" href="{{ url_for('admin.home') }}">Control Center</a></li>{% endif %}
+        <li><a class="dropdown-item" href="{{ url_for('requests.request_list') }}">My requests</a></li>
+        {% if session.get('iam_roles') and ('REVIEWER' in session.get('iam_roles') or 'APPLICATION_ADMIN' in session.get('iam_roles') or 'MASTER_ADMIN' in session.get('iam_roles')) %}<li><a class="dropdown-item" href="{{ url_for('requests.approval_queue') }}">Approval queue</a></li>{% endif %}
         <li><a class="dropdown-item" href="{{ url_for('logout') }}">Sign out</a></li>
       </ul>
     </div>
