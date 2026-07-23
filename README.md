@@ -28,7 +28,7 @@ python scripts/submit_change_request.py --pending-folder /tmp/iam_requests/pendi
 python scripts/admin_import_pending_requests.py --requests-root /tmp/iam_requests --username DOMAIN\\admin
 ```
 
-The desktop launcher first discovers and validates the local OneDrive-synchronized SharePoint path. It opens the local Flask webapp only after the environment and current user have passed validation. Flask is served by Waitress on `127.0.0.1` with an ephemeral port. The local UI components are a transitional client architecture and are not a centralized API or service.
+The desktop launcher first discovers and validates the local OneDrive-synchronized SharePoint path. It opens the local Flask webapp only after the environment and current user have passed validation. Flask is served by Waitress on `127.0.0.1` with an ephemeral port. The local control panel uses PySide6 and is not a centralized API or service.
 
 Convenience launchers are available for both platforms:
 
@@ -45,6 +45,8 @@ macOS:
 ```
 
 Both launchers require Python 3.10 or newer, create or reuse `.venv`, upgrade the package tools, update the project dependencies, and start the desktop preflight shell.
+
+The desktop panel requires PySide6, which the launchers install from `requirements.txt`. On Windows, the launcher supports Python 3.10 or newer and starts the panel with `pythonw.exe` after setup. The control panel remains a normal window on both platforms and can be minimized using the operating system controls.
 
 During the current local development phase, the preflight registers the current VDI, Windows, or macOS identity in the runtime SQLite automatically. The default development role is `REQUESTER`; set `IAM_DEV_DEFAULT_ROLE=ADMINISTRATOR` when needed for testing. A strict approved-user gate remains a planned production hardening step.
 

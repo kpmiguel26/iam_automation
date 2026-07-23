@@ -9,13 +9,13 @@ from .webapp import launch_local_webapp_process, stop_local_webapp
 
 try:  # Optional until the desktop/web UI dependencies are installed.
     from PySide6.QtCore import Qt, QThread, Signal
-    from PySide6.QtGui import QAction, QIcon, QPixmap
-    from PySide6.QtWidgets import QApplication, QFileDialog, QLabel, QLineEdit, QMenu, QPlainTextEdit, QPushButton, QScrollArea, QSystemTrayIcon, QVBoxLayout, QWidget
+    from PySide6.QtGui import QIcon, QPixmap
+    from PySide6.QtWidgets import QApplication, QFileDialog, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
 except ModuleNotFoundError:  # pragma: no cover - exercised when optional UI deps are absent
     QApplication = None  # type: ignore[assignment,misc]
     QFileDialog = None  # type: ignore[assignment,misc]
     Qt = QIcon = QPixmap = QThread = Signal = None  # type: ignore[assignment,misc]
-    QAction = QApplication = QFileDialog = QLabel = QLineEdit = QMenu = QPlainTextEdit = QPushButton = QScrollArea = QSystemTrayIcon = QVBoxLayout = QWidget = None  # type: ignore[assignment,misc]
+    QApplication = QFileDialog = QLabel = QLineEdit = QPlainTextEdit = QPushButton = QScrollArea = QVBoxLayout = QWidget = None  # type: ignore[assignment,misc]
 
 
 class StartupWindow:
@@ -51,14 +51,12 @@ class StartupWindow:
         self.retry_button = QPushButton("Retry")
         self.start_button = QPushButton("Start Web App")
         self.open_button = QPushButton("Open App")
-        self.hide_button = QPushButton("Hide to Tray")
+        self.stop_button = QPushButton("Stop Web App")
         self.open_button.setEnabled(False)
-        self.hide_button.setEnabled(self.tray_icon is not None)
+        self.stop_button.setEnabled(False)
         self.webapp_url: str | None = None
         self.webapp_process = None
-        self.tray_icon = None
-        self.stop_action = None
-        self._setup_tray(logo_path)
+        self.closing = False
         layout = QVBoxLayout(self.widget)
         layout.addWidget(self.logo_label)
         layout.addWidget(QLabel("SharePoint / OneDrive synchronized folder"))
@@ -71,47 +69,15 @@ class StartupWindow:
         layout.addWidget(self.retry_button)
         layout.addWidget(self.start_button)
         layout.addWidget(self.open_button)
-        layout.addWidget(self.hide_button)
+        layout.addWidget(self.stop_button)
         self.browse_button.clicked.connect(self.browse)
         self.retry_button.clicked.connect(self.retry)
         self.start_button.clicked.connect(self.continue_to_login)
         self.open_button.clicked.connect(self.open_app)
-        self.hide_button.clicked.connect(self.minimize_to_tray)
+        self.stop_button.clicked.connect(self.stop_webapp)
 
     def show(self) -> None:
         self.widget.show()
-
-    def _setup_tray(self, logo_path: Path) -> None:
-        if QSystemTrayIcon is None or not QSystemTrayIcon.isSystemTrayAvailable():
-            return
-        self.tray_icon = QSystemTrayIcon(QIcon(str(logo_path)), self.widget)
-        menu = QMenu()
-        show_action = QAction("Open Control Panel", self.widget)
-        open_action = QAction("Open Web App", self.widget)
-        self.stop_action = QAction("Stop Web App", self.widget)
-        exit_action = QAction("Exit IAM Automation", self.widget)
-        self.stop_action.setEnabled(False)
-        show_action.triggered.connect(self.show_control)
-        open_action.triggered.connect(self.open_app)
-        self.stop_action.triggered.connect(self.stop_webapp)
-        exit_action.triggered.connect(self.exit_app)
-        menu.addAction(show_action)
-        menu.addAction(open_action)
-        menu.addAction(self.stop_action)
-        menu.addSeparator()
-        menu.addAction(exit_action)
-        self.tray_icon.setContextMenu(menu)
-        self.tray_icon.setToolTip("IAM Automation")
-        self.tray_icon.show()
-
-    def show_control(self) -> None:
-        self.widget.showNormal()
-        self.widget.activateWindow()
-
-    def minimize_to_tray(self) -> None:
-        self.widget.hide()
-        if self.tray_icon:
-            self.tray_icon.showMessage("IAM Automation", "The local webapp is running.", QSystemTrayIcon.MessageIcon.Information, 2500)
 
     def apply_result(self, result: PreflightResult) -> None:
         if result.settings:
@@ -152,30 +118,45 @@ class StartupWindow:
         )
         self.start_button.setEnabled(False)
         self.open_button.setEnabled(True)
-        if self.stop_action:
-            self.stop_action.setEnabled(True)
+        self.stop_button.setEnabled(True)
 
     def stop_webapp(self) -> None:
         if not self.webapp_url:
             return
-        try:
-            stop_local_webapp()
-            self._log("[WEBAPP] Stop request sent successfully.")
-        except Exception as exc:
-            self._log(f"[WEBAPP] Stop request failed: {exc}")
-            return
+        self.stop_button.setEnabled(False)
+        self.status_label.setText("STOPPING: Requesting a clean webapp shutdown...")
+        self.stop_worker = WebAppStopWorker()
+        self.stop_worker.stopped.connect(self._webapp_stopped)
+        self.stop_worker.failed.connect(self._webapp_stop_failed)
+        self.stop_worker.finished.connect(self.stop_worker.deleteLater)
+        self.stop_worker.start()
+
+    def _webapp_stopped(self) -> None:
+        self._log("[WEBAPP] Stop request sent successfully.")
         self.webapp_url = None
         self.webapp_process = None
         self.start_button.setEnabled(True)
         self.open_button.setEnabled(False)
-        if self.stop_action:
-            self.stop_action.setEnabled(False)
+        self.stop_button.setEnabled(False)
         self.status_label.setText("READY: Webapp stopped. The control panel remains available.")
+        if self.closing:
+            self._finish_exit()
+
+    def _webapp_stop_failed(self, message: str) -> None:
+        self._log(f"[WEBAPP] Stop request failed: {message}")
+        self.stop_button.setEnabled(True)
+        if self.stop_action:
+            self.stop_action.setEnabled(True)
+        self.status_label.setText(f"STOP_ERROR: {message}")
 
     def exit_app(self) -> None:
-        self.stop_webapp()
-        if self.tray_icon:
-            self.tray_icon.hide()
+        if self.webapp_url:
+            self.closing = True
+            self.stop_webapp()
+            return
+        self._finish_exit()
+
+    def _finish_exit(self) -> None:
         application = QApplication.instance()
         if application is not None:
             application.quit()
@@ -191,7 +172,6 @@ class StartupWindow:
             return
         webbrowser.open(self.webapp_url)
         self._log(f"[BROWSER] Opened {self.webapp_url}")
-        self.minimize_to_tray()
 
     def continue_to_login(self) -> None:
         result = self.controller.validate_environment()
@@ -226,8 +206,21 @@ if QThread is not None:
                 self.failed.emit(str(exc))
                 return
             self.ready.emit(process, url)
+
+    class WebAppStopWorker(QThread):
+        stopped = Signal()
+        failed = Signal(str)
+
+        def run(self) -> None:
+            try:
+                stop_local_webapp()
+            except Exception as exc:  # pragma: no cover - depends on local process state
+                self.failed.emit(str(exc))
+                return
+            self.stopped.emit()
 else:  # pragma: no cover - only used when the optional UI dependency is absent
     WebAppStartupWorker = None  # type: ignore[assignment,misc]
+    WebAppStopWorker = None  # type: ignore[assignment,misc]
 
 
 def run_desktop_app(controller: StartupController | None = None) -> int:

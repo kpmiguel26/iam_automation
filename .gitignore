@@ -12,6 +12,7 @@ __pycache__/
 *.sqlite.tmp-*
 .iam_webapp.pid
 .iam_launcher.log
+.iam_launcher.pid
 
 # Runtime backups remain local during the GitHub-based development phase.
 runtime_backups/

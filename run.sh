@@ -8,11 +8,22 @@ export IAM_DEV_DEFAULT_ROLE="${IAM_DEV_DEFAULT_ROLE:-REQUESTER}"
 
 echo "[IAM] Checking for Python 3.10 or newer..."
 PYTHON_BIN="${IAM_PYTHON_BIN:-}"
+VENV_DIR="$ROOT_DIR/.venv"
+VENV_PYTHON="$VENV_DIR/bin/python"
+
+# Reuse the existing virtual environment first. This keeps the launcher
+# independent from changes to the user's shell PATH after setup.
+if [[ -z "$PYTHON_BIN" && -x "$VENV_PYTHON" ]]; then
+  if "$VENV_PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+    PYTHON_BIN="$VENV_PYTHON"
+    echo "[IAM] Reusing existing virtual environment: $VENV_PYTHON"
+  fi
+fi
 
 if [[ -z "$PYTHON_BIN" ]]; then
-  for candidate in python3.10 python3; do
+  for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
     if command -v "$candidate" >/dev/null 2>&1; then
-      if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+      if "$candidate" -c 'import sys; import tkinter; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
         PYTHON_BIN="$(command -v "$candidate")"
         break
       fi
@@ -21,7 +32,7 @@ if [[ -z "$PYTHON_BIN" ]]; then
 fi
 
 if [[ -z "$PYTHON_BIN" ]]; then
-  echo "[ERROR] Python 3.10 or newer was not found. Install Python or set IAM_PYTHON_BIN."
+  echo "[ERROR] Python 3.10 or newer with tkinter was not found. Install Python or set IAM_PYTHON_BIN."
   exit 1
 fi
 
@@ -30,9 +41,6 @@ if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,
   "$PYTHON_BIN" --version
   exit 1
 fi
-
-VENV_DIR="$ROOT_DIR/.venv"
-VENV_PYTHON="$VENV_DIR/bin/python"
 
 if [[ ! -x "$VENV_PYTHON" ]]; then
   echo "[IAM] Creating virtual environment..."

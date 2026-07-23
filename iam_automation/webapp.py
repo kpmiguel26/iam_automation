@@ -11,6 +11,7 @@ import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+from urllib.request import Request, urlopen
 
 from .identity import CurrentUser, validate_app_user_from_sqlite
 from .startup import PreflightResult
@@ -187,7 +188,13 @@ def create_app(
         if not shutdown_token or request.headers.get("X-IAM-Shutdown-Token") != shutdown_token:
             return {"status": "forbidden"}, 403
         if shutdown_callback:
-            threading.Thread(target=shutdown_callback, name="iam-webapp-shutdown", daemon=True).start()
+            # Let Waitress finish this response before its trigger/socket is
+            # closed. Immediate shutdown can produce an expected but noisy
+            # EBADF from the request worker.
+            shutdown_timer = threading.Timer(0.25, shutdown_callback)
+            shutdown_timer.name = "iam-webapp-shutdown"
+            shutdown_timer.daemon = True
+            shutdown_timer.start()
         return {"status": "stopping"}
 
     @app.get("/")
