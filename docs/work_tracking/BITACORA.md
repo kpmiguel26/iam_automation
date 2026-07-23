@@ -2,6 +2,13 @@
 
 ## 2026-07-23
 
+### Windows Identity CRUD
+
+- Added ORM-backed Windows identity repository and application service.
+- Added `/admin/windows-identities` with role-aware access protection.
+- Added activation, display name and identity-role management.
+- Added Control Center navigation to application users and Windows identities.
+
 ### ORM and Web UI Refactor
 
 - Added SQLAlchemy 2.x as the runtime persistence ORM.

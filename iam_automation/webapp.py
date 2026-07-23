@@ -15,7 +15,7 @@ from urllib.request import Request, urlopen
 
 from .identity import CurrentUser, validate_app_user_from_sqlite
 from .interfaces.web.admin_routes import create_admin_blueprint
-from .interfaces.web.user_routes import create_user_blueprint
+from .interfaces.web.user_routes import create_identity_blueprint, create_user_blueprint
 from .startup import PreflightResult
 
 try:
@@ -68,6 +68,7 @@ def create_app(
     if runtime_path:
         app.register_blueprint(create_admin_blueprint(runtime_path))
         app.register_blueprint(create_user_blueprint(runtime_path))
+        app.register_blueprint(create_identity_blueprint(runtime_path))
 
     @app.context_processor
     def shared_template_context():

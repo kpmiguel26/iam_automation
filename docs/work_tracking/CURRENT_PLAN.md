@@ -29,6 +29,7 @@ Build the first maintainable local web application increment with:
 | D07 | SQLAlchemy ORM persistence boundary | Completed | `infrastructure/sqlite/orm.py`, user repository and services |
 | D08 | Application user CRUD and last-admin protection | Completed | `UserService`, `/admin/users`, service tests |
 | D09 | Admin control center shell | In progress | `/admin`, `admin_routes.py` |
+| D09.1 | Windows identity CRUD | Completed | `/admin/windows-identities`, `IdentityService` |
 | D10 | Notifications and delegation workflows | In progress | Services and initial views exist; audit/reassignment remains |
 | D11 | Audit-integrated administrative operations | Pending | Add immutable events for every critical operation |
 | D12 | Approval queue and request lifecycle | Pending | Implement request, assignment and approval aggregates |

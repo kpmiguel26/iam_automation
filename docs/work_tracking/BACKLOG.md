@@ -2,6 +2,8 @@
 
 ## High Priority
 
+- [x] Complete the first Windows identity CRUD increment.
+
 - [ ] Complete `/admin` navigation and role-filtered avatar menu.
 - [ ] Add `MASTER_ADMIN`-only routes for security, recovery and global settings.
 - [ ] Add immutable audit events for user, role, delegation, publication and restore changes.
