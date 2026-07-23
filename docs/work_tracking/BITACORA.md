@@ -1,0 +1,34 @@
+# Implementation Bitacora
+
+## 2026-07-23
+
+### ORM and Web UI Refactor
+
+- Added SQLAlchemy 2.x as the runtime persistence ORM.
+- Added ORM models for application users, roles, approved identities, notifications and delegations.
+- Converted user, notification and delegation persistence to ORM-backed repositories/services.
+- Converted runtime identity and application-login reads to ORM queries.
+- Kept the schema bootstrap and snapshot synchronization boundary idempotent for existing databases.
+- Removed inline HTML from Flask controllers and moved views into Jinja templates.
+- Added local Bootstrap 5.3.3 assets under `iam_automation/static/vendor/bootstrap/`.
+- Added shared Kaiser Permanente layout, avatar menu foundation and responsive styles.
+- Added the admin control center, notification view, delegation view and user administration templates.
+- Added architecture notes in `docs/WEBAPP_ARCHITECTURE.md`.
+
+### Launcher Compatibility Fix
+
+- Restored `launch_local_webapp_process` after the webapp refactor so the PySide6 launcher continues to start Flask in a separate process.
+- Preserved the loopback-only binding and clean shutdown token flow.
+- Added regression coverage for the local webapp launcher.
+
+### Verification
+
+- Focused authentication, admin and service tests passed.
+- Full test suite passed: 30 tests.
+- Loopback/ephemeral-port Waitress test passed outside the restricted sandbox.
+
+### Open Findings
+
+- Runtime database files may change during local execution; those changes must not be reverted automatically.
+- The administrative UI is a foundation. Approval reassignment, immutable audit events, publication controls and recovery remain pending.
+- The current development identity auto-registration behavior remains intentionally more permissive than the future production gate.
