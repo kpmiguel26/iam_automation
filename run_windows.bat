@@ -78,7 +78,8 @@ if errorlevel 1 goto :setup_failed
 echo [IAM] Starting IAM Automation preflight and local webapp...
 set "VENV_PYTHONW=%VENV_DIR%\Scripts\pythonw.exe"
 if not exist "%VENV_PYTHONW%" set "VENV_PYTHONW=%VENV_PYTHON%"
-start "IAM Automation" "%VENV_PYTHONW%" "%ROOT_DIR%\run_app.py"
+set "IAM_LAUNCHER_LOG=%ROOT_DIR%\.iam_launcher.log"
+start "IAM Automation" /D "%ROOT_DIR%" "%VENV_PYTHONW%" "%ROOT_DIR%\run_app.py"
 echo [IAM] PySide6 control panel started. This console can now close.
 exit /b 0
 
