@@ -43,6 +43,53 @@ def initialize_runtime_database(path: Path) -> Path:
                 role_name TEXT NOT NULL,
                 PRIMARY KEY (username, role_name)
             );
+            CREATE TABLE IF NOT EXISTS admin_delegations (
+                delegation_id TEXT PRIMARY KEY,
+                principal_username TEXT NOT NULL,
+                delegate_username TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                starts_at_utc TEXT NOT NULL,
+                expires_at_utc TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'ACTIVE',
+                created_by TEXT NOT NULL,
+                created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                revoked_at_utc TEXT
+            );
+            CREATE TABLE IF NOT EXISTS approval_assignments (
+                assignment_id TEXT PRIMARY KEY,
+                request_id TEXT NOT NULL,
+                assigned_to TEXT NOT NULL,
+                assigned_by TEXT NOT NULL,
+                assigned_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                reason TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS notifications (
+                notification_id TEXT PRIMARY KEY,
+                recipient_username TEXT NOT NULL,
+                notification_type TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'INFO',
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                entity_type TEXT NOT NULL DEFAULT '',
+                entity_id TEXT NOT NULL DEFAULT '',
+                target_route TEXT NOT NULL DEFAULT '',
+                created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                read_at_utc TEXT,
+                expires_at_utc TEXT,
+                status TEXT NOT NULL DEFAULT 'UNREAD'
+            );
+            CREATE TABLE IF NOT EXISTS session_revocations (
+                revocation_id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                revoked_by TEXT NOT NULL,
+                revoked_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                reason TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_notifications_recipient_status
+                ON notifications (recipient_username, status, created_at_utc);
+            CREATE INDEX IF NOT EXISTS idx_admin_delegations_active
+                ON admin_delegations (delegate_username, status, expires_at_utc);
             CREATE TABLE IF NOT EXISTS template_mappings (
                 mapping_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 system_name TEXT NOT NULL,
@@ -58,6 +105,14 @@ def initialize_runtime_database(path: Path) -> Path:
             INSERT INTO app_metadata (metadata_key, metadata_value, updated_at_utc)
             VALUES ('schema_version', '1.0.0', datetime('now'))
             ON CONFLICT(metadata_key) DO NOTHING;
+            INSERT OR IGNORE INTO roles (role_name, description, active) VALUES
+                ('REQUESTER', 'Creates and tracks requests', 1),
+                ('REVIEWER', 'Reviews and decides requests', 1),
+                ('WRITER', 'Applies approved changes and publishes', 1),
+                ('AUDITOR', 'Reads and exports evidence', 1),
+                ('APPLICATION_ADMIN', 'Operates the application', 1),
+                ('MASTER_ADMIN', 'Controls security and recovery', 1),
+                ('ADMINISTRATOR', 'Compatibility alias for APPLICATION_ADMIN', 1);
             """
         )
         connection.commit()

@@ -20,8 +20,10 @@ class UserServiceTests(unittest.TestCase):
             service.create_user("iam.admin", "IAM Admin", "secret", ["ADMINISTRATOR"])
             created = service.list_users()[0]
             self.assertEqual(created.username, "iam.admin")
-            self.assertEqual(created.roles, ("ADMINISTRATOR",))
+            self.assertEqual(created.roles, ("APPLICATION_ADMIN",))
             self.assertTrue(created.active)
+
+            service.create_user("master.admin", "Master Admin", "master-secret", ["MASTER_ADMIN"])
 
             service.update_user(
                 "iam.admin",
@@ -34,10 +36,16 @@ class UserServiceTests(unittest.TestCase):
             self.assertEqual(updated.display_name, "Updated Admin")
             self.assertEqual(updated.roles, ("AUDITOR",))
             self.assertFalse(updated.active)
-
-            row = sqlite3.connect(database).execute("SELECT password_hash FROM app_users").fetchone()
+            row = sqlite3.connect(database).execute("SELECT password_hash FROM app_users WHERE username = ?", ("iam.admin",)).fetchone()
             self.assertTrue(check_password_hash(row[0], "new-secret"))
 
+    def test_cannot_remove_last_active_administrator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            service = UserService(database)
+            service.create_user("master.admin", "Master Admin", "secret", ["MASTER_ADMIN"])
+            with self.assertRaisesRegex(ValueError, "last active administrator"):
+                service.update_user("master.admin", display_name="Master Admin", password="", roles=["AUDITOR"], active=False)
 
 if __name__ == "__main__":
     unittest.main()

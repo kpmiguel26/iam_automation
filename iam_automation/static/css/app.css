@@ -1,0 +1,20 @@
+:root { --kp-navy: #0e2046; --kp-teal: #007f82; }
+body { background: #f4f6f8; color: #172033; }
+.kp-header { min-height: 76px; background: var(--kp-navy); }
+.kp-logo { width: 210px; max-height: 52px; object-fit: contain; }
+.kp-header-label { color: #dbe5f5; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; }
+.avatar-button { color: #fff; display: flex; align-items: center; gap: .5rem; }
+.avatar { align-items: center; background: var(--kp-navy); border-radius: 50%; color: #fff; display: inline-flex; font-weight: 700; height: 42px; justify-content: center; width: 42px; }
+.avatar-lg { height: 58px; width: 58px; }
+.auth-container { max-width: 760px; padding: 4rem 0; }
+.surface { background: #fff; border: 1px solid #dce2ea; border-radius: .5rem; box-shadow: 0 10px 25px rgba(14,32,70,.06); }
+.eyebrow, .section-label { color: var(--kp-teal); font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.section-label { color: #667181; display: block; margin-bottom: .5rem; }
+h1 { color: var(--kp-navy); font-weight: 700; }
+.workspace { background: #f8fafc; border: 1px solid #e2e7ee; border-radius: .375rem; padding: 1rem; }
+.workspace span { color: #667181; display: block; font-size: .8rem; margin-bottom: .4rem; }
+.workspace code { overflow-wrap: anywhere; }
+.metric { color: var(--kp-navy); font-size: 1.8rem; font-weight: 700; }
+.role-badge { background: #e5f3f2; border: 1px solid #b9ddda; color: #075e61; margin: .15rem; }
+.notification-unread { border-left: 4px solid var(--kp-teal); }
+.status-dot { border-radius: 50%; display: inline-block; height: .75rem; width: .75rem; }

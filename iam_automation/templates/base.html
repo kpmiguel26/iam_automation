@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}IAM Automation{% endblock %} | Kaiser Permanente</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+<header class="kp-header">
+  <div class="container-fluid px-4 px-lg-5 d-flex align-items-center gap-4">
+    <a href="{{ url_for('dashboard') }}"><img src="{{ url_for('static', filename='kaiser_permanente_logo.png') }}" alt="Kaiser Permanente" class="kp-logo"></a>
+    <span class="ms-auto kp-header-label">IAM Automation</span>
+    {% if session.get('iam_user') %}
+    <div class="dropdown">
+      <button class="btn avatar-button dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+        <span class="avatar">{{ session.get('iam_user', 'I')[:1]|upper }}</span>
+        <span class="d-none d-md-inline">{{ session.get('iam_user') }}</span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+        <li><h6 class="dropdown-header">{{ session.get('iam_user') }}</h6></li>
+        <li><span class="dropdown-item-text small text-secondary">{{ session.get('iam_roles', [])|join(', ') }}</span></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="{{ url_for('dashboard') }}">Workspace</a></li>
+        {% if session.get('is_admin') %}<li><a class="dropdown-item" href="{{ url_for('admin.home') }}">Control Center</a></li>{% endif %}
+        <li><a class="dropdown-item" href="{{ url_for('logout') }}">Sign out</a></li>
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+</header>
+<main>{% block content %}{% endblock %}</main>
+<footer class="text-center text-secondary small py-4">Kaiser Permanente · IAM Automation · Local session</footer>
+<script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+</body>
+</html>

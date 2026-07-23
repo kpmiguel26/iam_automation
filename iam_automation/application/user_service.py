@@ -5,11 +5,12 @@ from pathlib import Path
 from werkzeug.security import generate_password_hash
 
 from ..domain.users import ApplicationUser
-from ..identity import ROLE_ADMINISTRATOR, ROLE_AUDITOR, ROLE_REQUESTER, ROLE_REVIEWER, ROLE_WRITER
+from ..identity import ROLE_APPLICATION_ADMIN, ROLE_AUDITOR, ROLE_MASTER_ADMIN, ROLE_REQUESTER, ROLE_REVIEWER, ROLE_WRITER, normalize_role
 from ..infrastructure.sqlite.user_repository import UserRepository
 
 
-ALLOWED_ROLES = frozenset({ROLE_REQUESTER, ROLE_REVIEWER, ROLE_ADMINISTRATOR, ROLE_WRITER, ROLE_AUDITOR})
+ALLOWED_ROLES = frozenset({ROLE_REQUESTER, ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_WRITER, ROLE_AUDITOR})
+ADMINISTRATIVE_ROLES = frozenset({ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN})
 
 
 class UserService:
@@ -41,10 +42,16 @@ class UserService:
         if not self.repository.get_user(username):
             raise ValueError(f"Application user was not found: {username}")
         password_hash = generate_password_hash(password) if password.strip() else None
+        normalized_roles = self._roles(roles)
+        current = self.repository.get_user(username)
+        if current and current.active and not active and self._is_last_active_admin(current.roles):
+            raise ValueError("The last active administrator cannot be deactivated.")
+        if current and self._is_last_active_admin(current.roles) and not (set(normalized_roles) & ADMINISTRATIVE_ROLES):
+            raise ValueError("The last active administrator must retain an administrative role.")
         self.repository.update_user(
             username,
             display_name=display_name.strip(),
-            roles=self._roles(roles),
+            roles=normalized_roles,
             active=active,
             password_hash=password_hash,
         )
@@ -58,7 +65,12 @@ class UserService:
 
     @staticmethod
     def _roles(roles: list[str]) -> tuple[str, ...]:
-        normalized = tuple(sorted({role.strip().upper() for role in roles if role.strip()}))
+        normalized = tuple(sorted({normalize_role(role) for role in roles if role.strip()}))
         if not normalized or not set(normalized).issubset(ALLOWED_ROLES):
             raise ValueError(f"Roles must be selected from: {', '.join(sorted(ALLOWED_ROLES))}")
         return normalized
+
+    def _is_last_active_admin(self, current_roles: tuple[str, ...]) -> bool:
+        if not set(current_roles) & ADMINISTRATIVE_ROLES:
+            return False
+        return sum(1 for user in self.repository.list_users() if user.active and set(user.roles) & ADMINISTRATIVE_ROLES) == 1

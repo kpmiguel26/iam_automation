@@ -4,7 +4,6 @@ import csv
 import getpass
 import os
 import socket
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,10 +16,19 @@ except ModuleNotFoundError:  # pragma: no cover - optional until Flask is instal
 ROLE_REQUESTER = "REQUESTER"
 ROLE_REVIEWER = "REVIEWER"
 ROLE_ADMINISTRATOR = "ADMINISTRATOR"
+ROLE_MASTER_ADMIN = "MASTER_ADMIN"
+ROLE_APPLICATION_ADMIN = "APPLICATION_ADMIN"
 ROLE_WRITER = "WRITER"
 ROLE_AUDITOR = "AUDITOR"
 
-WRITER_ROLES = {ROLE_ADMINISTRATOR, ROLE_WRITER}
+ROLE_ALIASES = {ROLE_ADMINISTRATOR: ROLE_APPLICATION_ADMIN}
+ADMIN_ROLES = {ROLE_MASTER_ADMIN, ROLE_APPLICATION_ADMIN, ROLE_ADMINISTRATOR}
+WRITER_ROLES = {ROLE_APPLICATION_ADMIN, ROLE_ADMINISTRATOR, ROLE_WRITER, ROLE_MASTER_ADMIN}
+
+
+def normalize_role(role: str) -> str:
+    normalized = str(role).strip().upper()
+    return ROLE_ALIASES.get(normalized, normalized)
 
 
 @dataclass(frozen=True)
@@ -30,16 +38,28 @@ class CurrentUser:
     roles: tuple[str, ...]
 
     @property
+    def normalized_roles(self) -> tuple[str, ...]:
+        return tuple(sorted({normalize_role(role) for role in self.roles}))
+
+    @property
+    def is_master_admin(self) -> bool:
+        return ROLE_MASTER_ADMIN in self.normalized_roles
+
+    @property
+    def is_application_admin(self) -> bool:
+        return bool({ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN} & set(self.normalized_roles))
+
+    @property
     def is_writer(self) -> bool:
-        return any(role.upper() in WRITER_ROLES for role in self.roles)
+        return bool(set(self.normalized_roles) & {normalize_role(role) for role in WRITER_ROLES})
 
     @property
     def can_submit_requests(self) -> bool:
-        return any(role.upper() in {ROLE_REQUESTER, ROLE_REVIEWER, ROLE_ADMINISTRATOR, ROLE_WRITER} for role in self.roles)
+        return bool(set(self.normalized_roles) & {ROLE_REQUESTER, ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_WRITER, ROLE_MASTER_ADMIN})
 
     @property
     def can_review_requests(self) -> bool:
-        return any(role.upper() in {ROLE_REVIEWER, ROLE_ADMINISTRATOR, ROLE_WRITER} for role in self.roles)
+        return bool(set(self.normalized_roles) & {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_WRITER, ROLE_MASTER_ADMIN})
 
 
 def windows_username() -> str:
@@ -68,7 +88,7 @@ def load_approved_users(path: Path) -> dict[str, tuple[str, ...]]:
                 for item in str(row.get("roles", "")).replace(";", ",").split(",")
                 if item.strip()
             )
-            users[username.lower()] = tuple(role.upper() for role in roles) or (ROLE_AUDITOR,)
+            users[username.lower()] = tuple(normalize_role(role) for role in roles) or (ROLE_AUDITOR,)
     return users
 
 
@@ -84,29 +104,24 @@ def validate_current_user(approved_users_path: Path) -> CurrentUser:
 def load_approved_users_from_sqlite(path: Path) -> dict[str, tuple[str, ...]]:
     if not path.exists():
         return {}
-    users: dict[str, set[str]] = {}
     try:
-        connection = sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True)
-        try:
-            rows = connection.execute(
-                "SELECT username, role_name FROM user_roles"
-            ).fetchall()
+        from sqlalchemy import select
+
+        from .infrastructure.sqlite.orm import ApprovedUserModel, UserRoleModel, orm_session
+
+        with orm_session(path) as session:
             active_users = {
-                str(row[0]).lower()
-                for row in connection.execute("SELECT username FROM approved_users WHERE active = 1").fetchall()
+                row.username.lower()
+                for row in session.scalars(select(ApprovedUserModel).where(ApprovedUserModel.active.is_(True))).all()
             }
-        finally:
-            connection.close()
-    except sqlite3.OperationalError as exc:
-        if "no such table" in str(exc).lower():
-            return {}
+            rows = session.execute(select(UserRoleModel.username, UserRoleModel.role_name)).all()
+    except Exception as exc:
         raise PermissionError(f"Runtime SQLite user validation failed: {path}: {exc}") from exc
-    except sqlite3.Error as exc:
-        raise PermissionError(f"Runtime SQLite user validation failed: {path}: {exc}") from exc
+    users: dict[str, set[str]] = {}
     for username, role in rows:
         normalized = str(username).strip().lower()
         if normalized in active_users:
-            users.setdefault(normalized, set()).add(str(role).strip().upper())
+            users.setdefault(normalized, set()).add(normalize_role(str(role)))
     return {username: tuple(sorted(roles)) for username, roles in users.items()}
 
 
@@ -126,58 +141,44 @@ def validate_app_user_from_sqlite(path: Path, username: str, password: str) -> C
     if not normalized or not password:
         raise PermissionError("Application username and password are required.")
     try:
-        connection = sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True)
-        try:
-            row = connection.execute(
-                "SELECT username, password_hash FROM app_users WHERE lower(username) = ? AND active = 1",
-                (normalized,),
-            ).fetchone()
+        from sqlalchemy import func, select
+
+        from .infrastructure.sqlite.orm import AppUserModel, orm_session
+
+        with orm_session(path) as session:
+            row = session.scalar(select(AppUserModel).where(func.lower(AppUserModel.username) == normalized, AppUserModel.active.is_(True)))
             if not row:
-                configured = connection.execute("SELECT 1 FROM app_users WHERE active = 1 LIMIT 1").fetchone()
+                configured = session.scalar(select(AppUserModel.username).where(AppUserModel.active.is_(True)).limit(1))
                 if not configured:
                     raise PermissionError("No active application accounts are configured.")
                 raise PermissionError("Invalid application username or password.")
-            if not check_password_hash(str(row[1]), password):
+            if not check_password_hash(str(row.password_hash), password):
                 raise PermissionError("Invalid application username or password.")
-            roles = tuple(
-                str(item[0]).strip().upper()
-                for item in connection.execute(
-                    "SELECT role_name FROM user_roles WHERE username = ? ORDER BY role_name",
-                    (row[0],),
-                ).fetchall()
-                if str(item[0]).strip()
-            ) or (ROLE_AUDITOR,)
-        finally:
-            connection.close()
-    except sqlite3.OperationalError as exc:
-        if "no such table" in str(exc).lower():
-            raise PermissionError("Application users are not configured in runtime SQLite.") from exc
+            roles = tuple(normalize_role(item.role_name) for item in sorted(row.roles, key=lambda item: item.role_name)) or (ROLE_AUDITOR,)
+            application_username = row.username
+    except PermissionError:
+        raise
+    except Exception as exc:
         raise PermissionError(f"Application login database could not be read: {exc}") from exc
-    except sqlite3.Error as exc:
-        raise PermissionError(f"Application login database could not be read: {exc}") from exc
-    return CurrentUser(username=str(row[0]), computer=computer_name(), roles=roles)
+    return CurrentUser(username=application_username, computer=computer_name(), roles=roles)
 
 
 def auto_approve_current_user_for_development(path: Path, role: str = ROLE_REQUESTER) -> CurrentUser:
     """Register the current OS identity for local development only."""
     username = windows_username()
-    connection = sqlite3.connect(path)
-    try:
-        connection.execute(
-            "INSERT INTO approved_users (username, display_name, active) VALUES (?, ?, 1) "
-            "ON CONFLICT(username) DO UPDATE SET active = 1",
-            (username, username),
-        )
-        connection.execute(
-            "INSERT INTO roles (role_name, description, active) VALUES (?, '', 1) "
-            "ON CONFLICT(role_name) DO UPDATE SET active = 1",
-            (role.upper(),),
-        )
-        connection.execute(
-            "INSERT OR IGNORE INTO user_roles (username, role_name) VALUES (?, ?)",
-            (username, role.upper()),
-        )
-        connection.commit()
-    finally:
-        connection.close()
+    from sqlalchemy import select
+
+    from .infrastructure.sqlite.orm import ApprovedUserModel, RoleModel, UserRoleModel, orm_session
+
+    with orm_session(path) as session:
+        approved = session.get(ApprovedUserModel, username)
+        if approved is None:
+            session.add(ApprovedUserModel(username=username, display_name=username, active=True))
+        else:
+            approved.active = True
+        normalized_role = normalize_role(role)
+        if session.get(RoleModel, normalized_role) is None:
+            session.add(RoleModel(role_name=normalized_role, description="", active=True))
+        if session.scalar(select(UserRoleModel).where(UserRoleModel.username == username, UserRoleModel.role_name == normalized_role)) is None:
+            session.add(UserRoleModel(username=username, role_name=normalized_role))
     return validate_current_user_from_sqlite(path)

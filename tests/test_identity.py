@@ -40,14 +40,14 @@ class IdentityTests(unittest.TestCase):
                     "INSERT INTO app_users (username, display_name, password_hash) VALUES (?, ?, ?)",
                     ("app.admin", "Application Admin", generate_password_hash("secret")),
                 )
-                connection.execute("INSERT INTO roles (role_name) VALUES (?)", ("ADMINISTRATOR",))
+                connection.execute("INSERT OR IGNORE INTO roles (role_name) VALUES (?)", ("ADMINISTRATOR",))
                 connection.execute("INSERT INTO user_roles (username, role_name) VALUES (?, ?)", ("app.admin", "ADMINISTRATOR"))
                 connection.commit()
             finally:
                 connection.close()
             user = validate_app_user_from_sqlite(path, "app.admin", "secret")
             self.assertEqual(user.username, "app.admin")
-            self.assertEqual(user.roles, ("ADMINISTRATOR",))
+            self.assertEqual(user.roles, ("APPLICATION_ADMIN",))
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ iam_automation/
 │   └── users.py
 ├── infrastructure/               # Persistence and external adapters
 │   └── sqlite/
+│       ├── orm.py                  # SQLAlchemy models, engine and sessions
 │       └── user_repository.py
 ├── interfaces/
 │   ├── desktop/                  # PySide6 preflight shell
@@ -30,11 +31,19 @@ iam_automation/
 ├── database/                     # Schema and database initialization
 ├── security/                     # Authentication and authorization policies
 ├── static/                       # Shared application assets
-├── templates/                    # Future extracted Jinja templates
+├── templates/                    # Jinja views separated from controllers
 ├── startup.py                    # Preflight orchestration
 ├── webapp.py                     # Flask factory and local process boundary
 └── qt_startup.py                 # Desktop launcher implementation
 ```
+
+## Persistence and UI Standards
+
+- SQLAlchemy 2.x is the ORM boundary for runtime SQLite reads and writes.
+- `runtime_schema.py` remains the idempotent bootstrap/migration boundary for existing synchronized databases.
+- Flask controllers call application services and render Jinja templates; they do not contain SQL or HTML documents.
+- Bootstrap 5.3.3 is vendored under `static/vendor/bootstrap/` so the local app works without a CDN connection.
+- Brand-specific styling is limited to `static/css/app.css`.
 
 ## First Web Module: User Administration
 
@@ -46,7 +55,7 @@ The first CRUD module uses the local `runtime.sqlite` database and supports:
 - Reset a password without exposing the previous password.
 - Activate or deactivate an account through a soft status change.
 
-Only an authenticated `ADMINISTRATOR` may access `/admin/users`. User changes are local SQLite changes in this increment. Snapshot publication, backup, audit event integration, and approval workflow are the next controls to add before treating administrative CRUD as production-ready.
+Only an authenticated `APPLICATION_ADMIN` or `MASTER_ADMIN` may access `/admin/users`. The legacy `ADMINISTRATOR` value is normalized as the application-admin alias. User changes are local SQLite changes in this increment. Snapshot publication, backup, audit event integration, and approval workflow are the next controls to add before treating administrative CRUD as production-ready.
 
 ## Request Flow
 

@@ -1,47 +1,35 @@
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
+from sqlalchemy import delete, select
+
 from ...domain.users import ApplicationUser
+from ...identity import normalize_role
+from .orm import AppUserModel, UserRoleModel, orm_session
 
 
 class UserRepository:
-    """Persistence boundary for application users in the local runtime SQLite."""
+    """ORM persistence boundary for application users in runtime SQLite."""
 
     def __init__(self, database_path: Path):
         self.database_path = database_path
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.database_path)
-        connection.row_factory = sqlite3.Row
-        return connection
-
     def list_users(self) -> list[ApplicationUser]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT u.username, u.display_name, u.active,
-                       GROUP_CONCAT(ur.role_name, ',') AS roles
-                FROM app_users u
-                LEFT JOIN user_roles ur ON ur.username = u.username
-                GROUP BY u.username, u.display_name, u.active
-                ORDER BY lower(u.username)
-                """
-            ).fetchall()
-        return [self._to_user(row) for row in rows]
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(select(AppUserModel).order_by(AppUserModel.username)).all()
+            return [self._to_user(row) for row in rows]
 
     def get_user(self, username: str) -> ApplicationUser | None:
-        return next((user for user in self.list_users() if user.username == username), None)
+        with orm_session(self.database_path) as session:
+            row = session.scalar(select(AppUserModel).where(AppUserModel.username == username))
+            return self._to_user(row) if row else None
 
     def create_user(self, username: str, display_name: str, password_hash: str, roles: tuple[str, ...]) -> None:
-        with self._connect() as connection:
-            connection.execute(
-                "INSERT INTO app_users (username, display_name, password_hash) VALUES (?, ?, ?)",
-                (username, display_name, password_hash),
-            )
-            self._replace_roles(connection, username, roles)
-            connection.commit()
+        with orm_session(self.database_path) as session:
+            user = AppUserModel(username=username, display_name=display_name, password_hash=password_hash, active=True)
+            user.roles = [UserRoleModel(username=username, role_name=role) for role in roles]
+            session.add(user)
 
     def update_user(
         self,
@@ -52,29 +40,18 @@ class UserRepository:
         active: bool,
         password_hash: str | None = None,
     ) -> None:
-        with self._connect() as connection:
+        with orm_session(self.database_path) as session:
+            user = session.scalar(select(AppUserModel).where(AppUserModel.username == username))
+            if user is None:
+                raise ValueError(f"Application user was not found: {username}")
+            user.display_name = display_name
+            user.active = active
             if password_hash:
-                connection.execute(
-                    "UPDATE app_users SET display_name = ?, active = ?, password_hash = ?, updated_at_utc = datetime('now') WHERE username = ?",
-                    (display_name, int(active), password_hash, username),
-                )
-            else:
-                connection.execute(
-                    "UPDATE app_users SET display_name = ?, active = ?, updated_at_utc = datetime('now') WHERE username = ?",
-                    (display_name, int(active), username),
-                )
-            self._replace_roles(connection, username, roles)
-            connection.commit()
+                user.password_hash = password_hash
+            session.execute(delete(UserRoleModel).where(UserRoleModel.username == username))
+            user.roles = [UserRoleModel(username=username, role_name=role) for role in roles]
 
     @staticmethod
-    def _replace_roles(connection: sqlite3.Connection, username: str, roles: tuple[str, ...]) -> None:
-        connection.execute("DELETE FROM user_roles WHERE username = ?", (username,))
-        connection.executemany(
-            "INSERT INTO user_roles (username, role_name) VALUES (?, ?)",
-            [(username, role) for role in roles],
-        )
-
-    @staticmethod
-    def _to_user(row: sqlite3.Row) -> ApplicationUser:
-        roles = tuple(sorted(role for role in str(row["roles"] or "").split(",") if role))
-        return ApplicationUser(str(row["username"]), str(row["display_name"]), bool(row["active"]), roles)
+    def _to_user(row: AppUserModel) -> ApplicationUser:
+        roles = tuple(sorted(normalize_role(role.role_name) for role in row.roles))
+        return ApplicationUser(row.username, row.display_name, bool(row.active), roles)

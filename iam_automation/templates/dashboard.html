@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Workspace{% endblock %}
+{% block content %}
+<div class="container py-5"><div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4"><div><p class="eyebrow">IAM Automation</p><h1>Workspace overview</h1><p class="text-secondary mb-0">A controlled workspace for identity and access operations.</p></div><span class="badge text-bg-success-subtle border border-success-subtle p-2">Session active</span></div>
+<div class="row g-3"><div class="col-md-4"><div class="surface p-4 h-100"><div class="section-label">Current user</div><div class="metric">{{ username }}</div></div></div><div class="col-md-4"><div class="surface p-4 h-100"><div class="section-label">Effective roles</div>{% for role in roles %}<span class="badge role-badge">{{ role }}</span>{% endfor %}</div></div><div class="col-md-4"><div class="surface p-4 h-100"><div class="section-label">Connected workspace</div><code class="small text-break">{{ sharepoint_path }}</code></div></div></div>
+<h2 class="h4 mt-5">Work areas</h2><div class="row g-3">{% for title, text, state in [('Request intake','Manage incoming IAM requests and their lifecycle.','Preparing'),('User administration','Manage approved users, roles and controlled profiles.','Preparing'),('Templates','Review source templates and generated exports.','Preparing'),('Audit and governance','Review activity, approvals, backups and publication history.','Preparing')] %}<div class="col-md-6 col-xl-3"><div class="surface p-4 h-100"><h3 class="h6">{{ title }}</h3><p class="small text-secondary">{{ text }}</p><span class="section-label">{{ state }}</span></div></div>{% endfor %}</div>
+</div>
+{% endblock %}
