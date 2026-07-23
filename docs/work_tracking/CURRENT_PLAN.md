@@ -24,7 +24,7 @@ Build the first maintainable local web application increment with:
 | D02 | Runtime SQLite synchronization and local working copy | Completed | `runtime_sync.py`, startup logs and fixtures |
 | D03 | Separate Windows identity gate and application login | Completed | `identity.py`, `/login`, identity tests |
 | D04 | Local Flask/Waitress launcher on loopback | Completed | `webapp.py`, `test_webapp.py` |
-| D05 | Responsive web UI with Kaiser Permanente branding | Completed | `templates/`, `static/css/app.css`, Office-style command bar |
+| D05 | Responsive web UI with Kaiser Permanente branding | Completed | `templates/`, `static/css/app.css`, Office-style command bar, profile and notification center |
 | D06 | Local Bootstrap distribution | Completed | `static/vendor/bootstrap/`, Bootstrap 5.3.3 |
 | D07 | SQLAlchemy ORM persistence boundary | Completed | `infrastructure/sqlite/orm.py`, user repository and services |
 | D08 | Application user CRUD and last-admin protection | Completed | `UserService`, `/admin/users`, service tests |

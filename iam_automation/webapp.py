@@ -150,6 +150,36 @@ def create_app(
             return redirect(url_for("login"))
         return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())))
 
+    @app.get("/profile")
+    def profile():
+        if not session.get("iam_user"):
+            return redirect(url_for("login"))
+        return render_template("profile.html", username=str(session["iam_user"]), roles=tuple(session.get("iam_roles", ())), sharepoint_path=str(preflight_result.settings.sharepoint_root_path))
+
+    @app.get("/notifications")
+    def notifications_page():
+        username = session.get("iam_user")
+        if not username or not runtime_path or not runtime_path.is_file():
+            return redirect(url_for("login"))
+        service = NotificationService(runtime_path)
+        return render_template("notifications.html", notifications=service.list_for_user(str(username)))
+
+    @app.post("/notifications/<notification_id>/read")
+    def notification_read(notification_id: str):
+        username = session.get("iam_user")
+        if not username or not runtime_path or not runtime_path.is_file():
+            return redirect(url_for("login"))
+        NotificationService(runtime_path).mark_read(str(username), notification_id)
+        return redirect(url_for("notifications_page"))
+
+    @app.post("/notifications/<notification_id>/resolve")
+    def notification_resolve(notification_id: str):
+        username = session.get("iam_user")
+        if not username or not runtime_path or not runtime_path.is_file():
+            return redirect(url_for("login"))
+        NotificationService(runtime_path).resolve(str(username), notification_id)
+        return redirect(url_for("notifications_page"))
+
     @app.get("/logout")
     def logout():
         session.clear()

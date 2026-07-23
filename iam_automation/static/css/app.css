@@ -44,6 +44,27 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .notification-unread { border-left: 4px solid var(--kp-teal); }
 .status-dot { border-radius: 50%; display: inline-block; height: .75rem; width: .75rem; }
 .admin-page { max-width: 1440px; }
+.page-shell { max-width: 1480px; }
+.page-heading, .section-heading { align-items: flex-end; display: flex; gap: 1rem; justify-content: space-between; }
+.page-heading h1 { margin-bottom: .35rem; }
+.role-ribbon { background: #edf5f5; border: 1px solid #c8e2df; border-radius: 999px; color: #075e61; font-size: .72rem; font-weight: 700; letter-spacing: .04em; padding: .55rem .8rem; }
+.alert-action { align-items: center; display: flex; justify-content: space-between; gap: 1rem; }
+.metric-card, .action-card { display: flex; flex-direction: column; text-decoration: none; }
+.metric-card { color: inherit; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.metric-card:hover, .action-card:hover { border-color: #a8d4d1; box-shadow: 0 14px 28px rgba(14,32,70,.1); color: inherit; transform: translateY(-2px); }
+.metric-card strong { color: var(--kp-navy); font-size: 2rem; line-height: 1.1; margin-bottom: .45rem; }
+.metric-card .small, .action-link { color: var(--kp-teal); font-weight: 600; margin-top: auto; }
+.action-card { color: inherit; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.action-icon { align-items: center; background: #edf5f5; border-radius: .45rem; color: var(--kp-teal); display: inline-flex; font-size: 1.35rem; height: 2.5rem; justify-content: center; margin-bottom: 1.1rem; width: 2.5rem; }
+.action-card h3 { color: var(--kp-navy); }
+.action-card p { min-height: 2.5rem; }
+.profile-grid { display: grid; gap: 1.25rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.profile-wide { grid-column: 1 / -1; }
+.notification-list { display: grid; gap: .85rem; max-width: 980px; }
+.notification-card { align-items: flex-start; display: flex; gap: 1rem; padding: 1.25rem 1.4rem; }
+.notification-card-icon { align-items: center; border-radius: 50%; color: #fff; display: inline-flex; flex: 0 0 auto; font-size: .65rem; height: 2rem; justify-content: center; width: 2rem; }
+.notification-card-body { flex: 1; min-width: 0; }
+.empty-state-icon { align-items: center; background: #e8f6ee; border-radius: 50%; color: #17613d; display: inline-flex; font-size: 1.25rem; height: 2.8rem; justify-content: center; margin-bottom: .85rem; width: 2.8rem; }
 .back-link { color: var(--kp-teal); font-size: .85rem; font-weight: 600; text-decoration: none; }
 .back-link:hover { text-decoration: underline; }
 .stat-card { min-height: 92px; }
@@ -71,6 +92,6 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .modal-body { padding: 1.5rem; }
 .modal-footer { border-top-color: #edf0f4; padding: 1rem 1.5rem; }
 @media (max-width: 900px) { .office-nav-inner { gap: .35rem; overflow-x: auto; flex-wrap: nowrap; } .nav-group { flex: 0 0 auto; } .nav-group-label { display: none; } .nav-group + .nav-group { border-left: 0; padding-left: .35rem; } }
-@media (max-width: 640px) { .table-toolbar { align-items: stretch; flex-direction: column; } .search-box { max-width: none; } .kp-product-name { font-size: .9rem; padding-left: .75rem; } .kp-header-label { display: none; } .kp-logo { width: 155px; } .notification-menu { min-width: min(340px, calc(100vw - 2rem)); } }
+@media (max-width: 640px) { .table-toolbar { align-items: stretch; flex-direction: column; } .search-box { max-width: none; } .kp-product-name { font-size: .9rem; padding-left: .75rem; } .kp-header-label { display: none; } .kp-logo { width: 155px; } .notification-menu { min-width: min(340px, calc(100vw - 2rem)); } .page-heading { align-items: flex-start; flex-direction: column; } .profile-grid { grid-template-columns: 1fr; } .profile-wide { grid-column: auto; } .alert-action { align-items: flex-start; flex-direction: column; } }
 .pending-panel { border-left: 4px solid #c57b13; }
 .pending-row { align-items: center; border-top: 1px solid #edf0f4; display: flex; justify-content: space-between; gap: 1rem; padding-top: .85rem; }

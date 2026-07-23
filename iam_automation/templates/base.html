@@ -17,7 +17,7 @@
     <div class="dropdown">
       <button class="btn notification-button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Open notifications" title="Notifications"><span class="nav-symbol">●</span>{% if unread_notification_count %}<span class="notification-badge">{{ unread_notification_count }}</span>{% endif %}</button>
       <div class="dropdown-menu dropdown-menu-end notification-menu shadow-sm p-0">
-        <div class="notification-menu-header"><strong>Notifications</strong><a href="{{ url_for('admin.notification_center') if session.get('is_admin') else url_for('dashboard') }}">View all</a></div>
+        <div class="notification-menu-header"><strong>Notifications</strong><a href="{{ url_for('notifications_page') }}">View all</a></div>
         {% for item in recent_notifications %}<a class="notification-preview" href="{{ item.target_route or url_for('admin.notification_center') }}"><span class="notification-severity severity-{{ item.severity|lower }}"></span><span><strong>{{ item.title }}</strong><small>{{ item.message }}</small></span></a>{% else %}<div class="notification-empty">You are all caught up.</div>{% endfor %}
       </div>
     </div>
@@ -26,7 +26,7 @@
         <span class="avatar">{{ session.get('iam_user', 'I')[:1]|upper }}</span><span class="d-none d-md-inline">{{ session.get('iam_user') }}</span>
       </button>
       <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-        <li><h6 class="dropdown-header">{{ session.get('iam_user') }}</h6></li><li><span class="dropdown-item-text small text-secondary">{{ session.get('iam_roles', [])|join(', ') }}</span></li><li><hr class="dropdown-divider"></li><li><a class="dropdown-item" href="{{ url_for('logout') }}">Sign out</a></li>
+        <li><h6 class="dropdown-header">{{ session.get('iam_user') }}</h6></li><li><span class="dropdown-item-text small text-secondary">{{ session.get('iam_roles', [])|join(', ') }}</span></li><li><hr class="dropdown-divider"></li><li><a class="dropdown-item" href="{{ url_for('profile') }}">My profile</a></li><li><a class="dropdown-item" href="{{ url_for('notifications_page') }}">Notifications</a></li><li><a class="dropdown-item" href="{{ url_for('logout') }}">Sign out</a></li>
       </ul>
     </div>
     {% endif %}

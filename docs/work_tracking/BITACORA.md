@@ -2,6 +2,14 @@
 
 ## 2026-07-23
 
+### UI Page Refinement
+
+- Refined the workspace dashboard and admin Control Center with quick-access action cards, role ribbon and clearer operational metrics.
+- Added a general user profile page with current application roles and workspace context.
+- Added a general notification center for all authenticated users, not only administrators.
+- Kept application users and Windows identities as full CRUD pages with search, status metrics and controlled role selectors.
+- Verified main pages render successfully for an Application Admin session.
+
 ### UX/UI Office-Style Navigation
 
 - Reorganized the authenticated shell into a Kaiser-branded header and Office-style command bar.
