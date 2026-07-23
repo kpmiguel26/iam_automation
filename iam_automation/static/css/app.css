@@ -18,3 +18,26 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .role-badge { background: #e5f3f2; border: 1px solid #b9ddda; color: #075e61; margin: .15rem; }
 .notification-unread { border-left: 4px solid var(--kp-teal); }
 .status-dot { border-radius: 50%; display: inline-block; height: .75rem; width: .75rem; }
+.admin-page { max-width: 1440px; }
+.back-link { color: var(--kp-teal); font-size: .85rem; font-weight: 600; text-decoration: none; }
+.back-link:hover { text-decoration: underline; }
+.stat-card { min-height: 92px; }
+.stat-card strong { color: var(--kp-navy); font-size: 1.75rem; }
+.table-toolbar { align-items: center; display: flex; gap: 1rem; justify-content: space-between; }
+.search-box { max-width: 390px; }
+.search-box .input-group-text { background: #fff; color: #687689; }
+.table thead th { background: #f8fafc; color: #667181; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.table td, .table th { padding: 1rem; }
+.avatar-sm { font-size: .8rem; height: 32px; width: 32px; }
+.status-pill { align-items: center; border-radius: 999px; display: inline-flex; font-size: .78rem; font-weight: 600; gap: .4rem; padding: .35rem .65rem; }
+.status-pill span { border-radius: 50%; height: .45rem; width: .45rem; }
+.status-active { background: #e8f6ee; color: #17613d; }
+.status-active span { background: #1d8a55; }
+.status-inactive { background: #eef0f3; color: #667181; }
+.status-inactive span { background: #8b95a3; }
+.empty-state { color: #697587; padding: 3rem !important; text-align: center; }
+.modal-content { border: 0; border-radius: .65rem; box-shadow: 0 20px 55px rgba(14,32,70,.2); }
+.modal-header { border-bottom-color: #edf0f4; padding: 1.25rem 1.5rem; }
+.modal-body { padding: 1.5rem; }
+.modal-footer { border-top-color: #edf0f4; padding: 1rem 1.5rem; }
+@media (max-width: 640px) { .table-toolbar { align-items: stretch; flex-direction: column; } .search-box { max-width: none; } }

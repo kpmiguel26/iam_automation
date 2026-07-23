@@ -2,6 +2,14 @@
 
 ## 2026-07-23
 
+### Administrative CRUD UI Refinement
+
+- Reworked Application Users and Windows Identities views with responsive Bootstrap layouts.
+- Added status metrics, search/filter toolbars, readable tables and explicit edit actions.
+- Added modal-based create and edit workflows instead of dense inline forms.
+- Added mobile-friendly styling and clearer active/blocked status indicators.
+- Smoke-tested both administrative routes with an authenticated Application Admin session.
+
 ### Windows Identity CRUD
 
 - Added ORM-backed Windows identity repository and application service.
