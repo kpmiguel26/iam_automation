@@ -7,8 +7,8 @@
 - [x] Define synchronized identity discovery JSON and pending notification.
 
 - [ ] Complete `/admin` navigation and role-filtered avatar menu.
-- [ ] Add `MASTER_ADMIN`-only routes for security, recovery and global settings.
-- [ ] Add immutable audit events for user, role, delegation, publication and restore changes.
+- [x] Add `MASTER_ADMIN`-only governance, recovery and publication routes.
+- [~] Add immutable audit events for user, role, delegation, publication and restore changes; publication/restore are covered first.
 - [ ] Add notification unread counter to the avatar and notification resolution routes.
 - [ ] Add delegation queue reassignment without duplicating request IDs.
 - [ ] Add application session revocation and expiration rules.
@@ -28,9 +28,9 @@
 ## Publication And Recovery
 
 - [ ] Add pending-publication state.
-- [ ] Create backup before every publication.
-- [ ] Generate checksum and manifest for runtime snapshots.
-- [ ] Add Master Admin restore flow with current-state backup.
+- [x] Create backup before every publication.
+- [x] Generate checksum and manifest for runtime snapshots.
+- [x] Add Master Admin restore flow with current-state backup.
 - [ ] Add conflict detection between local and published SQLite snapshots.
 
 ## Testing

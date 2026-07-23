@@ -35,6 +35,13 @@
 - Added `publication_queue` and `PublicationService` for approved requests.
 - Kept backup, checksum and Access publication as the next controlled writer workflow.
 
+### Master Governance Controls
+
+- Added Master Admin-only governance view for audit evidence, publication and recovery.
+- Added checksum-protected runtime publication with backup creation.
+- Added restore from validated runtime backups with a new manifest.
+- Added append-only audit events for publication and restore operations.
+
 ### Windows Identity CRUD
 
 - Added ORM-backed Windows identity repository and application service.

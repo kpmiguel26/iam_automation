@@ -10,16 +10,18 @@ from ...application.delegation_service import DelegationService
 from ...application.notification_service import NotificationService
 from ...application.publication_service import PublicationService
 from ...application.request_service import RequestService
+from ...application.governance_service import GovernanceService
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
 from ...identity_discovery import list_pending_discoveries
 
 
-def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None = None) -> Blueprint:
+def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None = None, local_runtime_path: Path | None = None, published_runtime_path: Path | None = None, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("admin", __name__, url_prefix="/admin")
     notifications = NotificationService(database_path)
     delegations = DelegationService(database_path)
     requests = RequestService(database_path)
     publication = PublicationService(database_path)
+    governance = GovernanceService(local_runtime_path=local_runtime_path or database_path, published_runtime_path=published_runtime_path or database_path, audit_path=audit_path or database_path.parent / "audit")
 
     def admin_required(view: Callable):
         @wraps(view)
@@ -27,6 +29,15 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             roles = {normalize_role(role) for role in session.get("iam_roles", ())}
             if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
                 return "Administrator role required.", 403
+            return view(*args, **kwargs)
+        return wrapped
+
+    def master_required(view: Callable):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            roles = {normalize_role(role) for role in session.get("iam_roles", ())}
+            if ROLE_MASTER_ADMIN not in roles:
+                return "MASTER_ADMIN role required.", 403
             return view(*args, **kwargs)
         return wrapped
 
@@ -74,5 +85,28 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     @admin_required
     def publication_queue():
         return render_template("requests/publication_queue.html", publications=publication.list_pending())
+
+    @blueprint.get("/governance")
+    @master_required
+    def governance_center():
+        return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events())
+
+    @blueprint.post("/governance/publish")
+    @master_required
+    def publish_runtime():
+        try:
+            governance.publish(str(session["iam_user"]), request.form.get("expected_checksum", ""))
+            return redirect(url_for("admin.governance_center"))
+        except Exception as exc:
+            return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events(), error=str(exc)), 400
+
+    @blueprint.post("/governance/restore")
+    @master_required
+    def restore_runtime():
+        try:
+            governance.restore(str(session["iam_user"]), request.form.get("backup_name", ""))
+            return redirect(url_for("admin.governance_center"))
+        except Exception as exc:
+            return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events(), error=str(exc)), 400
 
     return blueprint

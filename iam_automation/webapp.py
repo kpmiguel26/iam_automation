@@ -68,7 +68,7 @@ def create_app(
     app.secret_key = secrets.token_urlsafe(32)
     runtime_path = preflight_result.settings.local_runtime_db_path if preflight_result.settings else None
     if runtime_path:
-        app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path)))
+        app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), local_runtime_path=preflight_result.settings.local_runtime_db_path, published_runtime_path=preflight_result.settings.published_runtime_db_path, audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_user_blueprint(runtime_path))
         app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path)))
         app.register_blueprint(create_request_blueprint(runtime_path))

@@ -31,11 +31,11 @@ Build the first maintainable local web application increment with:
 | D09 | Admin control center shell | In progress | `/admin`, `admin_routes.py` |
 | D09.1 | Windows identity CRUD | Completed | `/admin/windows-identities`, `IdentityService` |
 | D10 | Notifications and delegation workflows | In progress | Services, reassignment and SLA escalation exist; audit remains |
-| D11 | Audit-integrated administrative operations | Pending | Add immutable events for every critical operation |
+| D11 | Audit-integrated administrative operations | In progress | Governance audit view and publish/restore events exist; CRUD-wide event coverage remains |
 | D12 | Approval queue and request lifecycle | Completed | `RequestService`, `/requests`, `/admin/approvals`, delegation reassignment and SLA escalation |
 | D12.1 | Approved request publication queue | In progress | `PublicationService`, `/admin/publication`; controlled writer publication remains |
 | D13 | Import, validation, quarantine and templates | Pending | Fieldglass/Excel ingestion and mappings |
-| D14 | Explicit publication, backup and restore | Pending | Checksum, manifest, backup and recovery workflow |
+| D14 | Explicit publication, backup and restore | In progress | Master Admin governance flow, checksum, backup and restore exist; writer integration remains |
 | D15 | User acceptance, Windows validation and handoff | Pending | Cross-platform test evidence and sign-off |
 
 ## Work Sequence
