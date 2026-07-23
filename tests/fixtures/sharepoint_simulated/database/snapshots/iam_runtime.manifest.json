@@ -1,7 +1,7 @@
 {
   "file": "iam_runtime.sqlite",
-  "published_at_utc": "2026-07-23T19:30:00+00:00",
-  "published_by": "master-admin-bootstrap",
+  "published_at_utc": "2026-07-23T19:45:00+00:00",
+  "published_by": "development-test-seed",
   "schema_version": "1.0.0",
-  "sha256": "adf15f8f4367483a041ccf4acfaa60aacf66f99817c92f742bb8502905b05de9"
+  "sha256": "4132807448d4ff4f1d03285d229315ab7bf64c146e5d5787cdd0860bd5140639"
 }
