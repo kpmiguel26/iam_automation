@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import errno
 import json
+import multiprocessing
+import os
+import queue
 import secrets
 import threading
 import webbrowser
@@ -38,6 +41,16 @@ def stop_local_webapp() -> str:
     )
     with urlopen(shutdown_request, timeout=3) as response:
         return response.read().decode("utf-8")
+
+
+def launch_local_webapp(preflight_result: PreflightResult, *, open_browser: bool = True) -> "LocalWebAppServer":
+    """Launch a server in the current process for direct programmatic use."""
+    app = create_app(preflight_result)
+    server = LocalWebAppServer(app)
+    url = server.start()
+    if open_browser:
+        webbrowser.open(url)
+    return server
 
 
 def create_app(
@@ -155,6 +168,56 @@ class LocalWebAppServer:
             self._thread.join(timeout=2)
         self._server = None
         self._thread = None
+
+
+def _serve_webapp_process(preflight_result: PreflightResult, ready_queue) -> None:
+    """Serve the local app in a separate process from the Qt control panel."""
+    shutdown_token = secrets.token_urlsafe(32)
+    server_holder: dict[str, LocalWebAppServer] = {}
+
+    def shutdown_server() -> None:
+        server = server_holder.get("server")
+        if server:
+            server.stop()
+
+    app = create_app(preflight_result, shutdown_callback=shutdown_server, shutdown_token=shutdown_token)
+    server = LocalWebAppServer(app)
+    server_holder["server"] = server
+    url = server.start()
+    webapp_pid_path().write_text(json.dumps({"pid": os.getpid(), "port": server.port, "token": shutdown_token}) + "\n", encoding="utf-8")
+    ready_queue.put(url)
+    try:
+        if server._thread:
+            server._thread.join()
+    finally:
+        server.stop()
+        try:
+            webapp_pid_path().unlink()
+        except FileNotFoundError:
+            pass
+
+
+def launch_local_webapp_process(
+    preflight_result: PreflightResult,
+    *,
+    open_browser: bool = True,
+    startup_timeout: float = 10.0,
+) -> tuple[multiprocessing.Process, str]:
+    """Start Flask independently so the Qt launcher remains responsive."""
+    context = multiprocessing.get_context("spawn")
+    ready_queue = context.Queue()
+    process = context.Process(target=_serve_webapp_process, args=(preflight_result, ready_queue), name="iam-flask-webapp", daemon=False)
+    process.start()
+    try:
+        url = ready_queue.get(timeout=startup_timeout)
+    except queue.Empty as exc:
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=2)
+        raise RuntimeError("The local Flask webapp did not start within the expected time.") from exc
+    if open_browser:
+        webbrowser.open(url)
+    return process, url
 
 
 def open_browser(url: str) -> None:
