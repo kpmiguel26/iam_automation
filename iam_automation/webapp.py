@@ -88,8 +88,10 @@ def create_app(
     def shared_template_context():
         roles = tuple(session.get("iam_roles", ()))
         username = str(session.get("iam_user", ""))
-        unread_count = NotificationService(runtime_path).unread_count(username) if runtime_path and username and runtime_path.is_file() else 0
-        return {"is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN"} & {str(role).upper() for role in roles}), "unread_notification_count": unread_count}
+        notification_service = NotificationService(runtime_path) if runtime_path and username and runtime_path.is_file() else None
+        unread_count = notification_service.unread_count(username) if notification_service else 0
+        recent_notifications = notification_service.list_for_user(username, unread_only=True)[:5] if notification_service else []
+        return {"is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN"} & {str(role).upper() for role in roles}), "unread_notification_count": unread_count, "recent_notifications": recent_notifications}
 
     @app.get("/health")
     def health():

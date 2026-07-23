@@ -9,32 +9,29 @@
 </head>
 <body>
 <header class="kp-header">
-  <div class="container-fluid px-4 px-lg-5 d-flex align-items-center gap-4">
+  <div class="container-fluid px-4 px-lg-5 d-flex align-items-center gap-4 kp-header-main">
     <a href="{{ url_for('dashboard') }}"><img src="{{ url_for('static', filename='kaiser_permanente_logo.png') }}" alt="Kaiser Permanente" class="kp-logo"></a>
-    <span class="ms-auto kp-header-label">IAM Automation</span>
+    <span class="kp-product-name">IAM Automation</span>
+    <span class="ms-auto kp-header-label">Local workspace</span>
     {% if session.get('iam_user') %}
     <div class="dropdown">
+      <button class="btn notification-button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Open notifications" title="Notifications"><span class="nav-symbol">●</span>{% if unread_notification_count %}<span class="notification-badge">{{ unread_notification_count }}</span>{% endif %}</button>
+      <div class="dropdown-menu dropdown-menu-end notification-menu shadow-sm p-0">
+        <div class="notification-menu-header"><strong>Notifications</strong><a href="{{ url_for('admin.notification_center') if session.get('is_admin') else url_for('dashboard') }}">View all</a></div>
+        {% for item in recent_notifications %}<a class="notification-preview" href="{{ item.target_route or url_for('admin.notification_center') }}"><span class="notification-severity severity-{{ item.severity|lower }}"></span><span><strong>{{ item.title }}</strong><small>{{ item.message }}</small></span></a>{% else %}<div class="notification-empty">You are all caught up.</div>{% endfor %}
+      </div>
+    </div>
+    <div class="dropdown">
       <button class="btn avatar-button dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-        <span class="avatar">{{ session.get('iam_user', 'I')[:1]|upper }}</span>
-        <span class="d-none d-md-inline">{{ session.get('iam_user') }}</span>
+        <span class="avatar">{{ session.get('iam_user', 'I')[:1]|upper }}</span><span class="d-none d-md-inline">{{ session.get('iam_user') }}</span>
       </button>
       <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-        <li><h6 class="dropdown-header">{{ session.get('iam_user') }}</h6></li>
-        <li><span class="dropdown-item-text small text-secondary">{{ session.get('iam_roles', [])|join(', ') }}</span></li>
-        <li><hr class="dropdown-divider"></li>
-        <li><a class="dropdown-item" href="{{ url_for('dashboard') }}">Workspace</a></li>
-        {% if session.get('is_admin') %}<li><a class="dropdown-item" href="{{ url_for('admin.home') }}">Control Center</a></li><li><a class="dropdown-item" href="{{ url_for('admin.notification_center') }}">Notifications {% if unread_notification_count %}<span class="badge text-bg-danger ms-1">{{ unread_notification_count }}</span>{% endif %}</a></li><li><a class="dropdown-item" href="{{ url_for('admin.delegation_center') }}">Delegations</a></li><li><a class="dropdown-item" href="{{ url_for('admin.import_center') }}">Imports & quarantine</a></li>{% endif %}
-        <li><a class="dropdown-item" href="{{ url_for('requests.request_list') }}">My requests</a></li>
-        {% if session.get('iam_roles') and ('REVIEWER' in session.get('iam_roles') or 'APPLICATION_ADMIN' in session.get('iam_roles') or 'MASTER_ADMIN' in session.get('iam_roles')) %}<li><a class="dropdown-item" href="{{ url_for('requests.approval_queue') }}">Approval queue</a></li>{% endif %}
-        {% if session.get('is_admin') %}<li><a class="dropdown-item" href="{{ url_for('admin.publication_queue') }}">Publication queue</a></li>{% endif %}
-        {% if 'MASTER_ADMIN' in session.get('iam_roles', []) %}<li><a class="dropdown-item" href="{{ url_for('admin.governance_center') }}">Governance & recovery</a></li>{% endif %}
-        {% if 'MASTER_ADMIN' in session.get('iam_roles', []) %}<li><a class="dropdown-item" href="{{ url_for('admin.session_security') }}">Session security</a></li>{% endif %}
-        {% if 'MASTER_ADMIN' in session.get('iam_roles', []) %}<li><hr class="dropdown-divider"></li><li><a class="dropdown-item" href="{{ url_for('master_admin.administrators') }}">Master administrators</a></li><li><a class="dropdown-item" href="{{ url_for('master_admin.roles') }}">Roles and permissions</a></li><li><a class="dropdown-item" href="{{ url_for('master_admin.settings') }}">Global settings</a></li><li><a class="dropdown-item" href="{{ url_for('master_admin.audit') }}">Master audit center</a></li>{% endif %}
-        <li><a class="dropdown-item" href="{{ url_for('logout') }}">Sign out</a></li>
+        <li><h6 class="dropdown-header">{{ session.get('iam_user') }}</h6></li><li><span class="dropdown-item-text small text-secondary">{{ session.get('iam_roles', [])|join(', ') }}</span></li><li><hr class="dropdown-divider"></li><li><a class="dropdown-item" href="{{ url_for('logout') }}">Sign out</a></li>
       </ul>
     </div>
     {% endif %}
   </div>
+  {% if session.get('iam_user') %}<nav class="office-nav" aria-label="Primary navigation"><div class="container-fluid px-4 px-lg-5 office-nav-inner"><div class="nav-group"><span class="nav-group-label">Workspace</span><a class="office-link" href="{{ url_for('dashboard') }}"><span class="nav-symbol">⌂</span>Overview</a><a class="office-link" href="{{ url_for('requests.request_list') }}"><span class="nav-symbol">▤</span>My requests</a></div><div class="nav-group"><span class="nav-group-label">Operations</span>{% if session.get('iam_roles') and ('REVIEWER' in session.get('iam_roles') or 'APPLICATION_ADMIN' in session.get('iam_roles') or 'MASTER_ADMIN' in session.get('iam_roles')) %}<a class="office-link" href="{{ url_for('requests.approval_queue') }}"><span class="nav-symbol">✓</span>Approval queue</a>{% endif %}{% if session.get('is_admin') %}<a class="office-link" href="{{ url_for('admin.import_center') }}"><span class="nav-symbol">⇩</span>Imports</a><a class="office-link" href="{{ url_for('admin.publication_queue') }}"><span class="nav-symbol">↑</span>Publication</a>{% endif %}</div>{% if session.get('is_admin') %}<div class="nav-group"><span class="nav-group-label">Administration</span><a class="office-link" href="{{ url_for('admin.home') }}"><span class="nav-symbol">▦</span>Control center</a><a class="office-link" href="{{ url_for('admin.notification_center') }}"><span class="nav-symbol">●</span>Notifications{% if unread_notification_count %}<span class="nav-count">{{ unread_notification_count }}</span>{% endif %}</a><a class="office-link" href="{{ url_for('admin.delegation_center') }}"><span class="nav-symbol">↔</span>Delegations</a></div>{% endif %}{% if 'MASTER_ADMIN' in session.get('iam_roles', []) %}<div class="nav-group"><span class="nav-group-label">Governance</span><a class="office-link" href="{{ url_for('master_admin.administrators') }}"><span class="nav-symbol">♙</span>Security admins</a><a class="office-link" href="{{ url_for('master_admin.settings') }}"><span class="nav-symbol">⚙</span>Global settings</a><a class="office-link" href="{{ url_for('master_admin.audit') }}"><span class="nav-symbol">≡</span>Audit center</a></div>{% endif %}</div></nav>{% endif %}
 </header>
 <main>{% block content %}{% endblock %}</main>
 <footer class="text-center text-secondary small py-4">Kaiser Permanente · IAM Automation · Local session</footer>

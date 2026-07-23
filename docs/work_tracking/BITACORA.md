@@ -2,6 +2,14 @@
 
 ## 2026-07-23
 
+### UX/UI Office-Style Navigation
+
+- Reorganized the authenticated shell into a Kaiser-branded header and Office-style command bar.
+- Grouped navigation into Workspace, Operations, Administration and Governance areas based on role.
+- Added a dedicated notification button with unread badge and recent-event preview.
+- Kept the avatar focused on identity and sign-out while preserving backend route protection.
+- Added responsive horizontal navigation behavior for smaller screens.
+
 ### Application Admin Operations
 
 - Added a live unread notification counter to the authenticated avatar context.

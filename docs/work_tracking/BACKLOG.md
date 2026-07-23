@@ -18,6 +18,7 @@
 - [x] Add delegation queue reassignment without duplicating request IDs.
 - [x] Add manual reviewer assignment and SLA escalation.
 - [x] Add expired delegation administration.
+- [x] Rework authenticated navigation into Office-style command bar with notification preview.
 - [x] Add application session revocation and expiration rules.
 - [~] Complete request, approval and reviewer workflow; initial CRUD is implemented, delegation and SLA remain.
 - [x] Add queue reassignment and delegation integration to approval workflow.
