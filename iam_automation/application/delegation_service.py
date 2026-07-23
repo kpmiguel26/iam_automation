@@ -29,13 +29,27 @@ class DelegationService:
         self.database_path = database_path
 
     def list_active(self) -> list[Delegation]:
-        now = datetime.now(timezone.utc).isoformat()
+        self.expire_due()
         with orm_session(self.database_path) as session:
             rows = session.scalars(select(DelegationModel).where(DelegationModel.status == "ACTIVE").order_by(DelegationModel.expires_at_utc)).all()
             for row in rows:
                 if row.expires_at_utc <= now:
                     row.status = "EXPIRED"
             return [self._to_delegation(row) for row in rows if row.status == "ACTIVE"]
+
+    def list_all(self) -> list[Delegation]:
+        self.expire_due()
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(select(DelegationModel).order_by(DelegationModel.expires_at_utc.desc())).all()
+            return [self._to_delegation(row) for row in rows]
+
+    def expire_due(self) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(select(DelegationModel).where(DelegationModel.status == "ACTIVE", DelegationModel.expires_at_utc <= now)).all()
+            for row in rows:
+                row.status = "EXPIRED"
+            return len(rows)
 
     def create(self, principal: str, delegate: str, scope: str, starts_at_utc: str, expires_at_utc: str, reason: str, created_by: str) -> Delegation:
         scope = scope.strip().upper()

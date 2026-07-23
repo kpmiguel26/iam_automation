@@ -8,11 +8,13 @@ from flask import Blueprint, redirect, render_template, request, session, url_fo
 
 from ...application.delegation_service import DelegationService
 from ...application.audit_service import record_audit
+from ...application.import_service import ImportService
 from ...application.notification_service import NotificationService
 from ...application.publication_service import PublicationService
 from ...application.request_service import RequestService
 from ...application.governance_service import GovernanceService
 from ...application.session_service import SessionService
+from ...application.user_service import UserService
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
 from ...identity_discovery import list_pending_discoveries
 
@@ -25,6 +27,8 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     publication = PublicationService(database_path)
     governance = GovernanceService(local_runtime_path=local_runtime_path or database_path, published_runtime_path=published_runtime_path or database_path, audit_path=audit_path or database_path.parent / "audit")
     sessions = SessionService(database_path)
+    imports = ImportService(database_path)
+    users = UserService(database_path)
 
     def admin_required(view: Callable):
         @wraps(view)
@@ -54,12 +58,19 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     @blueprint.get("/notifications")
     @admin_required
     def notification_center():
+        notifications.expire(str(session["iam_user"]))
         return render_template("admin/notifications.html", notifications=notifications.list_for_user(str(session["iam_user"])))
 
     @blueprint.post("/notifications/<notification_id>/read")
     @admin_required
     def mark_notification_read(notification_id: str):
         notifications.mark_read(str(session["iam_user"]), notification_id)
+        return redirect(url_for("admin.notification_center"))
+
+    @blueprint.post("/notifications/<notification_id>/resolve")
+    @admin_required
+    def resolve_notification(notification_id: str):
+        notifications.resolve(str(session["iam_user"]), notification_id)
         return redirect(url_for("admin.notification_center"))
 
     @blueprint.route("/delegations", methods=["GET", "POST"])
@@ -77,7 +88,13 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                 return redirect(url_for("admin.delegation_center"))
             except ValueError as exc:
                 error = str(exc)
-        return render_template("admin/delegations.html", delegations=delegations.list_active(), scopes=sorted(DelegationService.ALLOWED_SCOPES), error=error)
+        return render_template("admin/delegations.html", delegations=delegations.list_all(), scopes=sorted(DelegationService.ALLOWED_SCOPES), error=error)
+
+    @blueprint.post("/delegations/expire")
+    @admin_required
+    def expire_delegations():
+        expired = delegations.expire_due()
+        return render_template("admin/delegations.html", delegations=delegations.list_all(), scopes=sorted(DelegationService.ALLOWED_SCOPES), error=None, message=f"Expired delegations processed: {expired}.")
 
     @blueprint.post("/delegations/<delegation_id>/revoke")
     @admin_required
@@ -85,6 +102,32 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         delegations.revoke(delegation_id)
         record_audit(audit_path, str(session["iam_user"]), "DELEGATION_REVOKED", "delegation", delegation_id)
         return redirect(url_for("admin.delegation_center"))
+
+    @blueprint.route("/imports", methods=["GET", "POST"])
+    @admin_required
+    def import_center():
+        error = None
+        message = None
+        if request.method == "POST":
+            upload = request.files.get("file")
+            if not upload or not upload.filename:
+                error = "Select a CSV or XLSX file."
+            else:
+                try:
+                    batch = imports.import_bytes(upload.filename, upload.read(), str(session["iam_user"]))
+                    message = f"Import {batch.batch_id[:8]} processed: {batch.valid_rows} valid, {batch.quarantine_rows} quarantined."
+                except (ValueError, RuntimeError) as exc:
+                    error = str(exc)
+        return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), message=message, error=error)
+
+    @blueprint.post("/imports/quarantine/<quarantine_id>/resolve")
+    @admin_required
+    def resolve_quarantine(quarantine_id: str):
+        try:
+            imports.resolve_quarantine(quarantine_id, str(session["iam_user"]))
+        except ValueError as exc:
+            return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), message=None, error=str(exc)), 400
+        return redirect(url_for("admin.import_center"))
 
     @blueprint.get("/publication")
     @admin_required

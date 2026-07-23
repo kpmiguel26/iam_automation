@@ -27,6 +27,7 @@ class NotificationService:
         self.database_path = database_path
 
     def unread_count(self, username: str) -> int:
+        self.expire(username)
         with orm_session(self.database_path) as session:
             return int(session.scalar(select(func.count(NotificationModel.notification_id)).where(
                 NotificationModel.recipient_username == username,
@@ -34,13 +35,14 @@ class NotificationService:
             )) or 0)
 
     def list_for_user(self, username: str, *, unread_only: bool = False) -> list[Notification]:
+        self.expire(username)
         statement = select(NotificationModel).where(NotificationModel.recipient_username == username).order_by(NotificationModel.created_at_utc.desc())
         if unread_only:
             statement = statement.where(NotificationModel.status == "UNREAD")
         with orm_session(self.database_path) as session:
             return [self._to_notification(row) for row in session.scalars(statement).all()]
 
-    def create(self, recipient_username: str, notification_type: str, title: str, message: str, *, severity: str = "INFO", target_route: str = "") -> str:
+    def create(self, recipient_username: str, notification_type: str, title: str, message: str, *, severity: str = "INFO", target_route: str = "", entity_type: str = "", entity_id: str = "", expires_at_utc: str | None = None) -> str:
         notification_id = str(uuid.uuid4())
         with orm_session(self.database_path) as session:
             session.add(NotificationModel(
@@ -50,9 +52,12 @@ class NotificationService:
                 severity=severity,
                 title=title,
                 message=message,
+                entity_type=entity_type,
+                entity_id=entity_id,
                 target_route=target_route,
                 status="UNREAD",
                 created_at_utc=datetime.now(timezone.utc).isoformat(),
+                expires_at_utc=expires_at_utc,
             ))
         return notification_id
 
@@ -65,6 +70,24 @@ class NotificationService:
             if row:
                 row.status = "READ"
                 row.read_at_utc = datetime.now(timezone.utc).isoformat()
+
+    def resolve(self, username: str, notification_id: str) -> None:
+        with orm_session(self.database_path) as session:
+            row = session.scalar(select(NotificationModel).where(NotificationModel.notification_id == notification_id, NotificationModel.recipient_username == username))
+            if row:
+                row.status = "RESOLVED"
+                row.read_at_utc = row.read_at_utc or datetime.now(timezone.utc).isoformat()
+
+    def expire(self, username: str | None = None) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with orm_session(self.database_path) as session:
+            statement = select(NotificationModel).where(NotificationModel.status.in_(("UNREAD", "READ")), NotificationModel.expires_at_utc.is_not(None), NotificationModel.expires_at_utc <= now)
+            if username:
+                statement = statement.where(NotificationModel.recipient_username == username)
+            rows = session.scalars(statement).all()
+            for row in rows:
+                row.status = "EXPIRED"
+            return len(rows)
 
     @staticmethod
     def _to_notification(row: NotificationModel) -> Notification:

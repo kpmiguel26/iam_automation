@@ -108,6 +108,30 @@ def initialize_runtime_database(path: Path) -> Path:
                 expires_at_utc TEXT,
                 status TEXT NOT NULL DEFAULT 'UNREAD'
             );
+            CREATE TABLE IF NOT EXISTS import_batches (
+                batch_id TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'COMPLETED_WITH_WARNINGS',
+                total_rows INTEGER NOT NULL DEFAULT 0,
+                valid_rows INTEGER NOT NULL DEFAULT 0,
+                quarantine_rows INTEGER NOT NULL DEFAULT 0,
+                created_by TEXT NOT NULL,
+                created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                completed_at_utc TEXT,
+                error_message TEXT
+            );
+            CREATE TABLE IF NOT EXISTS quarantine_records (
+                quarantine_id TEXT PRIMARY KEY,
+                batch_id TEXT NOT NULL,
+                row_number INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'OPEN',
+                created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                resolved_by TEXT,
+                resolved_at_utc TEXT
+            );
             CREATE TABLE IF NOT EXISTS session_revocations (
                 revocation_id TEXT PRIMARY KEY,
                 username TEXT NOT NULL,
@@ -144,6 +168,10 @@ def initialize_runtime_database(path: Path) -> Path:
                 ('ADMINISTRATOR', 'Compatibility alias for APPLICATION_ADMIN', 1);
             """
         )
+        notification_columns = {row[1] for row in connection.execute("PRAGMA table_info(notifications)")}
+        for column, definition in (("entity_type", "TEXT NOT NULL DEFAULT ''"), ("entity_id", "TEXT NOT NULL DEFAULT ''"), ("expires_at_utc", "TEXT")):
+            if column not in notification_columns:
+                connection.execute(f"ALTER TABLE notifications ADD COLUMN {column} {definition}")
         connection.commit()
     finally:
         connection.close()

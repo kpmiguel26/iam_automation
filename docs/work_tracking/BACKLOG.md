@@ -13,8 +13,11 @@
 - [x] Add `MASTER_ADMIN`-only governance, recovery and publication routes.
 - [x] Add immutable audit events for users, identities, delegations, requests, publication and restore changes.
 - [x] Add Master audit JSON export and append-only archive operation.
-- [ ] Add notification unread counter to the avatar and notification resolution routes.
-- [ ] Add delegation queue reassignment without duplicating request IDs.
+- [x] Add notification unread counter to the avatar and notification resolution routes.
+- [x] Add notification read, resolved and expired states.
+- [x] Add delegation queue reassignment without duplicating request IDs.
+- [x] Add manual reviewer assignment and SLA escalation.
+- [x] Add expired delegation administration.
 - [x] Add application session revocation and expiration rules.
 - [~] Complete request, approval and reviewer workflow; initial CRUD is implemented, delegation and SLA remain.
 - [x] Add queue reassignment and delegation integration to approval workflow.
@@ -23,9 +26,10 @@
 
 ## Data Operations
 
-- [ ] Define Excel ingestion contracts and source validation.
+- [x] Define initial CSV/XLSX ingestion contract and source validation.
 - [ ] Define Fieldglass ingestion adapter and mapping rules.
-- [ ] Implement preview, validation and quarantine.
+- [x] Implement initial validation and quarantine workflow.
+- [x] Add quarantine resolution and import batch history.
 - [ ] Implement generated templates and target exports.
 - [ ] Add single-writer coordination around approved changes.
 

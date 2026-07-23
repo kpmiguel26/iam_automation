@@ -7,6 +7,7 @@ from flask import Blueprint, render_template, request, session
 
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.audit_service import record_audit
+from ...application.user_service import UserService
 from ...identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, normalize_role
 
 
@@ -17,6 +18,7 @@ def _current_user() -> CurrentUser:
 def create_request_blueprint(database_path: Path, *, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("requests", __name__)
     service = RequestService(database_path)
+    users = UserService(database_path)
 
     def authenticated(view):
         @wraps(view)
@@ -34,6 +36,19 @@ def create_request_blueprint(database_path: Path, *, audit_path: Path | None = N
                 return "Reviewer role required.", 403
             return view(*args, **kwargs)
         return wrapped
+
+    def admin_required(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
+            if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
+                return "Application Admin role required.", 403
+            return view(*args, **kwargs)
+        return wrapped
+
+    def reviewer_accounts():
+        allowed = {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}
+        return [user for user in users.list_users() if user.active and allowed & set(user.roles)]
 
     @blueprint.get("/requests")
     @authenticated
@@ -59,7 +74,18 @@ def create_request_blueprint(database_path: Path, *, audit_path: Path | None = N
     @reviewer_required
     def approval_queue():
         service.escalate_overdue((str(session["iam_user"]),))
-        return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), message=None, error=None)
+        return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), reviewers=reviewer_accounts(), message=None, error=None)
+
+    @blueprint.post("/admin/approvals/<request_id>/assign")
+    @authenticated
+    @admin_required
+    def assign_request(request_id: str):
+        try:
+            item = service.assign(request_id, request.form.get("reviewer", ""), str(session["iam_user"]), request.form.get("reason", ""))
+            record_audit(audit_path, str(session["iam_user"]), "REQUEST_ASSIGNED", "change_request", request_id, new_values={"reviewer": item.assigned_to})
+            return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), reviewers=reviewer_accounts(), message="Reviewer assigned.", error=None)
+        except (ValueError, PermissionError) as exc:
+            return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), reviewers=reviewer_accounts(), message=None, error=str(exc)), 400
 
     @blueprint.post("/admin/approvals/<request_id>/decision")
     @authenticated
@@ -68,8 +94,8 @@ def create_request_blueprint(database_path: Path, *, audit_path: Path | None = N
         try:
             service.decide(request_id, _current_user(), request.form.get("decision", ""), request.form.get("note", ""))
             record_audit(audit_path, str(session["iam_user"]), "REQUEST_DECIDED", "change_request", request_id, new_values={"decision": request.form.get("decision", "")})
-            return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), message="Request decision recorded.", error=None)
+            return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), reviewers=reviewer_accounts(), message="Request decision recorded.", error=None)
         except (ValueError, PermissionError) as exc:
-            return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), message=None, error=str(exc)), 400
+            return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), reviewers=reviewer_accounts(), message=None, error=str(exc)), 400
 
     return blueprint

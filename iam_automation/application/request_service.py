@@ -9,7 +9,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from ..identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, normalize_role
-from ..infrastructure.sqlite.orm import ApprovalAssignmentModel, ChangeRequestModel, NotificationModel, orm_session
+from ..infrastructure.sqlite.orm import ApprovalAssignmentModel, ChangeRequestModel, NotificationModel, SystemProfileModel, orm_session
 from .publication_service import PublicationService
 
 
@@ -65,7 +65,7 @@ class RequestService:
         if not reason.strip():
             raise ValueError("A business reason is required.")
         now = datetime.now(timezone.utc).isoformat()
-        due = (datetime.fromisoformat(now) + timedelta(hours=SLA_HOURS[operation_type])).isoformat()
+        due = (datetime.fromisoformat(now) + timedelta(hours=self._sla_hours().get(operation_type, 24))).isoformat()
         item = RequestItem(str(uuid.uuid4()), now, user.username, user.computer, operation_type, entity_type, entity_id.strip(), payload, reason.strip(), "PENDING", None, None, None, due, "ON_TRACK")
         with orm_session(self.database_path) as session:
             session.add(ChangeRequestModel(request_id=item.request_id, created_at_utc=now, created_by=item.created_by, computer_name=item.computer_name, application_version="local", operation_type=item.operation_type, entity_type=item.entity_type, entity_id=item.entity_id, expected_record_version=0, payload_json=json.dumps(item.payload, sort_keys=True), reason=item.reason, status=item.status, updated_at_utc=now))
@@ -127,7 +127,7 @@ class RequestService:
         with orm_session(self.database_path) as session:
             rows = session.scalars(select(ChangeRequestModel).where(ChangeRequestModel.status.in_(("PENDING", "UNDER_REVIEW")))).all()
             for row in rows:
-                due = datetime.fromisoformat(row.created_at_utc) + timedelta(hours=SLA_HOURS.get(row.operation_type, 24))
+                due = datetime.fromisoformat(row.created_at_utc) + timedelta(hours=self._sla_hours().get(row.operation_type, 24))
                 if due < now:
                     for recipient in recipients:
                         session.add(NotificationModel(notification_id=str(uuid.uuid4()), recipient_username=recipient, notification_type="SLA_BREACH", severity="CRITICAL", title="Approval SLA breached", message=f"Request {row.request_id[:8]} is overdue for review.", target_route="/admin/approvals", status="UNREAD", created_at_utc=now.isoformat()))
@@ -143,8 +143,18 @@ class RequestService:
             raise ValueError("Request was not found.")
         return row
 
-    @staticmethod
-    def _to_item(row: ChangeRequestModel) -> RequestItem:
-        due = datetime.fromisoformat(row.created_at_utc) + timedelta(hours=SLA_HOURS.get(row.operation_type, 24))
+    def _sla_hours(self) -> dict[str, int]:
+        with orm_session(self.database_path) as session:
+            profile = session.get(SystemProfileModel, "global_settings")
+            if not profile:
+                return SLA_HOURS
+            try:
+                configured = json.loads(profile.profile_json).get("approval_sla_hours", {})
+                return {**SLA_HOURS, **{key: max(1, int(value)) for key, value in configured.items()}}
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return SLA_HOURS
+
+    def _to_item(self, row: ChangeRequestModel) -> RequestItem:
+        due = datetime.fromisoformat(row.created_at_utc) + timedelta(hours=self._sla_hours().get(row.operation_type, 24))
         sla_status = "OVERDUE" if due < datetime.now(timezone.utc) and row.status in {"PENDING", "UNDER_REVIEW"} else "ON_TRACK"
         return RequestItem(row.request_id, row.created_at_utc, row.created_by, row.computer_name, row.operation_type, row.entity_type, row.entity_id, json.loads(row.payload_json), row.reason, row.status, row.assigned_to, row.reviewed_by, row.review_note, due.isoformat(), sla_status)

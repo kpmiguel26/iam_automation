@@ -30,12 +30,12 @@ Build the first maintainable local web application increment with:
 | D08 | Application user CRUD and last-admin protection | Completed | `UserService`, `/admin/users`, service tests |
 | D09 | Admin control center shell | Completed | `/admin`, `admin_routes.py`, role-aware avatar |
 | D09.1 | Windows identity CRUD | Completed | `/admin/windows-identities`, `IdentityService` |
-| D10 | Notifications and delegation workflows | In progress | Services, reassignment and SLA escalation exist; audit remains |
+| D10 | Notifications and delegation workflows | Completed | Real avatar counter, read/resolve/expire states, manual reviewer assignment, SLA escalation and delegation expiry |
 | D10.1 | Master session revocation | Completed | `SessionService`, `/admin/security/sessions` |
 | D11 | Audit-integrated administrative operations | Completed | Master audit center, JSON export/archive and CRUD/request/delegation audit events |
 | D12 | Approval queue and request lifecycle | Completed | `RequestService`, `/requests`, `/admin/approvals`, delegation reassignment and SLA escalation |
 | D12.1 | Approved request publication queue | In progress | `PublicationService`, `/admin/publication`; controlled writer publication remains |
-| D13 | Import, validation, quarantine and templates | Pending | Fieldglass/Excel ingestion and mappings |
+| D13 | Import, validation, quarantine and templates | In progress | CSV/XLSX staging and quarantine are available; Fieldglass mappings and downstream writes remain |
 | D14 | Explicit publication, backup and restore | In progress | Master Admin governance flow, checksum, backup and restore exist; writer integration remains |
 | D15 | User acceptance, Windows validation and handoff | Pending | Cross-platform test evidence and sign-off |
 
@@ -61,12 +61,15 @@ Build the first maintainable local web application increment with:
 - Add in-app notifications and unread counters.
 - Add immutable audit events and administrative session revocation.
 - Add audit export and archive without editing original JSONL events.
+- Add manual reviewer assignment and automatic SLA escalation.
+- Keep expired delegations visible for administrative follow-up.
 
 ### Phase 4: Data operations
 
 - Add Excel and Fieldglass ingestion.
 - Validate templates and mappings before import.
 - Route invalid records to quarantine.
+- Add quarantine resolution and ingestion batch history.
 - Generate target exports for Fieldglass and NICE IEX.
 
 ### Phase 5: Publication and validation

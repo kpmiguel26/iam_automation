@@ -2,6 +2,15 @@
 
 ## 2026-07-23
 
+### Application Admin Operations
+
+- Added a live unread notification counter to the authenticated avatar context.
+- Added notification `READ`, `RESOLVED` and `EXPIRED` lifecycle operations.
+- Added explicit expiration processing for delegations while retaining expired records for audit and follow-up.
+- Added manual reviewer assignment from the approval queue with assignment reason and audit event.
+- Connected request SLA calculation and escalation to Master Admin global SLA settings.
+- Added CSV/XLSX staging with required `employee_id` validation, import batch history and quarantine resolution.
+
 ### Master Admin Control Center
 
 - Added `MASTER_ADMIN`-only routes for administrator CRUD, global SLA/security settings and break-glass operations.

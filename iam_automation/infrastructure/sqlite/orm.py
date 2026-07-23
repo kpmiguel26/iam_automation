@@ -55,10 +55,13 @@ class NotificationModel(Base):
     severity: Mapped[str] = mapped_column(String, default="INFO")
     title: Mapped[str] = mapped_column(String)
     message: Mapped[str] = mapped_column(String)
+    entity_type: Mapped[str] = mapped_column(String, default="")
+    entity_id: Mapped[str] = mapped_column(String, default="")
     target_route: Mapped[str] = mapped_column(String, default="")
     status: Mapped[str] = mapped_column(String, default="UNREAD")
     created_at_utc: Mapped[str] = mapped_column(String, default="")
     read_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    expires_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class DelegationModel(Base):
@@ -129,6 +132,36 @@ class SessionRevocationModel(Base):
     revoked_by: Mapped[str] = mapped_column(String)
     revoked_at_utc: Mapped[str] = mapped_column(String)
     reason: Mapped[str] = mapped_column(Text)
+
+
+class ImportBatchModel(Base):
+    __tablename__ = "import_batches"
+
+    batch_id: Mapped[str] = mapped_column(String, primary_key=True)
+    filename: Mapped[str] = mapped_column(String)
+    source_type: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, default="COMPLETED_WITH_WARNINGS")
+    total_rows: Mapped[int] = mapped_column(Integer, default=0)
+    valid_rows: Mapped[int] = mapped_column(Integer, default=0)
+    quarantine_rows: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str] = mapped_column(String)
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    completed_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class QuarantineRecordModel(Base):
+    __tablename__ = "quarantine_records"
+
+    quarantine_id: Mapped[str] = mapped_column(String, primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String)
+    row_number: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(Text)
+    payload_json: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, default="OPEN")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    resolved_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolved_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class SystemProfileModel(Base):
