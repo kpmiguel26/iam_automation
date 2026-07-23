@@ -1,5 +1,13 @@
 # Working Decisions
 
+## DEC-2026-07-23-07: Master Admin Boundary
+
+`MASTER_ADMIN` is the only role allowed to manage administrator accounts, global SLA/security settings, break-glass actions, audit export and audit archive. The last active Master Admin cannot be deactivated or demoted. Authorization is enforced in Flask routes and services; menu visibility is only a usability aid.
+
+## DEC-2026-07-23-08: Append-Only Audit Evidence
+
+Administrative events are appended to daily JSONL files. Export creates a JSON snapshot, while archive copies source files without editing or deleting original events. The local web application operates on runtime SQLite and does not write directly to the published Access database.
+
 ## DEC-2026-07-23-01: ORM Boundary
 
 Runtime SQLite business data is accessed through SQLAlchemy ORM models and repositories. The existing schema bootstrap remains a migration-compatible infrastructure boundary and is not used by web controllers for business operations.

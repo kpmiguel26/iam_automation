@@ -6,6 +6,7 @@ from pathlib import Path
 from flask import Blueprint, render_template, request, session
 
 from ...application.request_service import OPERATION_OPTIONS, RequestService
+from ...application.audit_service import record_audit
 from ...identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, normalize_role
 
 
@@ -13,7 +14,7 @@ def _current_user() -> CurrentUser:
     return CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
 
 
-def create_request_blueprint(database_path: Path) -> Blueprint:
+def create_request_blueprint(database_path: Path, *, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("requests", __name__)
     service = RequestService(database_path)
 
@@ -47,6 +48,7 @@ def create_request_blueprint(database_path: Path) -> Blueprint:
             try:
                 payload = {key: value.strip() for key, value in {"first_name": request.form.get("first_name", ""), "last_name": request.form.get("last_name", ""), "job_title": request.form.get("job_title", ""), "lob": request.form.get("lob", "")}.items() if value.strip()}
                 service.create(_current_user(), request.form.get("operation_type", ""), request.form.get("entity_id", ""), payload, request.form.get("reason", ""))
+                record_audit(audit_path, str(session["iam_user"]), "REQUEST_CREATED", "change_request", request.form.get("entity_id", ""), new_values={"operation_type": request.form.get("operation_type", "")})
                 return render_template("requests/list.html", requests=service.list_requests(creator=str(session["iam_user"])), operation_options=OPERATION_OPTIONS, message="Request submitted for review.", error=None)
             except (ValueError, PermissionError) as exc:
                 error = str(exc)
@@ -65,6 +67,7 @@ def create_request_blueprint(database_path: Path) -> Blueprint:
     def decide_request(request_id: str):
         try:
             service.decide(request_id, _current_user(), request.form.get("decision", ""), request.form.get("note", ""))
+            record_audit(audit_path, str(session["iam_user"]), "REQUEST_DECIDED", "change_request", request_id, new_values={"decision": request.form.get("decision", "")})
             return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), message="Request decision recorded.", error=None)
         except (ValueError, PermissionError) as exc:
             return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), message=None, error=str(exc)), 400

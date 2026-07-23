@@ -7,6 +7,7 @@ from typing import Callable
 from flask import Blueprint, redirect, render_template, request, session, url_for
 
 from ...application.delegation_service import DelegationService
+from ...application.audit_service import record_audit
 from ...application.notification_service import NotificationService
 from ...application.publication_service import PublicationService
 from ...application.request_service import RequestService
@@ -72,6 +73,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                 if delegation.scope in {"APPROVALS", "FULL_OPERATIONS"}:
                     requests.reassign_for_delegation(principal, delegation.delegate_username, principal, f"Delegation {delegation.delegation_id[:8]} activated")
                 notifications.create(delegation.delegate_username, "DELEGATION_CREATED", "Delegation assigned", f"You have temporary {delegation.scope} access from {delegation.principal_username}.", severity="WARNING", target_route="/admin/delegations")
+                record_audit(audit_path, principal, "DELEGATION_CREATED", "delegation", delegation.delegation_id, new_values={"delegate": delegation.delegate_username, "scope": delegation.scope})
                 return redirect(url_for("admin.delegation_center"))
             except ValueError as exc:
                 error = str(exc)
@@ -81,6 +83,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     @admin_required
     def revoke_delegation(delegation_id: str):
         delegations.revoke(delegation_id)
+        record_audit(audit_path, str(session["iam_user"]), "DELEGATION_REVOKED", "delegation", delegation_id)
         return redirect(url_for("admin.delegation_center"))
 
     @blueprint.get("/publication")

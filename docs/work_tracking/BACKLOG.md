@@ -6,9 +6,13 @@
 - [x] Replace free-text role entry with controlled human-readable selectors.
 - [x] Define synchronized identity discovery JSON and pending notification.
 
-- [ ] Complete `/admin` navigation and role-filtered avatar menu.
+- [x] Complete `/admin` navigation and role-filtered avatar menu.
+- [x] Add Master Admin CRUD, global settings and mandatory-reason break-glass flow.
+- [x] Add Master-only global roles and permissions matrix.
+- [x] Protect the last active MASTER_ADMIN in backend role/deactivation changes.
 - [x] Add `MASTER_ADMIN`-only governance, recovery and publication routes.
-- [~] Add immutable audit events for user, role, delegation, publication and restore changes; publication/restore are covered first.
+- [x] Add immutable audit events for users, identities, delegations, requests, publication and restore changes.
+- [x] Add Master audit JSON export and append-only archive operation.
 - [ ] Add notification unread counter to the avatar and notification resolution routes.
 - [ ] Add delegation queue reassignment without duplicating request IDs.
 - [x] Add application session revocation and expiration rules.

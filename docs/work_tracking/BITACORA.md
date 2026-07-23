@@ -2,6 +2,15 @@
 
 ## 2026-07-23
 
+### Master Admin Control Center
+
+- Added `MASTER_ADMIN`-only routes for administrator CRUD, global SLA/security settings and break-glass operations.
+- Added a Master-only global roles and permissions matrix for the authorization policy.
+- Added backend protection so the last active `MASTER_ADMIN` cannot be deactivated or lose the role.
+- Added Master audit center with JSON export and append-only archive copies.
+- Added audit events for application users, Windows identities, delegations and requests.
+- Kept runtime SQLite as the working database; Access publication remains an explicit controlled operation.
+
 ### Administrative CRUD UI Refinement
 
 - Reworked Application Users and Windows Identities views with responsive Bootstrap layouts.

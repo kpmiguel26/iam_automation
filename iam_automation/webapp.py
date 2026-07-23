@@ -17,6 +17,7 @@ from .identity import CurrentUser, validate_app_user_from_sqlite
 from .identity_discovery import discovery_path
 from .application.session_service import SessionService
 from .interfaces.web.admin_routes import create_admin_blueprint
+from .interfaces.web.master_routes import create_master_blueprint
 from .interfaces.web.user_routes import create_identity_blueprint, create_user_blueprint
 from .interfaces.web.request_routes import create_request_blueprint
 from .startup import PreflightResult
@@ -70,9 +71,10 @@ def create_app(
     runtime_path = preflight_result.settings.local_runtime_db_path if preflight_result.settings else None
     if runtime_path:
         app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), local_runtime_path=preflight_result.settings.local_runtime_db_path, published_runtime_path=preflight_result.settings.published_runtime_db_path, audit_path=preflight_result.settings.audit_folder_path))
-        app.register_blueprint(create_user_blueprint(runtime_path))
-        app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path)))
-        app.register_blueprint(create_request_blueprint(runtime_path))
+        app.register_blueprint(create_master_blueprint(runtime_path, preflight_result.settings.audit_folder_path))
+        app.register_blueprint(create_user_blueprint(runtime_path, audit_path=preflight_result.settings.audit_folder_path))
+        app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), audit_path=preflight_result.settings.audit_folder_path))
+        app.register_blueprint(create_request_blueprint(runtime_path, audit_path=preflight_result.settings.audit_folder_path))
 
     @app.before_request
     def enforce_session_revocation():

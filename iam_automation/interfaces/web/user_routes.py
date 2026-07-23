@@ -7,13 +7,14 @@ from typing import Callable
 from flask import Blueprint, render_template, request, session
 
 from ...application.user_service import UserService
+from ...application.audit_service import record_audit
 from ...application.identity_service import IdentityService
 from ...application.role_catalog import ROLE_OPTIONS
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
 from ...identity_discovery import get_pending_discovery, list_pending_discoveries, mark_discovery
 
 
-def create_user_blueprint(database_path: Path) -> Blueprint:
+def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("user_admin", __name__, url_prefix="/admin/users")
     service = UserService(database_path)
 
@@ -42,6 +43,7 @@ def create_user_blueprint(database_path: Path) -> Blueprint:
             if ROLE_MASTER_ADMIN in {normalize_role(role) for role in roles} and ROLE_MASTER_ADMIN not in {normalize_role(role) for role in session.get("iam_roles", ())}:
                 return render(error="Only MASTER_ADMIN can assign MASTER_ADMIN."), 403
             service.create_user(request.form.get("username", ""), request.form.get("display_name", ""), request.form.get("password", ""), roles)
+            record_audit(audit_path, str(session["iam_user"]), "APPLICATION_USER_CREATED", "app_user", request.form.get("username", ""), new_values={"roles": roles})
             return render(message="Application user created.")
         except ValueError as exc:
             return render(error=str(exc)), 400
@@ -54,6 +56,7 @@ def create_user_blueprint(database_path: Path) -> Blueprint:
             if ROLE_MASTER_ADMIN in {normalize_role(role) for role in roles} and ROLE_MASTER_ADMIN not in {normalize_role(role) for role in session.get("iam_roles", ())}:
                 return render(error="Only MASTER_ADMIN can assign MASTER_ADMIN."), 403
             service.update_user(username, display_name=request.form.get("display_name", ""), password=request.form.get("password", ""), roles=roles, active=request.form.get("active") == "1")
+            record_audit(audit_path, str(session["iam_user"]), "APPLICATION_USER_UPDATED", "app_user", username, new_values={"roles": roles, "active": request.form.get("active") == "1"})
             return render(message=f"Application user updated: {username}")
         except ValueError as exc:
             return render(error=str(exc)), 400
@@ -61,7 +64,7 @@ def create_user_blueprint(database_path: Path) -> Blueprint:
     return blueprint
 
 
-def create_identity_blueprint(database_path: Path, *, discovery_file: Path | None = None) -> Blueprint:
+def create_identity_blueprint(database_path: Path, *, discovery_file: Path | None = None, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("identity_admin", __name__, url_prefix="/admin/windows-identities")
     service = IdentityService(database_path)
 
@@ -91,6 +94,7 @@ def create_identity_blueprint(database_path: Path, *, discovery_file: Path | Non
             roles = request.form.getlist("roles") or request.form.get("roles", "").split(",")
             can_assign_master = ROLE_MASTER_ADMIN in {normalize_role(str(role)) for role in session.get("iam_roles", ())}
             service.save_identity(request.form.get("username", ""), request.form.get("display_name", ""), roles, request.form.get("active", "1") == "1", can_assign_master=can_assign_master)
+            record_audit(audit_path, str(session["iam_user"]), "WINDOWS_IDENTITY_SAVED", "windows_identity", request.form.get("username", ""), new_values={"roles": roles})
             return render(message="Windows identity saved.")
         except (ValueError, PermissionError) as exc:
             return render(error=str(exc)), 400
@@ -106,6 +110,7 @@ def create_identity_blueprint(database_path: Path, *, discovery_file: Path | Non
         can_assign_master = ROLE_MASTER_ADMIN in {normalize_role(str(role)) for role in session.get("iam_roles", ())}
         try:
             service.save_identity(discovery.username, discovery.username, [discovery.suggested_role], True, can_assign_master=can_assign_master)
+            record_audit(audit_path, str(session["iam_user"]), "WINDOWS_IDENTITY_APPROVED", "windows_identity", discovery.username, new_values={"role": discovery.suggested_role})
             mark_discovery(discovery_file, discovery.discovery_id, "APPROVED", str(session["iam_user"]))
             return render(message=f"Windows identity approved: {discovery.username}")
         except (ValueError, PermissionError) as exc:

@@ -131,6 +131,14 @@ class SessionRevocationModel(Base):
     reason: Mapped[str] = mapped_column(Text)
 
 
+class SystemProfileModel(Base):
+    __tablename__ = "system_profiles"
+
+    profile_name: Mapped[str] = mapped_column(String, primary_key=True)
+    profile_json: Mapped[str] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 def create_engine_for_sqlite(database_path: Path):
     database_path = database_path.expanduser().resolve()
     return create_engine(

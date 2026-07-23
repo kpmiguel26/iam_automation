@@ -44,8 +44,13 @@ class UserService:
         password_hash = generate_password_hash(password) if password.strip() else None
         normalized_roles = self._roles(roles)
         current = self.repository.get_user(username)
-        if current and current.active and not active and self._is_last_active_admin(current.roles):
-            raise ValueError("The last active administrator cannot be deactivated.")
+        if current and current.active and not active:
+            if self._is_last_active_role(current.roles, ROLE_MASTER_ADMIN):
+                raise ValueError("The last active administrator (MASTER_ADMIN) cannot be deactivated.")
+            if self._is_last_active_admin(current.roles):
+                raise ValueError("The last active administrator cannot be deactivated.")
+        if current and self._is_last_active_role(current.roles, ROLE_MASTER_ADMIN) and ROLE_MASTER_ADMIN not in normalized_roles:
+            raise ValueError("The last active administrator (MASTER_ADMIN) must retain MASTER_ADMIN access.")
         if current and self._is_last_active_admin(current.roles) and not (set(normalized_roles) & ADMINISTRATIVE_ROLES):
             raise ValueError("The last active administrator must retain an administrative role.")
         self.repository.update_user(
@@ -74,3 +79,8 @@ class UserService:
         if not set(current_roles) & ADMINISTRATIVE_ROLES:
             return False
         return sum(1 for user in self.repository.list_users() if user.active and set(user.roles) & ADMINISTRATIVE_ROLES) == 1
+
+    def _is_last_active_role(self, current_roles: tuple[str, ...], role: str) -> bool:
+        if role not in set(current_roles):
+            return False
+        return sum(1 for user in self.repository.list_users() if user.active and role in set(user.roles)) == 1
