@@ -8,7 +8,9 @@ from flask import Blueprint, render_template, request, session
 
 from ...application.user_service import UserService
 from ...application.identity_service import IdentityService
+from ...application.role_catalog import ROLE_OPTIONS
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
+from ...identity_discovery import get_pending_discovery, list_pending_discoveries, mark_discovery
 
 
 def create_user_blueprint(database_path: Path) -> Blueprint:
@@ -24,7 +26,8 @@ def create_user_blueprint(database_path: Path) -> Blueprint:
         return wrapped
 
     def render(message: str | None = None, error: str | None = None):
-        return render_template("admin/users.html", users=service.list_users(), message=message, error=error)
+        roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
+        return render_template("admin/users.html", users=service.list_users(), message=message, error=error, role_options=ROLE_OPTIONS, can_assign_master=ROLE_MASTER_ADMIN in roles)
 
     @blueprint.get("")
     @administrator_required
@@ -35,7 +38,7 @@ def create_user_blueprint(database_path: Path) -> Blueprint:
     @administrator_required
     def create_user():
         try:
-            roles = request.form.get("roles", "").split(",")
+            roles = request.form.getlist("roles") or request.form.get("roles", "").split(",")
             if ROLE_MASTER_ADMIN in {normalize_role(role) for role in roles} and ROLE_MASTER_ADMIN not in {normalize_role(role) for role in session.get("iam_roles", ())}:
                 return render(error="Only MASTER_ADMIN can assign MASTER_ADMIN."), 403
             service.create_user(request.form.get("username", ""), request.form.get("display_name", ""), request.form.get("password", ""), roles)
@@ -47,7 +50,7 @@ def create_user_blueprint(database_path: Path) -> Blueprint:
     @administrator_required
     def update_user(username: str):
         try:
-            roles = request.form.get("roles", "").split(",")
+            roles = request.form.getlist("roles") or request.form.get("roles", "").split(",")
             if ROLE_MASTER_ADMIN in {normalize_role(role) for role in roles} and ROLE_MASTER_ADMIN not in {normalize_role(role) for role in session.get("iam_roles", ())}:
                 return render(error="Only MASTER_ADMIN can assign MASTER_ADMIN."), 403
             service.update_user(username, display_name=request.form.get("display_name", ""), password=request.form.get("password", ""), roles=roles, active=request.form.get("active") == "1")
@@ -58,7 +61,7 @@ def create_user_blueprint(database_path: Path) -> Blueprint:
     return blueprint
 
 
-def create_identity_blueprint(database_path: Path) -> Blueprint:
+def create_identity_blueprint(database_path: Path, *, discovery_file: Path | None = None) -> Blueprint:
     blueprint = Blueprint("identity_admin", __name__, url_prefix="/admin/windows-identities")
     service = IdentityService(database_path)
 
@@ -73,7 +76,8 @@ def create_identity_blueprint(database_path: Path) -> Blueprint:
 
     def render(message: str | None = None, error: str | None = None):
         roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
-        return render_template("admin/windows_identities.html", identities=service.list_identities(), message=message, error=error, can_assign_master=ROLE_MASTER_ADMIN in roles)
+        pending = list_pending_discoveries(discovery_file) if discovery_file and discovery_file.exists() else []
+        return render_template("admin/windows_identities.html", identities=service.list_identities(), pending_discoveries=pending, message=message, error=error, role_options=ROLE_OPTIONS, can_assign_master=ROLE_MASTER_ADMIN in roles)
 
     @blueprint.get("")
     @administrator_required
@@ -84,10 +88,26 @@ def create_identity_blueprint(database_path: Path) -> Blueprint:
     @administrator_required
     def save_identity():
         try:
-            roles = request.form.get("roles", "").split(",")
+            roles = request.form.getlist("roles") or request.form.get("roles", "").split(",")
             can_assign_master = ROLE_MASTER_ADMIN in {normalize_role(str(role)) for role in session.get("iam_roles", ())}
             service.save_identity(request.form.get("username", ""), request.form.get("display_name", ""), roles, request.form.get("active", "1") == "1", can_assign_master=can_assign_master)
             return render(message="Windows identity saved.")
+        except (ValueError, PermissionError) as exc:
+            return render(error=str(exc)), 400
+
+    @blueprint.post("/discoveries/<discovery_id>/approve")
+    @administrator_required
+    def approve_discovery(discovery_id: str):
+        if not discovery_file:
+            return render(error="Identity discovery storage is not configured."), 400
+        discovery = get_pending_discovery(discovery_file, discovery_id)
+        if discovery is None:
+            return render(error="Identity discovery was not found or was already processed."), 404
+        can_assign_master = ROLE_MASTER_ADMIN in {normalize_role(str(role)) for role in session.get("iam_roles", ())}
+        try:
+            service.save_identity(discovery.username, discovery.username, [discovery.suggested_role], True, can_assign_master=can_assign_master)
+            mark_discovery(discovery_file, discovery.discovery_id, "APPROVED", str(session["iam_user"]))
+            return render(message=f"Windows identity approved: {discovery.username}")
         except (ValueError, PermissionError) as exc:
             return render(error=str(exc)), 400
 

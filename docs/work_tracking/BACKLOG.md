@@ -3,6 +3,8 @@
 ## High Priority
 
 - [x] Complete the first Windows identity CRUD increment.
+- [x] Replace free-text role entry with controlled human-readable selectors.
+- [x] Define synchronized identity discovery JSON and pending notification.
 
 - [ ] Complete `/admin` navigation and role-filtered avatar menu.
 - [ ] Add `MASTER_ADMIN`-only routes for security, recovery and global settings.

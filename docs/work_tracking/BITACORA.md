@@ -10,6 +10,14 @@
 - Added mobile-friendly styling and clearer active/blocked status indicators.
 - Smoke-tested both administrative routes with an authenticated Application Admin session.
 
+### Role Catalog and Identity Discovery
+
+- Replaced free-text role entry with controlled multi-select options and human-readable labels.
+- Added `iam_identity_discovery.json` as a deduplicated pending-identity queue in the synchronized database snapshots folder.
+- Added Control Center notification when pending identity discoveries exist.
+- Added strict-mode behavior that records the identity and blocks access until admin approval.
+- Added an approval action that promotes a pending JSON discovery into the approved identity SQLite records.
+
 ### Windows Identity CRUD
 
 - Added ORM-backed Windows identity repository and application service.

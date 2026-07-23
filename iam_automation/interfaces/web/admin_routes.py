@@ -9,9 +9,10 @@ from flask import Blueprint, redirect, render_template, request, session, url_fo
 from ...application.delegation_service import DelegationService
 from ...application.notification_service import NotificationService
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
+from ...identity_discovery import list_pending_discoveries
 
 
-def create_admin_blueprint(database_path: Path) -> Blueprint:
+def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None = None) -> Blueprint:
     blueprint = Blueprint("admin", __name__, url_prefix="/admin")
     notifications = NotificationService(database_path)
     delegations = DelegationService(database_path)
@@ -29,7 +30,8 @@ def create_admin_blueprint(database_path: Path) -> Blueprint:
     @admin_required
     def home():
         username = str(session.get("iam_user", ""))
-        return render_template("admin/control_center.html", username=username, roles=tuple(session.get("iam_roles", ())), unread_count=notifications.unread_count(username), delegations=delegations.list_active(), message=None, error=None)
+        pending = list_pending_discoveries(discovery_file) if discovery_file and discovery_file.exists() else []
+        return render_template("admin/control_center.html", username=username, roles=tuple(session.get("iam_roles", ())), unread_count=notifications.unread_count(username), delegations=delegations.list_active(), pending_discoveries=pending, message=None, error=None)
 
     @blueprint.get("/notifications")
     @admin_required

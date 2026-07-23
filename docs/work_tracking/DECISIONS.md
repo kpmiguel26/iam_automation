@@ -19,3 +19,7 @@ The web application works against the validated local runtime SQLite copy. It do
 ## DEC-2026-07-23-05: Feature Branch Discipline
 
 The current feature is developed on `feature/admin-control-center`. Future work must use `feature/<name>`, `fix/<name>` or `chore/<name>` branches and must not be developed directly on `main`.
+
+## DEC-2026-07-23-06: Identity Discovery Queue
+
+An identity discovered on a workstation is not automatically a published approval in strict mode. The workstation writes a deduplicated request to `database/snapshots/iam_identity_discovery.json` with `PENDING` status. The admin reads the synchronized JSON on startup, reviews the identity and assigns human-readable roles through controlled selectors. Development mode may auto-approve for testing; strict mode blocks the identity until administrative approval.

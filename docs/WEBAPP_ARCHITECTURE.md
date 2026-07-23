@@ -44,6 +44,8 @@ iam_automation/
 - Flask controllers call application services and render Jinja templates; they do not contain SQL or HTML documents.
 - Bootstrap 5.3.3 is vendored under `static/vendor/bootstrap/` so the local app works without a CDN connection.
 - Brand-specific styling is limited to `static/css/app.css`.
+- Role forms use controlled multi-select values with human-readable labels; controllers never trust free-text role names from the browser.
+- Newly discovered workstation identities are written to `database/snapshots/iam_identity_discovery.json` as pending requests. Strict mode requires admin approval before `approved_users` is updated.
 
 ## First Web Module: User Administration
 
@@ -68,3 +70,16 @@ Browser
 ```
 
 The controller does not contain SQL or password hashing. The repository does not decide permissions. The service owns validation and password hashing, keeping the boundaries ready for the remaining CRUD modules: requests, approvals, templates, workers, exports, and audit.
+
+## Identity Discovery Flow
+
+```text
+Workstation identity
+  -> identity discovery JSON (PENDING)
+  -> Admin Control Center notification
+  -> Master/Application Admin review
+  -> approved_users + user roles
+  -> identity discovery JSON (APPROVED)
+```
+
+The JSON is a synchronized request queue, not an authorization database. It is deduplicated by normalized username and includes the discovery computer, suggested role, status, timestamps and processing actor. Development auto-approval is retained only for local testing; strict mode leaves the request pending and blocks the unknown identity.
