@@ -31,6 +31,7 @@ Build the first maintainable local web application increment with:
 | D09 | Admin control center shell | In progress | `/admin`, `admin_routes.py` |
 | D09.1 | Windows identity CRUD | Completed | `/admin/windows-identities`, `IdentityService` |
 | D10 | Notifications and delegation workflows | In progress | Services, reassignment and SLA escalation exist; audit remains |
+| D10.1 | Master session revocation | Completed | `SessionService`, `/admin/security/sessions` |
 | D11 | Audit-integrated administrative operations | In progress | Governance audit view and publish/restore events exist; CRUD-wide event coverage remains |
 | D12 | Approval queue and request lifecycle | Completed | `RequestService`, `/requests`, `/admin/approvals`, delegation reassignment and SLA escalation |
 | D12.1 | Approved request publication queue | In progress | `PublicationService`, `/admin/publication`; controlled writer publication remains |

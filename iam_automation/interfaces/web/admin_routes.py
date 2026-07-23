@@ -11,6 +11,7 @@ from ...application.notification_service import NotificationService
 from ...application.publication_service import PublicationService
 from ...application.request_service import RequestService
 from ...application.governance_service import GovernanceService
+from ...application.session_service import SessionService
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
 from ...identity_discovery import list_pending_discoveries
 
@@ -22,6 +23,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     requests = RequestService(database_path)
     publication = PublicationService(database_path)
     governance = GovernanceService(local_runtime_path=local_runtime_path or database_path, published_runtime_path=published_runtime_path or database_path, audit_path=audit_path or database_path.parent / "audit")
+    sessions = SessionService(database_path)
 
     def admin_required(view: Callable):
         @wraps(view)
@@ -108,5 +110,19 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             return redirect(url_for("admin.governance_center"))
         except Exception as exc:
             return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events(), error=str(exc)), 400
+
+    @blueprint.get("/security/sessions")
+    @master_required
+    def session_security():
+        return render_template("admin/session_security.html", revocations=sessions.list_recent(), message=None, error=None)
+
+    @blueprint.post("/security/sessions/revoke")
+    @master_required
+    def revoke_session():
+        try:
+            sessions.revoke_user(request.form.get("username", ""), str(session["iam_user"]), request.form.get("reason", ""))
+            return render_template("admin/session_security.html", revocations=sessions.list_recent(), message="User sessions revoked.", error=None)
+        except ValueError as exc:
+            return render_template("admin/session_security.html", revocations=sessions.list_recent(), message=None, error=str(exc)), 400
 
     return blueprint

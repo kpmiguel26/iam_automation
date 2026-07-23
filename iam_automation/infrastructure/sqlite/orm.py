@@ -121,6 +121,16 @@ class PublicationQueueModel(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class SessionRevocationModel(Base):
+    __tablename__ = "session_revocations"
+
+    revocation_id: Mapped[str] = mapped_column(String, primary_key=True)
+    username: Mapped[str] = mapped_column(String)
+    revoked_by: Mapped[str] = mapped_column(String)
+    revoked_at_utc: Mapped[str] = mapped_column(String)
+    reason: Mapped[str] = mapped_column(Text)
+
+
 def create_engine_for_sqlite(database_path: Path):
     database_path = database_path.expanduser().resolve()
     return create_engine(

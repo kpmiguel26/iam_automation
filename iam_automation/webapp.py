@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from .identity import CurrentUser, validate_app_user_from_sqlite
 from .identity_discovery import discovery_path
+from .application.session_service import SessionService
 from .interfaces.web.admin_routes import create_admin_blueprint
 from .interfaces.web.user_routes import create_identity_blueprint, create_user_blueprint
 from .interfaces.web.request_routes import create_request_blueprint
@@ -73,6 +74,13 @@ def create_app(
         app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path)))
         app.register_blueprint(create_request_blueprint(runtime_path))
 
+    @app.before_request
+    def enforce_session_revocation():
+        if runtime_path and runtime_path.is_file() and session.get("iam_user") and session.get("iam_session_started_at"):
+            if SessionService(runtime_path).is_revoked(str(session["iam_user"]), str(session["iam_session_started_at"])):
+                session.clear()
+                return redirect(url_for("login"))
+
     @app.context_processor
     def shared_template_context():
         roles = tuple(session.get("iam_roles", ()))
@@ -122,6 +130,8 @@ def create_app(
         normalized_roles = tuple(sorted({str(role).strip().upper() for role in getattr(user, "roles", ())}))
         session["iam_roles"] = list(normalized_roles)
         session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN"} & set(normalized_roles))
+        from datetime import datetime, timezone
+        session["iam_session_started_at"] = datetime.now(timezone.utc).isoformat()
         return redirect(url_for("dashboard"))
 
     @app.get("/dashboard")

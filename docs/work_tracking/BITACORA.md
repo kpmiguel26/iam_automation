@@ -41,6 +41,7 @@
 - Added checksum-protected runtime publication with backup creation.
 - Added restore from validated runtime backups with a new manifest.
 - Added append-only audit events for publication and restore operations.
+- Added Master Admin session revocation with enforcement at every web request.
 
 ### Windows Identity CRUD
 

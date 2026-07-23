@@ -11,7 +11,7 @@
 - [~] Add immutable audit events for user, role, delegation, publication and restore changes; publication/restore are covered first.
 - [ ] Add notification unread counter to the avatar and notification resolution routes.
 - [ ] Add delegation queue reassignment without duplicating request IDs.
-- [ ] Add application session revocation and expiration rules.
+- [x] Add application session revocation and expiration rules.
 - [~] Complete request, approval and reviewer workflow; initial CRUD is implemented, delegation and SLA remain.
 - [x] Add queue reassignment and delegation integration to approval workflow.
 - [x] Add initial SLA calculation and overdue escalation notification.
