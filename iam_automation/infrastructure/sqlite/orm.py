@@ -109,6 +109,18 @@ class ApprovalAssignmentModel(Base):
     reason: Mapped[str] = mapped_column(Text)
 
 
+class PublicationQueueModel(Base):
+    __tablename__ = "publication_queue"
+
+    publication_id: Mapped[str] = mapped_column(String, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String, unique=True)
+    status: Mapped[str] = mapped_column(String, default="PENDING_PUBLICATION")
+    queued_by: Mapped[str] = mapped_column(String)
+    queued_at_utc: Mapped[str] = mapped_column(String)
+    processed_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 def create_engine_for_sqlite(database_path: Path):
     database_path = database_path.expanduser().resolve()
     return create_engine(

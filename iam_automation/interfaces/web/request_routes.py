@@ -56,6 +56,7 @@ def create_request_blueprint(database_path: Path) -> Blueprint:
     @authenticated
     @reviewer_required
     def approval_queue():
+        service.escalate_overdue((str(session["iam_user"]),))
         return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), message=None, error=None)
 
     @blueprint.post("/admin/approvals/<request_id>/decision")

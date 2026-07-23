@@ -8,6 +8,8 @@ from flask import Blueprint, redirect, render_template, request, session, url_fo
 
 from ...application.delegation_service import DelegationService
 from ...application.notification_service import NotificationService
+from ...application.publication_service import PublicationService
+from ...application.request_service import RequestService
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
 from ...identity_discovery import list_pending_discoveries
 
@@ -16,6 +18,8 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     blueprint = Blueprint("admin", __name__, url_prefix="/admin")
     notifications = NotificationService(database_path)
     delegations = DelegationService(database_path)
+    requests = RequestService(database_path)
+    publication = PublicationService(database_path)
 
     def admin_required(view: Callable):
         @wraps(view)
@@ -52,6 +56,8 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             try:
                 principal = str(session["iam_user"])
                 delegation = delegations.create(principal, request.form.get("delegate_username", ""), request.form.get("scope", ""), request.form.get("starts_at_utc", ""), request.form.get("expires_at_utc", ""), request.form.get("reason", ""), principal)
+                if delegation.scope in {"APPROVALS", "FULL_OPERATIONS"}:
+                    requests.reassign_for_delegation(principal, delegation.delegate_username, principal, f"Delegation {delegation.delegation_id[:8]} activated")
                 notifications.create(delegation.delegate_username, "DELEGATION_CREATED", "Delegation assigned", f"You have temporary {delegation.scope} access from {delegation.principal_username}.", severity="WARNING", target_route="/admin/delegations")
                 return redirect(url_for("admin.delegation_center"))
             except ValueError as exc:
@@ -63,5 +69,10 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     def revoke_delegation(delegation_id: str):
         delegations.revoke(delegation_id)
         return redirect(url_for("admin.delegation_center"))
+
+    @blueprint.get("/publication")
+    @admin_required
+    def publication_queue():
+        return render_template("requests/publication_queue.html", publications=publication.list_pending())
 
     return blueprint

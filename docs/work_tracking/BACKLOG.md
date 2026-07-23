@@ -13,7 +13,9 @@
 - [ ] Add delegation queue reassignment without duplicating request IDs.
 - [ ] Add application session revocation and expiration rules.
 - [~] Complete request, approval and reviewer workflow; initial CRUD is implemented, delegation and SLA remain.
-- [ ] Add queue reassignment and delegation integration to approval workflow.
+- [x] Add queue reassignment and delegation integration to approval workflow.
+- [x] Add initial SLA calculation and overdue escalation notification.
+- [x] Enqueue approved requests as `PENDING_PUBLICATION`.
 
 ## Data Operations
 

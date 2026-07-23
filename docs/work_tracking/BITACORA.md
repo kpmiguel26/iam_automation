@@ -27,6 +27,14 @@
 - Blocked requesters from deciding their own requests.
 - Kept publication and single-writer application as a separate downstream control.
 
+### Module Completion: Delegation, SLA and Publication Handoff
+
+- Added automatic queue reassignment when an approvals delegation is activated.
+- Added operation-specific SLA calculation and overdue status.
+- Added overdue escalation notifications when the approval queue is opened.
+- Added `publication_queue` and `PublicationService` for approved requests.
+- Kept backup, checksum and Access publication as the next controlled writer workflow.
+
 ### Windows Identity CRUD
 
 - Added ORM-backed Windows identity repository and application service.

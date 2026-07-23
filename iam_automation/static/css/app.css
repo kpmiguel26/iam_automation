@@ -36,6 +36,7 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .status-inactive { background: #eef0f3; color: #667181; }
 .status-inactive span { background: #8b95a3; }
 .status-pending, .status-under_review { background: #fff4dc; color: #8a5b12; }
+.status-overdue { background: #fff0ef; color: #9d3028; }
 .status-approved { background: #e8f6ee; color: #17613d; }
 .status-rejected { background: #fff0ef; color: #9d3028; }
 .form-page { max-width: 900px; }

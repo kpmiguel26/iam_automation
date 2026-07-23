@@ -84,6 +84,15 @@ def initialize_runtime_database(path: Path) -> Path:
             );
             CREATE INDEX IF NOT EXISTS idx_change_requests_queue
                 ON change_requests (status, assigned_to, created_at_utc);
+            CREATE TABLE IF NOT EXISTS publication_queue (
+                publication_id TEXT PRIMARY KEY,
+                request_id TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'PENDING_PUBLICATION',
+                queued_by TEXT NOT NULL,
+                queued_at_utc TEXT NOT NULL,
+                processed_at_utc TEXT,
+                error_message TEXT
+            );
             CREATE TABLE IF NOT EXISTS notifications (
                 notification_id TEXT PRIMARY KEY,
                 recipient_username TEXT NOT NULL,
