@@ -14,6 +14,7 @@ from typing import Callable
 from urllib.request import Request, urlopen
 
 from .identity import CurrentUser, validate_app_user_from_sqlite
+from .interfaces.web.user_routes import create_user_blueprint
 from .startup import PreflightResult
 
 try:  # Optional until the desktop/web UI dependencies are installed.
@@ -144,7 +145,7 @@ h1 { color: #0e2046; font-size: 32px; margin: 0; }
 </style>
 </head>
 <body>
-<header class="topbar"><img src="{{ url_for('static', filename='kaiser_permanente_logo.png') }}" alt="Kaiser Permanente"><nav class="nav"><a href="{{ url_for('dashboard') }}">Workspace</a><a class="logout" href="{{ url_for('logout') }}">Sign out</a></nav></header>
+<header class="topbar"><img src="{{ url_for('static', filename='kaiser_permanente_logo.png') }}" alt="Kaiser Permanente"><nav class="nav"><a href="{{ url_for('dashboard') }}">Workspace</a>{% if 'ADMINISTRATOR' in roles %}<a href="{{ url_for('user_admin.users') }}">Users</a>{% endif %}<a class="logout" href="{{ url_for('logout') }}">Sign out</a></nav></header>
 <main class="page">
 <div class="heading"><div><p class="eyebrow">IAM Automation</p><h1>Workspace overview</h1><p class="subtle">A controlled workspace for identity and access operations.</p></div><div class="session"><span class="dot"></span>Session active</div></div>
 <section class="grid">
@@ -176,6 +177,8 @@ def create_app(
     app = Flask(__name__)
     app.secret_key = secrets.token_urlsafe(32)
     runtime_path = preflight_result.settings.local_runtime_db_path if preflight_result.settings else None
+    if runtime_path:
+        app.register_blueprint(create_user_blueprint(runtime_path))
 
     @app.get("/health")
     def health():
