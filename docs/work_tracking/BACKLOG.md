@@ -26,10 +26,31 @@
 - [x] Add initial SLA calculation and overdue escalation notification.
 - [x] Enqueue approved requests as `PENDING_PUBLICATION`.
 
-## Data Operations
+## User And Access Refinement - Current Work Session
+
+Working document: [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACCESS_REFINEMENT.md)
+
+- [ ] Approve the identity-layer glossary: Windows identity, application account, worker identity and session.
+- [ ] Confirm controlled account states and recovery behavior.
+- [ ] Approve the human-readable role and permission matrix.
+- [ ] Confirm last-administrator protection and self-demotion rules.
+- [ ] Confirm identity discovery, pending approval and development strict-mode behavior.
+- [ ] Confirm reviewer assignment, delegation scope, expiry and fallback escalation.
+- [ ] Confirm notification recipients, severity, lifecycle and retention.
+- [ ] Execute the user/access UAT checklist and record stakeholder sign-off.
+- [ ] Carry the approved decisions into the ORM, services, routes and authorization tests.
+
+## Data Operations - Next Objective: IAM Ingestion Foundation
 
 - [x] Define initial CSV/XLSX ingestion contract and source validation.
+- [ ] Confirm official Fieldglass report and mapping owner.
+- [ ] Confirm official Roster Lock template and submission rules.
+- [ ] Define canonical worker identifier and source precedence matrix.
+- [ ] Define worker profile, source lineage and discrepancy ORM entities.
 - [ ] Define Fieldglass ingestion adapter and mapping rules.
+- [ ] Define Roster Lock ingestion adapter and mapping rules.
+- [ ] Add ingestion preview for additions, updates, duplicates and conflicts.
+- [ ] Add business validation hooks for rehire, blacklist, active worker and contract dates.
 - [x] Implement initial validation and quarantine workflow.
 - [x] Add quarantine resolution and import batch history.
 - [ ] Implement generated templates and target exports.

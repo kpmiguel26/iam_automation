@@ -2,7 +2,7 @@
 
 **Project:** IAM Automation  
 **Last updated:** 2026-07-23  
-**Branch:** `feature/admin-control-center`
+**Branch:** `feature/user-access-refinement`
 
 ## Objective
 
@@ -30,6 +30,7 @@ Build the first maintainable local web application increment with:
 | D08 | Application user CRUD and last-admin protection | Completed | `UserService`, `/admin/users`, service tests |
 | D09 | Admin control center shell | Completed | `/admin`, `admin_routes.py`, role-aware avatar |
 | D09.1 | Windows identity CRUD | Completed | `/admin/windows-identities`, `IdentityService` |
+| D09.2 | User and access refinement | In progress | [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACCESS_REFINEMENT.md) |
 | D10 | Notifications and delegation workflows | Completed | Real avatar counter, read/resolve/expire states, manual reviewer assignment, SLA escalation and delegation expiry |
 | D10.1 | Master session revocation | Completed | `SessionService`, `/admin/security/sessions` |
 | D11 | Audit-integrated administrative operations | Completed | Master audit center, JSON export/archive and CRUD/request/delegation audit events |
@@ -64,7 +65,17 @@ Build the first maintainable local web application increment with:
 - Add manual reviewer assignment and automatic SLA escalation.
 - Keep expired delegations visible for administrative follow-up.
 
-### Phase 4: Data operations
+### Phase 4: User and access refinement
+
+- Clarify Windows identity, application account, worker identity and session boundaries.
+- Confirm the role and permission matrix for Master and Application Admin.
+- Refine account lifecycle, identity discovery, delegation and notification rules.
+- Prepare authorization and user/access acceptance scenarios.
+- Keep official Fieldglass, Roster Lock and downstream template formats pending until next week.
+
+The ingestion foundation remains on `feature/iam-data-ingestion-foundation`.
+
+### Phase 5: Data operations
 
 - Add Excel and Fieldglass ingestion.
 - Validate templates and mappings before import.
@@ -72,7 +83,7 @@ Build the first maintainable local web application increment with:
 - Add quarantine resolution and ingestion batch history.
 - Generate target exports for Fieldglass and NICE IEX.
 
-### Phase 5: Publication and validation
+### Phase 6: Publication and validation
 
 - Add explicit publication with backup, checksum and manifest.
 - Add restore with integrity validation.
