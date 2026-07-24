@@ -5,6 +5,22 @@ set "ROOT_DIR=%~dp0"
 for %%I in ("%ROOT_DIR%") do set "ROOT_DIR=%%~fI"
 cd /d "%ROOT_DIR%"
 
+echo [IAM] Project root: %ROOT_DIR%
+if not exist "%ROOT_DIR%\iam_automation\templates\base.html" (
+    echo [ERROR] The selected folder does not contain the current IAM web templates.
+    echo [ERROR] Verify that Windows is running the repository checkout, not an old copy.
+    pause
+    exit /b 1
+)
+if not exist "%ROOT_DIR%\iam_automation\static\css\app.css" (
+    echo [ERROR] The selected folder does not contain the current IAM stylesheet.
+    pause
+    exit /b 1
+)
+where git >nul 2>&1
+if not errorlevel 1 for /f "delims=" %%R in ('git rev-parse --short HEAD 2^>nul') do echo [IAM] Git revision: %%R
+if not errorlevel 1 for /f "delims=" %%B in ('git branch --show-current 2^>nul') do echo [IAM] Git branch: %%B
+
 if not defined IAM_DEV_DEFAULT_ROLE set "IAM_DEV_DEFAULT_ROLE=REQUESTER"
 
 echo [IAM] Checking for Python 3.10 or newer...

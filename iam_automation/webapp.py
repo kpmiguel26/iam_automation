@@ -69,6 +69,10 @@ def create_app(
         raise RuntimeError("Flask is required to start the local webapp. Install the UI dependencies first.")
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.secret_key = secrets.token_urlsafe(32)
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+    css_path = Path(__file__).resolve().parent / "static" / "css" / "app.css"
+    static_version = str(int(css_path.stat().st_mtime)) if css_path.is_file() else "dev"
     runtime_path = preflight_result.settings.local_runtime_db_path if preflight_result.settings else None
     if runtime_path:
         app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), local_runtime_path=preflight_result.settings.local_runtime_db_path, published_runtime_path=preflight_result.settings.published_runtime_db_path, audit_path=preflight_result.settings.audit_folder_path))
@@ -91,7 +95,12 @@ def create_app(
         notification_service = NotificationService(runtime_path) if runtime_path and username and runtime_path.is_file() else None
         unread_count = notification_service.unread_count(username) if notification_service else 0
         recent_notifications = notification_service.list_for_user(username, unread_only=True)[:5] if notification_service else []
-        return {"is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN"} & {str(role).upper() for role in roles}), "unread_notification_count": unread_count, "recent_notifications": recent_notifications}
+        return {
+            "is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN"} & {str(role).upper() for role in roles}),
+            "unread_notification_count": unread_count,
+            "recent_notifications": recent_notifications,
+            "static_version": static_version,
+        }
 
     @app.get("/health")
     def health():
