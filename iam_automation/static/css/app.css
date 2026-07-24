@@ -60,6 +60,13 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .metric-card:hover, .action-card:hover { border-color: #a8d4d1; box-shadow: 0 14px 28px rgba(14,32,70,.1); color: inherit; transform: translateY(-2px); }
 .metric-card strong { color: var(--kp-navy); font-size: 2rem; line-height: 1.1; margin-bottom: .45rem; }
 .metric-card .small, .action-link { color: var(--kp-teal); font-weight: 600; margin-top: auto; }
+.metric-bar-row { align-items: center; display: grid; gap: .75rem; grid-template-columns: 7rem 1fr 2rem; margin: .85rem 0; }
+.metric-bar { background: #edf1f5; border-radius: 999px; height: .65rem; overflow: hidden; }
+.metric-bar-fill { border-radius: inherit; display: block; height: 100%; }
+.metric-pending { background: #d9952b; }
+.metric-under_review { background: #3d7bc1; }
+.metric-approved { background: #24905c; }
+.metric-rejected { background: #c45163; }
 .action-card { color: inherit; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
 .action-icon { align-items: center; background: #edf5f5; border-radius: .45rem; color: var(--kp-teal); display: inline-flex; font-size: 1.35rem; height: 2.5rem; justify-content: center; margin-bottom: 1.1rem; width: 2.5rem; }
 .action-card h3 { color: var(--kp-navy); }

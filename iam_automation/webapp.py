@@ -17,6 +17,8 @@ from .identity import CurrentUser, validate_app_user_from_sqlite
 from .identity_discovery import discovery_path
 from .application.session_service import SessionService
 from .application.notification_service import NotificationService
+from .application.file_watch_service import FileWatchService
+from .application.overview_service import OverviewService
 from .interfaces.web.admin_routes import create_admin_blueprint
 from .interfaces.web.master_routes import create_master_blueprint
 from .interfaces.web.user_routes import create_identity_blueprint, create_user_blueprint
@@ -74,6 +76,7 @@ def create_app(
     css_path = Path(__file__).resolve().parent / "static" / "css" / "app.css"
     static_version = str(int(css_path.stat().st_mtime)) if css_path.is_file() else "dev"
     runtime_path = preflight_result.settings.local_runtime_db_path if preflight_result.settings else None
+    app.extensions["iam_file_watcher"] = None
     if runtime_path:
         app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), local_runtime_path=preflight_result.settings.local_runtime_db_path, published_runtime_path=preflight_result.settings.published_runtime_db_path, audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_master_blueprint(runtime_path, preflight_result.settings.audit_folder_path))
@@ -157,7 +160,7 @@ def create_app(
         username = session.get("iam_user")
         if not username:
             return redirect(url_for("login"))
-        return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())))
+        return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path).snapshot(str(username)))
 
     @app.get("/profile")
     def profile():
@@ -195,6 +198,14 @@ def create_app(
         return redirect(url_for("login"))
 
     return app
+
+
+def start_file_watcher(preflight_result: PreflightResult):
+    if not preflight_result.settings:
+        return None
+    database_path = preflight_result.settings.local_runtime_db_path
+    watcher = FileWatchService(database_path, preflight_result.settings.sharepoint_root_path).start()
+    return watcher
 
 
 @dataclass
@@ -241,6 +252,8 @@ def _serve_webapp_process(preflight_result: PreflightResult, ready_queue) -> Non
             server.stop()
 
     app = create_app(preflight_result, shutdown_callback=shutdown_server, shutdown_token=shutdown_token)
+    watcher = start_file_watcher(preflight_result)
+    app.extensions["iam_file_watcher"] = watcher
     server = LocalWebAppServer(app)
     server_holder["server"] = server
     url = server.start()
@@ -250,6 +263,8 @@ def _serve_webapp_process(preflight_result: PreflightResult, ready_queue) -> Non
         if server._thread:
             server._thread.join()
     finally:
+        if watcher:
+            watcher.stop()
         server.stop()
         try:
             webapp_pid_path().unlink()

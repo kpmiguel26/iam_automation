@@ -77,9 +77,10 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     @admin_required
     def delegation_center():
         error = None
+        principal = str(session.get("iam_user", ""))
+        delegation_users = [user for user in users.list_users() if user.active and user.username.lower() != principal.lower()]
         if request.method == "POST":
             try:
-                principal = str(session["iam_user"])
                 delegation = delegations.create(principal, request.form.get("delegate_username", ""), request.form.get("scope", ""), request.form.get("starts_at_utc", ""), request.form.get("expires_at_utc", ""), request.form.get("reason", ""), principal)
                 if delegation.scope in {"APPROVALS", "FULL_OPERATIONS"}:
                     requests.reassign_for_delegation(principal, delegation.delegate_username, principal, f"Delegation {delegation.delegation_id[:8]} activated")
@@ -88,13 +89,15 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                 return redirect(url_for("admin.delegation_center"))
             except ValueError as exc:
                 error = str(exc)
-        return render_template("admin/delegations.html", delegations=delegations.list_all(), scopes=sorted(DelegationService.ALLOWED_SCOPES), error=error)
+        return render_template("admin/delegations.html", delegations=delegations.list_all(), scopes=sorted(DelegationService.ALLOWED_SCOPES), delegation_users=delegation_users, error=error)
 
     @blueprint.post("/delegations/expire")
     @admin_required
     def expire_delegations():
         expired = delegations.expire_due()
-        return render_template("admin/delegations.html", delegations=delegations.list_all(), scopes=sorted(DelegationService.ALLOWED_SCOPES), error=None, message=f"Expired delegations processed: {expired}.")
+        principal = str(session.get("iam_user", ""))
+        delegation_users = [user for user in users.list_users() if user.active and user.username.lower() != principal.lower()]
+        return render_template("admin/delegations.html", delegations=delegations.list_all(), scopes=sorted(DelegationService.ALLOWED_SCOPES), delegation_users=delegation_users, error=None, message=f"Expired delegations processed: {expired}.")
 
     @blueprint.post("/delegations/<delegation_id>/revoke")
     @admin_required

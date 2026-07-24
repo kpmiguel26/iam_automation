@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from ..infrastructure.sqlite.orm import DelegationModel, orm_session
+from ..infrastructure.sqlite.orm import AppUserModel, DelegationModel, orm_session
 
 
 @dataclass(frozen=True)
@@ -32,9 +32,6 @@ class DelegationService:
         self.expire_due()
         with orm_session(self.database_path) as session:
             rows = session.scalars(select(DelegationModel).where(DelegationModel.status == "ACTIVE").order_by(DelegationModel.expires_at_utc)).all()
-            for row in rows:
-                if row.expires_at_utc <= now:
-                    row.status = "EXPIRED"
             return [self._to_delegation(row) for row in rows if row.status == "ACTIVE"]
 
     def list_all(self) -> list[Delegation]:
@@ -57,6 +54,10 @@ class DelegationService:
             raise ValueError(f"Unsupported delegation scope: {scope}")
         if delegate.strip().lower() == principal.strip().lower():
             raise ValueError("An administrator cannot delegate to themselves.")
+        with orm_session(self.database_path) as session:
+            delegate_row = session.scalar(select(AppUserModel).where(AppUserModel.username == delegate.strip()))
+            if not delegate_row or not delegate_row.active or delegate_row.status != "ACTIVE":
+                raise ValueError("Delegate must be an active application user.")
         if not reason.strip():
             raise ValueError("Delegation reason is required.")
         if expires_at_utc <= starts_at_utc:

@@ -18,6 +18,17 @@ class IdentityDiscoveryTests(unittest.TestCase):
             mark_discovery(path, first.discovery_id, "APPROVED", "admin")
             self.assertEqual(list_pending_discoveries(path), [])
 
+    def test_each_discovery_directory_write_is_an_independent_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp) / "database" / "snapshots" / "identity_discoveries"
+            first = record_identity_discovery(directory, "DOMAIN\\one", "VDI-01", "REQUESTER")
+            second = record_identity_discovery(directory, "DOMAIN\\two", "VDI-02", "REQUESTER")
+            self.assertNotEqual(first.discovery_id, second.discovery_id)
+            self.assertEqual(len(tuple(directory.glob("*.json"))), 2)
+            self.assertEqual(len(list_pending_discoveries(directory)), 2)
+            mark_discovery(directory, first.discovery_id, "APPROVED", "admin")
+            self.assertEqual(len(list_pending_discoveries(directory)), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

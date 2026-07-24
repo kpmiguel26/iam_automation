@@ -173,6 +173,16 @@ class SystemProfileModel(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class FileObservationModel(Base):
+    __tablename__ = "file_observations"
+
+    path: Mapped[str] = mapped_column(String, primary_key=True)
+    file_kind: Mapped[str] = mapped_column(String)
+    signature: Mapped[str] = mapped_column(String)
+    first_seen_at_utc: Mapped[str] = mapped_column(String, default="")
+    last_seen_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
 def create_engine_for_sqlite(database_path: Path):
     database_path = database_path.expanduser().resolve()
     return create_engine(

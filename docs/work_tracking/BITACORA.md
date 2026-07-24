@@ -165,3 +165,19 @@
 - Reduced table density and normalized action-button sizing so audit export and archive commands stay compact and inline.
 - Removed the obsolete Control Center alert for Windows identity approval and relabeled the area as traceability.
 - Focused webapp, Admin Control Center and Master Admin tests passed: 8 tests passed outside the restricted sandbox.
+
+### Operational Watcher and Workspace Overview - 2026-07-24
+
+- Added a background file watcher in the local Flask/Waitress process for pending JSON requests, configuration files and identity-discovery snapshots.
+- The watcher persists file signatures in SQLite and creates one in-app notification per new or changed file; it never imports or executes files automatically.
+- Changed delegation creation from free-text usernames to active application-user selection, with backend validation and retained delegation history.
+- Added SQLite-backed workspace metrics for request lifecycle, unread alerts, quarantine, publication queue, imports and active delegations.
+- Added a request lifecycle bar chart and data-readiness panel to the workspace overview.
+- Added regression coverage confirming a pending JSON file generates one notification only.
+
+### Multi-Workstation Identity Discovery - 2026-07-24
+
+- Changed identity discovery storage from one shared JSON document to independent event files under `database/snapshots/identity_discoveries/`.
+- Each workstation discovery now uses a unique filename and discovery ID, avoiding concurrent overwrite and OneDrive merge conflicts.
+- Preserved the legacy single-file API for existing tests and migration compatibility.
+- Restricted the file watcher to the identity-discovery directory so runtime manifests are not reported as identity events.

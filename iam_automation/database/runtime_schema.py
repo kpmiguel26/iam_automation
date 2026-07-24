@@ -156,6 +156,13 @@ def initialize_runtime_database(path: Path) -> Path:
                 profile_json TEXT NOT NULL,
                 active INTEGER NOT NULL DEFAULT 1
             );
+            CREATE TABLE IF NOT EXISTS file_observations (
+                path TEXT PRIMARY KEY,
+                file_kind TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                first_seen_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                last_seen_at_utc TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             INSERT INTO app_metadata (metadata_key, metadata_value, updated_at_utc)
             VALUES ('schema_version', '1.0.0', datetime('now'))
             ON CONFLICT(metadata_key) DO NOTHING;
