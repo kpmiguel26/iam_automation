@@ -21,15 +21,22 @@
 - [x] Rework authenticated navigation into Office-style command bar with notification preview.
 - [x] Add general user profile and notification pages for non-admin users.
 - [x] Add application session revocation and expiration rules.
-- [~] Complete request, approval and reviewer workflow; initial CRUD is implemented, delegation and SLA remain.
+- [x] Complete request, approval and reviewer workflow; delegation, SLA and publication handoff are implemented.
 - [x] Add queue reassignment and delegation integration to approval workflow.
 - [x] Add initial SLA calculation and overdue escalation notification.
 - [x] Enqueue approved requests as `PENDING_PUBLICATION`.
 
-## Data Operations
+## Data Operations - Next Objective: IAM Ingestion Foundation
 
 - [x] Define initial CSV/XLSX ingestion contract and source validation.
+- [ ] Confirm official Fieldglass report and mapping owner.
+- [ ] Confirm official Roster Lock template and submission rules.
+- [ ] Define canonical worker identifier and source precedence matrix.
+- [ ] Define worker profile, source lineage and discrepancy ORM entities.
 - [ ] Define Fieldglass ingestion adapter and mapping rules.
+- [ ] Define Roster Lock ingestion adapter and mapping rules.
+- [ ] Add ingestion preview for additions, updates, duplicates and conflicts.
+- [ ] Add business validation hooks for rehire, blacklist, active worker and contract dates.
 - [x] Implement initial validation and quarantine workflow.
 - [x] Add quarantine resolution and import batch history.
 - [ ] Implement generated templates and target exports.
@@ -61,6 +68,14 @@
 - [ ] Keep Smartsheet CSV synchronized with this backlog.
 - [ ] Prepare a feature pull request from `feature/admin-control-center`.
 - [ ] Merge only after tests and review are complete.
+
+## Admin Control Center Closure
+
+- [x] Merge `feature/admin-control-center` into `main`.
+- [x] Publish the completed Admin Control Center to `origin/main`.
+- [x] Preserve local SQLite and audit artifacts outside feature commits.
+- [ ] Complete release hardening tests for authorization, expiry and publication conflict handling.
+- [ ] Run Windows/macOS user acceptance and sign-off.
 
 ## Requirements Follow-up
 

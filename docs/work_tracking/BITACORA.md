@@ -123,3 +123,12 @@
 - Added a separate WFM later-scope section to the stakeholder guide so WFM does not expand the current IAM ingestion MVP.
 - Confirmed the next IAM gate is approval of official Fieldglass/Roster Lock formats, field ownership, source precedence and business validation rules.
 - Updated the backlog with the new requirements follow-up work.
+
+### Admin Control Center Closure and Ingestion Handoff - 2026-07-24
+
+- Confirmed the Admin Control Center functional scope is complete: application users, Windows identities, Master Admin, roles, delegations, notifications, approvals, audit, session security and governance.
+- Ran the full test suite successfully: 46 tests passed. The Waitress loopback test passed outside the restricted sandbox.
+- Fast-forwarded `feature/admin-control-center` into `main` and published `main` to GitHub at `db1e5aa`.
+- Created the next feature branch: `feature/iam-data-ingestion-foundation`.
+- Defined the next objective as the IAM ingestion foundation: official Fieldglass/Roster Lock contracts, canonical worker profile, source precedence, preview, validation, duplicate detection, lineage and quarantine.
+- Kept WFM requirements archived and excluded from the current IAM user-story scope and ingestion branch.
