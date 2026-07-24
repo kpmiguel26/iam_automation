@@ -19,6 +19,7 @@ class AppUserModel(Base):
     display_name: Mapped[str] = mapped_column(String, default="")
     password_hash: Mapped[str] = mapped_column(String)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String, default="ACTIVE")
     roles: Mapped[list["UserRoleModel"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 

@@ -12,6 +12,7 @@ from ...application.identity_service import IdentityService
 from ...application.role_catalog import ROLE_OPTIONS
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
 from ...identity_discovery import get_pending_discovery, list_pending_discoveries, mark_discovery
+from ...domain.users import ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_INACTIVE, ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED, ACCOUNT_STATUS_SUSPENDED
 
 
 def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None) -> Blueprint:
@@ -28,7 +29,7 @@ def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None
 
     def render(message: str | None = None, error: str | None = None):
         roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
-        return render_template("admin/users.html", users=service.list_users(), message=message, error=error, role_options=ROLE_OPTIONS, can_assign_master=ROLE_MASTER_ADMIN in roles)
+        return render_template("admin/users.html", users=service.list_users(), message=message, error=error, role_options=ROLE_OPTIONS, can_assign_master=ROLE_MASTER_ADMIN in roles, account_statuses=(ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_SUSPENDED, ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED, ACCOUNT_STATUS_INACTIVE))
 
     @blueprint.get("")
     @administrator_required
@@ -55,8 +56,9 @@ def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None
             roles = request.form.getlist("roles") or request.form.get("roles", "").split(",")
             if ROLE_MASTER_ADMIN in {normalize_role(role) for role in roles} and ROLE_MASTER_ADMIN not in {normalize_role(role) for role in session.get("iam_roles", ())}:
                 return render(error="Only MASTER_ADMIN can assign MASTER_ADMIN."), 403
-            service.update_user(username, display_name=request.form.get("display_name", ""), password=request.form.get("password", ""), roles=roles, active=request.form.get("active") == "1")
-            record_audit(audit_path, str(session["iam_user"]), "APPLICATION_USER_UPDATED", "app_user", username, new_values={"roles": roles, "active": request.form.get("active") == "1"})
+            status = request.form.get("status", ACCOUNT_STATUS_ACTIVE)
+            service.update_user(username, display_name=request.form.get("display_name", ""), password=request.form.get("password", ""), roles=roles, active=status == ACCOUNT_STATUS_ACTIVE, status=status)
+            record_audit(audit_path, str(session["iam_user"]), "APPLICATION_USER_UPDATED", "app_user", username, new_values={"roles": roles, "status": status})
             return render(message=f"Application user updated: {username}")
         except ValueError as exc:
             return render(error=str(exc)), 400

@@ -9,6 +9,7 @@ from werkzeug.security import check_password_hash
 
 from iam_automation.application.user_service import UserService
 from iam_automation.database.runtime_schema import initialize_runtime_database
+from iam_automation.domain.users import ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED, ACCOUNT_STATUS_SUSPENDED
 
 
 class UserServiceTests(unittest.TestCase):
@@ -46,6 +47,42 @@ class UserServiceTests(unittest.TestCase):
             service.create_user("master.admin", "Master Admin", "secret", ["MASTER_ADMIN"])
             with self.assertRaisesRegex(ValueError, "last active administrator"):
                 service.update_user("master.admin", display_name="Master Admin", password="", roles=["AUDITOR"], active=False)
+
+    def test_account_lifecycle_uses_controlled_statuses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            service = UserService(database)
+            service.create_user("iam.user", "IAM User", "secret", ["REQUESTER"])
+
+            service.update_user(
+                "iam.user",
+                display_name="IAM User",
+                password="",
+                roles=["REQUESTER"],
+                active=False,
+                status=ACCOUNT_STATUS_SUSPENDED,
+            )
+            suspended = service.list_users()[0]
+            self.assertEqual(suspended.status, ACCOUNT_STATUS_SUSPENDED)
+            self.assertFalse(suspended.active)
+
+            service.update_user(
+                "iam.user",
+                display_name="IAM User",
+                password="",
+                roles=["REQUESTER"],
+                active=False,
+                status=ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED,
+            )
+            self.assertEqual(service.list_users()[0].status, ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED)
+
+    def test_rejects_unknown_account_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            service = UserService(database)
+            service.create_user("iam.user", "IAM User", "secret", ["REQUESTER"])
+            with self.assertRaisesRegex(ValueError, "Status must be selected"):
+                service.update_user("iam.user", display_name="IAM User", password="", roles=["REQUESTER"], active=False, status="UNKNOWN")
 
 if __name__ == "__main__":
     unittest.main()

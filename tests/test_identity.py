@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from iam_automation.database import initialize_runtime_database
 from iam_automation.identity import load_approved_users, validate_app_user_from_sqlite, validate_current_user
+from iam_automation.application.user_service import UserService
 from werkzeug.security import generate_password_hash
 
 
@@ -48,6 +49,22 @@ class IdentityTests(unittest.TestCase):
             user = validate_app_user_from_sqlite(path, "app.admin", "secret")
             self.assertEqual(user.username, "app.admin")
             self.assertEqual(user.roles, ("APPLICATION_ADMIN",))
+
+    def test_non_active_application_account_cannot_login(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            service = UserService(path)
+            service.create_user("app.user", "Application User", "secret", ["REQUESTER"])
+            service.update_user(
+                "app.user",
+                display_name="Application User",
+                password="",
+                roles=["REQUESTER"],
+                active=False,
+                status="SUSPENDED",
+            )
+            with self.assertRaisesRegex(PermissionError, "Invalid application username or password"):
+                validate_app_user_from_sqlite(path, "app.user", "secret")
 
 
 if __name__ == "__main__":

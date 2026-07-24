@@ -139,3 +139,21 @@
 - Documented controlled account states, human-readable role labels, administrator boundaries, delegation continuity and notification ownership.
 - Added user/access acceptance scenarios for login, authorization, last-admin protection, identity discovery, delegation expiry and session revocation.
 - Explicitly kept official Fieldglass, Roster Lock and downstream template decisions out of scope until stakeholders provide the formats next week.
+
+### User Account Lifecycle Refinement - 2026-07-24
+
+- Added controlled application-account statuses: `ACTIVE`, `SUSPENDED`, `INACTIVE` and `PASSWORD_RESET_REQUIRED`.
+- Added SQLite migration support and SQLAlchemy ORM persistence for the new status field while preserving the legacy `active` compatibility property.
+- Restricted application login to accounts with `ACTIVE` status.
+- Updated Application Users administration to use human-readable status selectors and status metrics.
+- Added validation tests for status persistence, lifecycle transitions and invalid status rejection.
+- Focused verification passed: 12 tests passed outside the restricted sandbox. Resource cleanup warnings remain non-blocking and pre-existing.
+
+### Windows Identity Traceability Refinement - 2026-07-24
+
+- Removed Windows identity approval and development auto-approval from the startup authorization path.
+- Preflight now records the detected username and computer as an append-only `WINDOWS_IDENTITY_RECORDED` audit event.
+- The preflight result carries the detected identity with no application roles; application authorization remains exclusively in the IAM account login.
+- Updated launcher and login messaging to distinguish traceability from authentication.
+- Retained the legacy approved-identity structures for compatibility and future policy decisions, but they are no longer a hard gate.
+- Reworked the Windows identity administration view to manage traceability records only; it no longer presents roles or preflight authorization controls.

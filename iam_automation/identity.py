@@ -146,9 +146,9 @@ def validate_app_user_from_sqlite(path: Path, username: str, password: str) -> C
         from .infrastructure.sqlite.orm import AppUserModel, orm_session
 
         with orm_session(path) as session:
-            row = session.scalar(select(AppUserModel).where(func.lower(AppUserModel.username) == normalized, AppUserModel.active.is_(True)))
+            row = session.scalar(select(AppUserModel).where(func.lower(AppUserModel.username) == normalized, AppUserModel.status == "ACTIVE"))
             if not row:
-                configured = session.scalar(select(AppUserModel.username).where(AppUserModel.active.is_(True)).limit(1))
+                configured = session.scalar(select(AppUserModel.username).limit(1))
                 if not configured:
                     raise PermissionError("No active application accounts are configured.")
                 raise PermissionError("Invalid application username or password.")

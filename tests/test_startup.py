@@ -79,15 +79,20 @@ class StartupTests(unittest.TestCase):
             ):
                 result = controller.discover_sharepoint()
             self.assertEqual(result.state, StartupState.CANDIDATE_FOUND)
-            with patch("iam_automation.startup.validate_current_user") as validate_user:
+            with patch("iam_automation.identity.validate_current_user") as validate_user:
                 with self.assertRaises(RuntimeError):
                     controller.continue_to_login()
                 validate_user.assert_not_called()
             result = controller.validate_environment()
             self.assertTrue(result.ok)
-            with patch("iam_automation.startup.validate_current_user") as validate_user:
-                controller.continue_to_login()
+            with patch("iam_automation.identity.validate_current_user") as validate_user, patch("iam_automation.startup.windows_username", return_value="DOMAIN\\user"), patch("iam_automation.startup.computer_name", return_value="VDI-01"):
+                user = controller.continue_to_login()
                 validate_user.assert_not_called()
+            self.assertEqual(user.roles, ())
+            self.assertEqual(user.username, "DOMAIN\\user")
+            audit_files = tuple((root / "audit").glob("audit_*.jsonl"))
+            self.assertEqual(len(audit_files), 1)
+            self.assertIn("WINDOWS_IDENTITY_RECORDED", audit_files[0].read_text(encoding="utf-8"))
 
     def test_missing_sharepoint_folders_are_created_after_database_validation(self):
         with tempfile.TemporaryDirectory() as tmp:

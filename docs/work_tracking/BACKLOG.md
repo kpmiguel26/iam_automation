@@ -31,7 +31,7 @@
 Working document: [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACCESS_REFINEMENT.md)
 
 - [ ] Approve the identity-layer glossary: Windows identity, application account, worker identity and session.
-- [ ] Confirm controlled account states and recovery behavior.
+- [~] Confirm controlled account states and recovery behavior; initial SQLite/ORM implementation is complete, recovery and rehire policy remain open.
 - [ ] Approve the human-readable role and permission matrix.
 - [ ] Confirm last-administrator protection and self-demotion rules.
 - [ ] Confirm identity discovery, pending approval and development strict-mode behavior.

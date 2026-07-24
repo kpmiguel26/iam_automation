@@ -30,6 +30,7 @@ def initialize_runtime_database(path: Path) -> Path:
                 display_name TEXT NOT NULL DEFAULT '',
                 password_hash TEXT NOT NULL,
                 active INTEGER NOT NULL DEFAULT 1,
+                status TEXT NOT NULL DEFAULT 'ACTIVE',
                 created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at_utc TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -172,6 +173,10 @@ def initialize_runtime_database(path: Path) -> Path:
         for column, definition in (("entity_type", "TEXT NOT NULL DEFAULT ''"), ("entity_id", "TEXT NOT NULL DEFAULT ''"), ("expires_at_utc", "TEXT")):
             if column not in notification_columns:
                 connection.execute(f"ALTER TABLE notifications ADD COLUMN {column} {definition}")
+        app_user_columns = {row[1] for row in connection.execute("PRAGMA table_info(app_users)")}
+        if "status" not in app_user_columns:
+            connection.execute("ALTER TABLE app_users ADD COLUMN status TEXT NOT NULL DEFAULT 'ACTIVE'")
+        connection.execute("UPDATE app_users SET status = CASE WHEN active = 1 THEN 'ACTIVE' ELSE 'INACTIVE' END WHERE status IS NULL OR status = ''")
         connection.commit()
     finally:
         connection.close()

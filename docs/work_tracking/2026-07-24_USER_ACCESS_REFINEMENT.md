@@ -27,8 +27,8 @@ Refine the user and access model before data ingestion begins. This work must re
 |---|---|---|---|---|
 | UA-01 | User and access domain glossary | TODO | IAM team | Define Windows identity, application account, worker identity and session. |
 | UA-02 | Role and permission matrix | TODO | IAM team / stakeholders | Confirm `MASTER_ADMIN`, `APPLICATION_ADMIN`, `REQUESTER`, `REVIEWER`, `WRITER` and `AUDITOR`. |
-| UA-03 | User lifecycle rules | TODO | IAM team / stakeholders | Create, activate, suspend, recover, deactivate and rehire behavior. |
-| UA-04 | Windows identity discovery flow | TODO | IAM team | Pending, approved, rejected and strict-mode behavior. |
+| UA-03 | User lifecycle rules | In progress | IAM team / stakeholders | Controlled account states are implemented; recovery and rehire behavior remain stakeholder decisions. |
+| UA-04 | Windows identity traceability flow | Completed | IAM team | Preflight records username and computer; application login owns authorization. |
 | UA-05 | Application account rules | TODO | IAM team | Password hash, reset, session, lockout and active status. |
 | UA-06 | Administrator protection rules | TODO | IAM team | Last active Master/Admin protection and self-demotion rules. |
 | UA-07 | Reviewer and delegation rules | TODO | IAM team / stakeholders | Assignment, absence, expiration, reassignment and escalation. |
@@ -79,7 +79,10 @@ Temporary compatibility alias: `ADMINISTRATOR` maps to `APPLICATION_ADMIN` until
 
 ### User lifecycle
 
-- [ ] Define required fields for an application user: username, display name, status, roles, created by, timestamps and last activity.
+- [x] Define required fields for an application user: username, display name, status, roles, created by, timestamps and last activity.
+- [x] Persist controlled application-account status in SQLite and expose it through the ORM/domain model.
+- [x] Use `ACTIVE` as the only status accepted by application login.
+- [x] Replace the admin UI boolean status selector with controlled status options.
 - [ ] Confirm whether email or contact information is required for notifications.
 - [ ] Confirm password policy, reset behavior and whether lockout is required now.
 - [ ] Confirm whether an inactive account can retain pending requests.
@@ -88,12 +91,12 @@ Temporary compatibility alias: `ADMINISTRATOR` maps to `APPLICATION_ADMIN` until
 
 ### Windows identity
 
-- [ ] Define normalized identity format for Windows, VDI and macOS development.
-- [ ] Define duplicate detection rules, including case normalization.
-- [ ] Define pending identity notification and approval owner.
-- [ ] Define what happens when the local identity changes after preflight.
-- [ ] Confirm production strict mode versus current development auto-registration.
-- [ ] Confirm that identity approval and application-account credentials remain separate.
+- [x] Define normalized identity format for Windows, VDI and macOS development.
+- [x] Define duplicate detection rules, including case normalization.
+- [x] Record the detected username and computer in append-only audit evidence.
+- [x] Keep the Windows identity out of application-account authorization.
+- [x] Confirm that application-account credentials remain separate from workstation identity.
+- [ ] Decide whether the legacy identity-discovery JSON should be retired or retained only as an operational trace.
 
 ### Roles and authorization
 

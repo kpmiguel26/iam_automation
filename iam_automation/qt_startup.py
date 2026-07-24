@@ -180,7 +180,7 @@ class StartupWindow:
             return
         try:
             user = self.controller.continue_to_login()
-            self._log(f"[IDENTITY] Approved user: {user.username} | roles: {', '.join(user.roles)}")
+            self._log(f"[IDENTITY] Windows identity recorded: {user.username} on {user.computer} | application login required")
         except PermissionError as exc:
             self.status_label.setText(f"{StartupState.UNAUTHORIZED_USER.value}: {exc}")
             self.start_button.setEnabled(False)

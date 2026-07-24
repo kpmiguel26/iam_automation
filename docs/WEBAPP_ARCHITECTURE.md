@@ -45,7 +45,7 @@ iam_automation/
 - Bootstrap 5.3.3 is vendored under `static/vendor/bootstrap/` so the local app works without a CDN connection.
 - Brand-specific styling is limited to `static/css/app.css`.
 - Role forms use controlled multi-select values with human-readable labels; controllers never trust free-text role names from the browser.
-- Newly discovered workstation identities are written to `database/snapshots/iam_identity_discovery.json` as pending requests. Strict mode requires admin approval before `approved_users` is updated.
+- The workstation/VDI identity is recorded for traceability and audit only. It does not carry an application password, application roles or an approval gate. Application authorization is evaluated after the separate IAM account login.
 
 ## First Web Module: User Administration
 
@@ -71,15 +71,14 @@ Browser
 
 The controller does not contain SQL or password hashing. The repository does not decide permissions. The service owns validation and password hashing, keeping the boundaries ready for the remaining CRUD modules: requests, approvals, templates, workers, exports, and audit.
 
-## Identity Discovery Flow
+## Windows Identity Traceability Flow
 
 ```text
 Workstation identity
-  -> identity discovery JSON (PENDING)
-  -> Admin Control Center notification
-  -> Master/Application Admin review
-  -> approved_users + user roles
-  -> identity discovery JSON (APPROVED)
+  -> preflight detects username and computer
+  -> append-only audit event
+  -> application login with IAM account
+  -> application roles and permissions
 ```
 
-The JSON is a synchronized request queue, not an authorization database. It is deduplicated by normalized username and includes the discovery computer, suggested role, status, timestamps and processing actor. Development auto-approval is retained only for local testing; strict mode leaves the request pending and blocks the unknown identity.
+The legacy `approved_users` table and identity-discovery JSON remain available for historical compatibility and future policy decisions, but they are not consulted by the current preflight authorization path. The Windows identity is evidence of the local execution context; the IAM application account is the authorization subject.
