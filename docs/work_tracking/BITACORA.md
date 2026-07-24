@@ -157,3 +157,11 @@
 - Updated launcher and login messaging to distinguish traceability from authentication.
 - Retained the legacy approved-identity structures for compatibility and future policy decisions, but they are no longer a hard gate.
 - Reworked the Windows identity administration view to manage traceability records only; it no longer presents roles or preflight authorization controls.
+
+### Navigation and Command Surface Refinement - 2026-07-24
+
+- Replaced the expanded Office-style link row with compact Bootstrap dropdown menus for Workspace, Operations, Administration and Governance.
+- Added grouped links for application users, Windows traceability, notifications, delegations and Master governance.
+- Reduced table density and normalized action-button sizing so audit export and archive commands stay compact and inline.
+- Removed the obsolete Control Center alert for Windows identity approval and relabeled the area as traceability.
+- Focused webapp, Admin Control Center and Master Admin tests passed: 8 tests passed outside the restricted sandbox.
