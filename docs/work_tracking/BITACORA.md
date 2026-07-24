@@ -114,3 +114,12 @@
 - Runtime database files may change during local execution; those changes must not be reverted automatically.
 - The administrative UI is a foundation. Approval reassignment, immutable audit events, publication controls and recovery remain pending.
 - The current development identity auto-registration behavior remains intentionally more permissive than the future production gate.
+
+### Requirements Synchronization: IAM and WFM - 2026-07-24
+
+- Downloaded the IAM requirements tracker from commit `21d8fff` and reviewed its 61 business and technical requirements.
+- Downloaded `WFM_REQ_Lifecycle_Table.xlsx` from commit `80dfb32`; it contains 32 WFM lifecycle requirements.
+- Added IAM stories for rehire, blacklist, active-worker validation, contract dates, source of truth, reconciliation, ingestion preview, lineage, offboarding and dashboards.
+- Added a separate WFM later-scope section to the stakeholder guide so WFM does not expand the current IAM ingestion MVP.
+- Confirmed the next IAM gate is approval of official Fieldglass/Roster Lock formats, field ownership, source precedence and business validation rules.
+- Updated the backlog with the new requirements follow-up work.

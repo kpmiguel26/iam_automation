@@ -61,3 +61,14 @@
 - [ ] Keep Smartsheet CSV synchronized with this backlog.
 - [ ] Prepare a feature pull request from `feature/admin-control-center`.
 - [ ] Merge only after tests and review are complete.
+
+## Requirements Follow-up
+
+- [x] Download the IAM Software Requirements Tracker from the Windows push.
+- [x] Add IAM business validation and reconciliation user stories to the stakeholder guide.
+- [x] Download and archive the WFM lifecycle requirements workbook.
+- [x] Archive the WFM lifecycle workbook separately for future production planning; exclude it from current IAM user stories.
+- [ ] Confirm official Fieldglass and Roster Lock formats with stakeholders.
+- [ ] Define canonical worker identifier, source precedence and data lineage.
+- [ ] Implement rehire, blacklist, active-worker and contract-date validation rules.
+- [ ] Implement Roster Lock/Fieldglass reconciliation and discrepancy workflow.
