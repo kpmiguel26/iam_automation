@@ -64,8 +64,10 @@ class TemporarySuperOperatorService:
         if not reason.strip():
             raise ValueError("A reason is required for temporary elevated access.")
         try:
-            starts_at = datetime.fromisoformat(starts_at_utc)
-            expires_at = datetime.fromisoformat(expires_at_utc)
+            # Accept the standard JavaScript UTC suffix as well as Python's
+            # explicit offset form, including on Python 3.10.
+            starts_at = datetime.fromisoformat(starts_at_utc.replace("Z", "+00:00"))
+            expires_at = datetime.fromisoformat(expires_at_utc.replace("Z", "+00:00"))
         except ValueError as exc:
             raise ValueError("Temporary access dates must use ISO 8601 format with a UTC offset.") from exc
         if starts_at.tzinfo is None or expires_at.tzinfo is None:
