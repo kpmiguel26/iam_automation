@@ -17,8 +17,11 @@ class MigrationTests(unittest.TestCase):
 
             self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes"))
             self.assertEqual(second, ())
-            with sqlite3.connect(database) as connection:
+            connection = sqlite3.connect(database)
+            try:
                 index_names = {row[1] for row in connection.execute("PRAGMA index_list(notifications)")}
+            finally:
+                connection.close()
             self.assertIn("idx_notifications_recipient_status", index_names)
 
 

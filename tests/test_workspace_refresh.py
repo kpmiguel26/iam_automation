@@ -22,9 +22,12 @@ class WorkspaceRefreshTests(unittest.TestCase):
             local = root / "runtime.sqlite"
             sync_runtime_snapshot(published, local)
             request = RequestService(local).create(CurrentUser("requester", "VDI-01", (ROLE_REQUESTER,)), "CREATE_EMPLOYEE", "E100", {"first_name": "Test"}, "Refresh test")
-            with sqlite3.connect(published) as connection:
+            connection = sqlite3.connect(published)
+            try:
                 connection.execute("UPDATE app_metadata SET updated_at_utc = datetime('now') WHERE metadata_key = 'schema_version'")
                 connection.commit()
+            finally:
+                connection.close()
             service = WorkspaceRefreshService(local, published, root)
             version, exported = service.refresh("requester")
             self.assertTrue(version.published_checksum)

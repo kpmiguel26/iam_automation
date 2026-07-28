@@ -37,7 +37,11 @@ class UserServiceTests(unittest.TestCase):
             self.assertEqual(updated.display_name, "Updated Admin")
             self.assertEqual(updated.roles, ("AUDITOR",))
             self.assertFalse(updated.active)
-            row = sqlite3.connect(database).execute("SELECT password_hash FROM app_users WHERE username = ?", ("iam.admin",)).fetchone()
+            connection = sqlite3.connect(database)
+            try:
+                row = connection.execute("SELECT password_hash FROM app_users WHERE username = ?", ("iam.admin",)).fetchone()
+            finally:
+                connection.close()
             self.assertTrue(check_password_hash(row[0], "new-secret"))
 
     def test_cannot_remove_last_active_administrator(self):
