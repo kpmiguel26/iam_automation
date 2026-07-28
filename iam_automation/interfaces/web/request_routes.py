@@ -8,6 +8,7 @@ from flask import Blueprint, render_template, request, session
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.shared_request_service import SharedRequestService
 from ...application.audit_service import record_audit
+from ...application.notification_service import NotificationService
 from ...application.user_service import UserService
 from ...identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, ROLE_SUPER_OPERATOR, normalize_role
 
@@ -20,6 +21,7 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
     blueprint = Blueprint("requests", __name__)
     service = SharedRequestService(sharepoint_root) if sharepoint_root else RequestService(database_path)
     users = UserService(database_path)
+    notifications = NotificationService(database_path)
 
     def authenticated(view):
         @wraps(view)
@@ -94,9 +96,15 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
     def decide_request(request_id: str):
         try:
             result = service.decide(request_id, _current_user(), request.form.get("decision", ""), request.form.get("note", ""))
+            decided_item = result[0] if isinstance(result, tuple) else result
             self_approval = result[1] if isinstance(result, tuple) else False
             record_audit(audit_path, str(session["iam_user"]), "REQUEST_SELF_APPROVED_BREAK_GLASS" if self_approval else "REQUEST_DECIDED", "change_request", request_id, new_values={"decision": request.form.get("decision", ""), "break_glass": self_approval})
-            return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), reviewers=reviewer_accounts(), message="Request decision recorded.", error=None)
+            if decided_item.status == "APPROVED":
+                for user in users.list_users():
+                    if user.active and {normalize_role(role) for role in user.roles} & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
+                        notifications.create(user.username, "REQUEST_READY_FOR_PUBLICATION", "Approved request ready for publication", f"Request {request_id[:8]} was approved and is waiting in the Publication Queue.", severity="WARNING", target_route="/admin/publication", entity_type="change_request", entity_id=request_id)
+            message = "Request approved and moved to the Publication Queue." if decided_item.status == "APPROVED" else "Request decision recorded."
+            return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), reviewers=reviewer_accounts(), message=message, error=None)
         except (ValueError, PermissionError) as exc:
             return render_template("requests/approval_queue.html", requests=service.list_requests(queue=True), reviewers=reviewer_accounts(), message=None, error=str(exc)), 400
 

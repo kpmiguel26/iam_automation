@@ -15,6 +15,7 @@ from ...application.salesforce_export_service import SalesforceExportService
 from ...application.request_service import RequestService
 from ...application.shared_request_service import SharedRequestService
 from ...application.governance_service import GovernanceService
+from ...application.publication_state import publication_pending
 from ...application.session_service import SessionService
 from ...application.user_service import UserService
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
@@ -49,6 +50,15 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             roles = {normalize_role(role) for role in session.get("iam_roles", ())}
             if ROLE_MASTER_ADMIN not in roles:
                 return "MASTER_ADMIN role required.", 403
+            return view(*args, **kwargs)
+        return wrapped
+
+    def database_publish_required(view: Callable):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            roles = {normalize_role(role) for role in session.get("iam_roles", ())}
+            if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
+                return "APPLICATION_ADMIN or MASTER_ADMIN role required.", 403
             return view(*args, **kwargs)
         return wrapped
 
@@ -153,21 +163,43 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         except ValueError as exc:
             return render_template("admin/control_center.html", username=str(session.get("iam_user", "")), roles=tuple(session.get("iam_roles", ())), unread_count=notifications.unread_count(str(session.get("iam_user", ""))), delegations=delegations.list_active(), pending_discoveries=[], message=None, error=str(exc)), 400
 
+    @blueprint.get("/templates")
+    @admin_required
+    def template_center():
+        try:
+            columns = salesforce.template_columns()
+            preview_headers, preview_rows = salesforce.template_preview()
+            template_checksum = salesforce.template_checksum()
+            template_error = None
+        except ValueError as exc:
+            columns = []
+            preview_headers, preview_rows, template_checksum = [], [], ""
+            template_error = str(exc)
+        return render_template("admin/templates.html", columns=columns, preview_headers=preview_headers, preview_rows=preview_rows, template_checksum=template_checksum, approved_row_count=salesforce.approved_row_count() if not template_error else 0, template_error=template_error)
+
+    @blueprint.get("/templates/salesforce/download")
+    @admin_required
+    def download_salesforce_template():
+        if not salesforce.template_path.is_file():
+            return render_template("admin/templates.html", columns=[], preview_headers=[], preview_rows=[], template_checksum="", approved_row_count=0, template_error=f"Salesforce template was not found: {salesforce.template_path}"), 404
+        return send_file(salesforce.template_path, as_attachment=True, download_name=salesforce.template_path.name, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
     @blueprint.get("/governance")
-    @master_required
+    @database_publish_required
     def governance_center():
-        return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events())
+        return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events(), publication_pending=publication_pending(local_runtime_path or database_path), error=None)
 
     @blueprint.post("/governance/publish")
-    @master_required
+    @database_publish_required
     def publish_runtime():
-        if ROLE_SUPER_OPERATOR in {normalize_role(role) for role in session.get("iam_roles", ())}:
+        roles = {normalize_role(role) for role in session.get("iam_roles", ())}
+        if ROLE_SUPER_OPERATOR in roles and not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
             return "SUPER_OPERATOR cannot publish the runtime database.", 403
         try:
             governance.publish(str(session["iam_user"]), request.form.get("expected_checksum", ""))
             return redirect(url_for("admin.governance_center"))
         except Exception as exc:
-            return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events(), error=str(exc)), 400
+            return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events(), publication_pending=publication_pending(local_runtime_path or database_path), error=str(exc)), 400
 
     @blueprint.post("/governance/restore")
     @master_required
@@ -178,7 +210,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             governance.restore(str(session["iam_user"]), request.form.get("backup_name", ""))
             return redirect(url_for("admin.governance_center"))
         except Exception as exc:
-            return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events(), error=str(exc)), 400
+            return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events(), publication_pending=publication_pending(local_runtime_path or database_path), error=str(exc)), 400
 
     @blueprint.get("/security/sessions")
     @master_required

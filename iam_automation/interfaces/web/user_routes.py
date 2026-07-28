@@ -7,6 +7,7 @@ from typing import Callable
 from flask import Blueprint, render_template, request, session
 
 from ...application.user_service import UserService
+from ...application.publication_state import mark_publication_pending
 from ...application.audit_service import record_audit
 from ...application.identity_service import IdentityService
 from ...application.role_catalog import ROLE_OPTIONS
@@ -44,6 +45,7 @@ def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None
             if ROLE_MASTER_ADMIN in {normalize_role(role) for role in roles} and ROLE_MASTER_ADMIN not in {normalize_role(role) for role in session.get("iam_roles", ())}:
                 return render(error="Only MASTER_ADMIN can assign MASTER_ADMIN."), 403
             service.create_user(request.form.get("username", ""), request.form.get("display_name", ""), request.form.get("password", ""), roles)
+            mark_publication_pending(database_path, actor=str(session["iam_user"]), reason="Application user created")
             record_audit(audit_path, str(session["iam_user"]), "APPLICATION_USER_CREATED", "app_user", request.form.get("username", ""), new_values={"roles": roles})
             return render(message="Application user created.")
         except ValueError as exc:
@@ -58,6 +60,7 @@ def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None
                 return render(error="Only MASTER_ADMIN can assign MASTER_ADMIN."), 403
             status = request.form.get("status", ACCOUNT_STATUS_ACTIVE)
             service.update_user(username, display_name=request.form.get("display_name", ""), password=request.form.get("password", ""), roles=roles, active=status == ACCOUNT_STATUS_ACTIVE, status=status)
+            mark_publication_pending(database_path, actor=str(session["iam_user"]), reason=f"Application user updated: {username}")
             record_audit(audit_path, str(session["iam_user"]), "APPLICATION_USER_UPDATED", "app_user", username, new_values={"roles": roles, "status": status})
             return render(message=f"Application user updated: {username}")
         except ValueError as exc:

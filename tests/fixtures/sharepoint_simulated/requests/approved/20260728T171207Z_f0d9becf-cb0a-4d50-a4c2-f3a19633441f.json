@@ -1,0 +1,23 @@
+{
+  "application_version": "local",
+  "assigned_to": "requester.test",
+  "computer_name": "local-web",
+  "created_at_utc": "2026-07-28T17:12:07Z",
+  "created_by": "requester.test",
+  "entity_id": "E385201",
+  "entity_type": "Employee",
+  "expected_record_version": 0,
+  "operation_type": "CREATE_EMPLOYEE",
+  "payload": {
+    "first_name": "miguel",
+    "job_title": "GWFM",
+    "last_name": "fern\u00e1ndez",
+    "lob": "GWFM"
+  },
+  "reason": "aa",
+  "request_id": "f0d9becf-cb0a-4d50-a4c2-f3a19633441f",
+  "review_note": "aa",
+  "reviewed_by": "requester.test",
+  "status": "APPROVED",
+  "updated_at_utc": "2026-07-28T17:31:24.431646+00:00"
+}

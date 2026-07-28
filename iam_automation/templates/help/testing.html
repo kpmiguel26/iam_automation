@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Testing & Help Center{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <div class="page-heading">
+    <div><p class="eyebrow">Quality and support</p><h1>Testing &amp; Help Center</h1><p class="text-secondary mb-0">Standard operating procedure for validating the IAM Automation development build.</p></div>
+    <a class="btn btn-primary" href="{{ url_for('bug_reports.index') }}">Report a bug</a>
+  </div>
+
+  <div class="alert alert-warning mt-4" role="alert"><strong>Development build:</strong> This version is for controlled testing. A successful test must include the expected result and the observed result.</div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-lg-8">
+      <section class="surface p-4 h-100">
+        <p class="eyebrow mb-1">Operating model</p>
+        <h2 class="h4">How the workspace works</h2>
+        <ol class="help-steps">
+          <li><strong>Preflight:</strong> the desktop launcher discovers the local SharePoint or OneDrive folder, validates Access, runtime SQLite, folders and local workspace, then synchronizes a local SQLite copy.</li>
+          <li><strong>Identity gate:</strong> the current Windows or workstation identity is recorded for traceability. The application login is a separate account and does not use the workstation password.</li>
+          <li><strong>JSON-first workflow:</strong> requests and bug reports are shared as JSON files in the synchronized workspace so other workstations can see them without waiting for a database publication.</li>
+          <li><strong>Application workflow:</strong> users create requests, reviewers assign and decide them, and approved requests enter the controlled publication queue.</li>
+          <li><strong>Runtime publication:</strong> user, role and password changes are local until an Application Admin or Master Admin publishes the runtime SQLite snapshot. Access publication remains a protected administrative operation.</li>
+        </ol>
+      </section>
+    </div>
+    <div class="col-lg-4">
+      <section class="surface p-4 h-100">
+        <p class="eyebrow mb-1">Before testing</p>
+        <h2 class="h5">Preconditions</h2>
+        <ul class="small text-secondary mb-0">
+          <li>Start the app through the platform launcher.</li>
+          <li>Confirm the preflight status is READY.</li>
+          <li>Confirm the SharePoint path is the intended synchronized workspace.</li>
+          <li>Use a test account assigned to the scenario.</li>
+          <li>Do not use production data or real passwords.</li>
+          <li>Refresh the workspace before testing a change from another computer.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+
+  <section class="surface overflow-hidden mt-4">
+    <div class="p-4 border-bottom"><p class="eyebrow mb-1">Validation protocol</p><h2 class="h4 mb-1">Test case checklist</h2><p class="text-secondary small mb-0">Run the relevant cases, then record Pass or Fail in the test evidence used by the testing team.</p></div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 help-table">
+        <thead><tr><th>ID</th><th>Area</th><th>Test steps</th><th>Expected result</th><th>Evidence when it fails</th></tr></thead>
+        <tbody>
+          <tr><td><code>PRE-001</code></td><td>Preflight</td><td>Start the launcher with a valid synchronized workspace.</td><td>Access, SQLite, folders and local workspace show ready; the login is not shown before validation.</td><td>Screenshot of the preflight result and the selected path.</td></tr>
+          <tr><td><code>AUTH-001</code></td><td>Application login</td><td>Sign in with an active application user.</td><td>The session opens with the correct display name and roles. The workstation identity remains traceability only.</td><td>Username, role, page URL and exact error text. Never include a password.</td></tr>
+          <tr><td><code>REQ-001</code></td><td>Request intake</td><td>Create a request with valid and invalid data.</td><td>The valid request is written to shared JSON. Invalid required fields are rejected with a clear message.</td><td>Request ID, operation, fields used and JSON location if visible.</td></tr>
+          <tr><td><code>APR-001</code></td><td>Approval queue</td><td>Assign a reviewer and open the request from another test account.</td><td>The request is visible to the reviewer, assignment is audited, and the requester cannot decide their own request unless the temporary break-glass rule applies.</td><td>Request ID, requester, reviewer and audit event.</td></tr>
+          <tr><td><code>APR-002</code></td><td>Decision</td><td>Approve and reject separate test requests.</td><td>The JSON moves to the correct lifecycle folder and a notification is generated for the next responsible role.</td><td>Request ID, decision, status and notification text.</td></tr>
+          <tr><td><code>PUB-001</code></td><td>Publication</td><td>Change a test user, open Database administration and publish.</td><td>A backup and checksum are created, the snapshot is published, and another workstation receives the change after refresh.</td><td>Checksum, publication timestamp and before/after username or role.</td></tr>
+          <tr><td><code>NOT-001</code></td><td>Notifications</td><td>Create a request or bug, then open the notification center.</td><td>The recipient sees the unread count, can mark it read or resolve it, and the link opens the affected area.</td><td>Notification type, recipient and target page.</td></tr>
+          <tr><td><code>BUG-001</code></td><td>Bug reporting</td><td>Submit a report with title, severity, page, computer and reproduction steps.</td><td>A JSON file appears under <code>bug_reports/open</code> in SharePoint and admins are notified.</td><td>Bug ID, filename, screenshot and reproduction steps.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="row g-4 mt-1">
+    <div class="col-lg-6">
+      <section class="surface p-4 h-100">
+        <p class="eyebrow mb-1">Report quality</p><h2 class="h5">When a test fails</h2>
+        <ol class="small text-secondary mb-0"><li>Keep the failing state open long enough to capture the exact message.</li><li>Record the test case ID, user, role, computer or VDI and page.</li><li>Write the numbered steps that reproduce the problem.</li><li>State what was expected and what actually happened.</li><li>Attach a screenshot only after removing passwords, tokens and sensitive employee data.</li><li>Submit it from <a href="{{ url_for('bug_reports.index') }}">Report a bug</a>; do not edit the JSON manually.</li></ol>
+      </section>
+    </div>
+    <div class="col-lg-6">
+      <section class="surface p-4 h-100">
+        <p class="eyebrow mb-1">State meanings</p><h2 class="h5">Bug report lifecycle</h2>
+        <div class="d-flex flex-wrap gap-2 mb-3"><span class="badge text-bg-danger">Open</span><span class="badge text-bg-warning">In progress</span><span class="badge text-bg-success">Resolved</span><span class="badge text-bg-secondary">Closed</span></div>
+        <p class="small text-secondary mb-0">Reports are stored as shared JSON files and move between status folders as the team works them. The original report identity and audit trail remain available for follow-up.</p>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

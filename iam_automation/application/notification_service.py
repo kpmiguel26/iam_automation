@@ -91,4 +91,9 @@ class NotificationService:
 
     @staticmethod
     def _to_notification(row: NotificationModel) -> Notification:
-        return Notification(row.notification_id, row.recipient_username, row.notification_type, row.severity, row.title, row.message, row.target_route, row.status)
+        target_route = row.target_route
+        # Repair notifications created by older builds before pending requests
+        # were routed to the approval queue instead of Imports.
+        if row.notification_type == "FILE_DETECTED" and "/requests/pending/" in row.entity_id:
+            target_route = "/admin/approvals"
+        return Notification(row.notification_id, row.recipient_username, row.notification_type, row.severity, row.title, row.message, target_route, row.status)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import json
+import logging
 import multiprocessing
 import os
 import queue
@@ -20,12 +21,14 @@ from .application.notification_service import NotificationService
 from .application.file_watch_service import FileWatchService
 from .application.overview_service import OverviewService
 from .application.workspace_refresh_service import WorkspaceRefreshService
+from .application.publication_state import publication_pending
 from .application.user_service import UserService
 from .application.temporary_super_operator_service import TemporarySuperOperatorService
 from .interfaces.web.admin_routes import create_admin_blueprint
 from .interfaces.web.master_routes import create_master_blueprint
 from .interfaces.web.user_routes import create_identity_blueprint, create_user_blueprint
 from .interfaces.web.request_routes import create_request_blueprint
+from .interfaces.web.bug_report_routes import create_bug_report_blueprint
 from .startup import PreflightResult
 
 try:
@@ -76,6 +79,15 @@ def create_app(
     app.secret_key = secrets.token_urlsafe(32)
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+    @app.errorhandler(404)
+    def not_found(error):
+        return render_template("errors/404.html"), 404
+
+    @app.errorhandler(500)
+    def internal_server_error(error):
+        return render_template("errors/500.html"), 500
+
     css_path = Path(__file__).resolve().parent / "static" / "css" / "app.css"
     static_version = str(int(css_path.stat().st_mtime)) if css_path.is_file() else "dev"
     runtime_path = preflight_result.settings.local_runtime_db_path if preflight_result.settings else None
@@ -87,6 +99,7 @@ def create_app(
         app.register_blueprint(create_user_blueprint(runtime_path, audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_request_blueprint(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path, audit_path=preflight_result.settings.audit_folder_path))
+        app.register_blueprint(create_bug_report_blueprint(runtime_path, preflight_result.settings.sharepoint_root_path))
 
     @app.before_request
     def enforce_session_revocation():
@@ -114,6 +127,7 @@ def create_app(
             "unread_notification_count": unread_count,
             "recent_notifications": recent_notifications,
             "static_version": static_version,
+            "publication_pending": publication_pending(runtime_path),
         }
 
     @app.get("/health")
@@ -198,6 +212,12 @@ def create_app(
             return redirect(url_for("login"))
         return render_template("profile.html", username=str(session["iam_user"]), roles=tuple(session.get("iam_roles", ())), sharepoint_path=str(preflight_result.settings.sharepoint_root_path))
 
+    @app.get("/help/testing")
+    def testing_help():
+        if not session.get("iam_user"):
+            return redirect(url_for("login"))
+        return render_template("help/testing.html")
+
     @app.get("/notifications")
     def notifications_page():
         username = session.get("iam_user")
@@ -256,6 +276,9 @@ class LocalWebAppServer:
     def start(self) -> str:
         if create_server is None:
             raise RuntimeError("Flask and Waitress are required to start the local webapp.")
+        # Waitress emits a warning when static assets briefly queue during page load.
+        # Keep real request/server errors visible while avoiding normal startup noise.
+        logging.getLogger("waitress.queue").setLevel(logging.ERROR)
         self._server = create_server(self.app, host=self.host, port=self.port, threads=4)
         self.port = int(self._server.effective_port)  # type: ignore[attr-defined]
         self._thread = threading.Thread(target=self._run, name="iam-local-webapp", daemon=True)

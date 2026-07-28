@@ -109,7 +109,7 @@ class FileWatchService:
             message=f"{message} File: {Path(observation.path).name}",
             entity_type="file",
             entity_id=observation.path,
-            target_route="/admin/imports" if observation.file_kind == "PENDING_REQUEST" else "/admin",
+            target_route="/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/admin",
             status="UNREAD",
             created_at_utc=now,
         )

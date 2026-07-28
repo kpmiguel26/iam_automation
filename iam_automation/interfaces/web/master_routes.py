@@ -9,6 +9,7 @@ from ...application.master_admin_service import MasterAdminService
 from ...application.role_catalog import ROLE_OPTIONS
 from ...application.temporary_super_operator_service import TemporarySuperOperatorService
 from ...application.user_service import UserService
+from ...application.publication_state import mark_publication_pending
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
 
 
@@ -99,6 +100,7 @@ def create_master_blueprint(database_path: Path, audit_path: Path) -> Blueprint:
                 roles,
                 request.form.get("active", "1") == "1",
             )
+            mark_publication_pending(database_path, actor=str(session["iam_user"]), reason=f"Administrator account updated: {request.form.get('username', '')}")
             return render_admins(message="Administrator account saved.")
         except (ValueError, PermissionError) as exc:
             return render_admins(error=str(exc)), 400

@@ -9,6 +9,7 @@ from openpyxl import load_workbook
 from sqlalchemy import select
 
 from ..infrastructure.sqlite.orm import ChangeRequestModel, orm_session
+from ..runtime_sync import sha256_file
 from .audit_service import record_audit
 
 
@@ -51,6 +52,38 @@ class SalesforceExportService:
         workbook.save(destination)
         record_audit(self.audit_path, actor, "SALESFORCE_TEMPLATE_GENERATED", "salesforce_export", destination.name, new_values={"rows": len(rows), "source": "approved_sqlite_requests", "template": self.template_path.name})
         return destination
+
+    def template_columns(self) -> list[str]:
+        """Return the official workbook columns for the in-app template preview."""
+        if not self.template_path.is_file():
+            raise ValueError(f"Salesforce template was not found: {self.template_path}")
+        workbook = load_workbook(self.template_path, read_only=True, data_only=False)
+        try:
+            worksheet = workbook.active
+            return [str(cell.value).strip() for cell in worksheet[2] if cell.value]
+        finally:
+            workbook.close()
+
+    def template_preview(self, *, max_columns: int = 12, max_rows: int = 4) -> tuple[list[str], list[list[object]]]:
+        """Return a compact preview of the official workbook without modifying it."""
+        if not self.template_path.is_file():
+            raise ValueError(f"Salesforce template was not found: {self.template_path}")
+        workbook = load_workbook(self.template_path, read_only=True, data_only=False)
+        try:
+            worksheet = workbook.active
+            values = list(worksheet.iter_rows(min_row=1, max_row=max_rows, max_col=max_columns, values_only=True))
+            headers = [str(value).strip() if value is not None else "" for value in values[1]] if len(values) > 1 else []
+            return headers, [list(row) for row in values[2:]]
+        finally:
+            workbook.close()
+
+    def template_checksum(self) -> str:
+        if not self.template_path.is_file():
+            raise ValueError(f"Salesforce template was not found: {self.template_path}")
+        return sha256_file(self.template_path)
+
+    def approved_row_count(self) -> int:
+        return len(self._approved_employee_rows())
 
     def _approved_employee_rows(self) -> list[dict[str, object]]:
         with orm_session(self.database_path) as session:

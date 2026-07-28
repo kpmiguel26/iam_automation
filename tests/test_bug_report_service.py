@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from iam_automation.application.bug_report_service import BugReportService
+
+
+class BugReportServiceTests(unittest.TestCase):
+    def test_create_writes_sharepoint_json_and_filters_for_reporter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = BugReportService(Path(directory))
+
+            bug = service.create(
+                title="Approval button is unclear",
+                description="The reviewer cannot tell which action is primary.",
+                severity="medium",
+                page="Approval queue",
+                reporter="tester.one",
+                computer="VDI-01",
+            )
+            files = list((Path(directory) / "bug_reports" / "open").glob("*.json"))
+            self.assertEqual(len(files), 1)
+            self.assertIn(bug.bug_id, files[0].read_text(encoding="utf-8"))
+            self.assertEqual(len(service.list_for_user("tester.one", is_admin=False)), 1)
+            self.assertEqual(service.list_for_user("tester.two", is_admin=False), [])
+            self.assertEqual(len(service.list_for_user("tester.two", is_admin=True)), 1)
+
+    def test_update_moves_report_between_status_folders(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = BugReportService(root)
+            bug = service.create(
+                title="Import warning",
+                description="A warning remains after validation.",
+                severity="high",
+                page="Imports",
+                reporter="tester.one",
+                computer="VDI-01",
+            )
+            open_files = list((root / "bug_reports" / "open").glob("*.json"))
+            self.assertEqual(len(open_files), 1)
+
+            updated = service.update(
+                bug.bug_id,
+                status="in_progress",
+                assigned_to="migue",
+                resolution="Investigating with the testing team.",
+            )
+
+            self.assertEqual(updated.status, "IN_PROGRESS")
+            self.assertEqual(updated.assigned_to, "migue")
+            self.assertFalse(open_files[0].exists())
+            self.assertEqual(len(list((root / "bug_reports" / "open").glob("*.json"))), 0)
+            self.assertEqual(len(list((root / "bug_reports" / "in_progress").glob("*.json"))), 1)
+            self.assertEqual(service.list_for_user("tester.one", is_admin=False)[0].resolution, updated.resolution)
+
+
+if __name__ == "__main__":
+    unittest.main()
