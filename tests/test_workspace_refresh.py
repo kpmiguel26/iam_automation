@@ -32,6 +32,7 @@ class WorkspaceRefreshTests(unittest.TestCase):
             version, exported = service.refresh("requester")
             self.assertTrue(version.published_checksum)
             self.assertEqual(exported, 1)
+            self.assertFalse(version.update_available)
             self.assertEqual(len(tuple((root / "requests" / "pending").glob(f"*_{request.request_id}.json"))), 1)
             self.assertFalse(RequestService(local).list_requests(creator="requester"))
 

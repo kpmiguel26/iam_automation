@@ -9,6 +9,7 @@ from typing import Any
 from . import config
 from .application.audit_service import record_audit
 from .database import initialize_runtime_database
+from .application.workspace_refresh_service import record_published_source_checksum
 from .identity import CurrentUser
 from .identity import computer_name, windows_username
 from .runtime_sync import find_published_access_db, find_published_runtime_db, project_runtime_path, sync_runtime_snapshot
@@ -166,6 +167,7 @@ class StartupController:
             try:
                 snapshot = sync_runtime_snapshot(self.settings.published_runtime_db_path, self.settings.local_runtime_db_path)
                 initialize_runtime_database(snapshot.local_path)
+                record_published_source_checksum(snapshot.local_path, snapshot.checksum)
                 resources.append({
                     "key": "runtime_sync",
                     "label": "Local runtime SQLite synchronization",

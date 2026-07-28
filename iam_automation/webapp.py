@@ -187,7 +187,7 @@ def create_app(
             current = next((user for user in UserService(runtime_path).list_users() if user.username.lower() == str(username).lower()), None)
             if current:
                 session["iam_roles"] = list(current.roles)
-                session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN"} & set(current.roles))
+                session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & set(current.roles))
             return redirect(url_for("dashboard", refreshed=f"Workspace refreshed successfully. {exported} pending request(s) preserved."))
         except Exception as exc:
             return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=str(username), roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path).snapshot(str(username)), workspace_version=workspace.version(), workspace_error=str(exc)), 409
