@@ -15,7 +15,7 @@ def _current_user() -> CurrentUser:
     return CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
 
 
-def create_request_blueprint(database_path: Path, *, audit_path: Path | None = None) -> Blueprint:
+def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | None = None, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("requests", __name__)
     service = RequestService(database_path)
     users = UserService(database_path)
@@ -63,9 +63,11 @@ def create_request_blueprint(database_path: Path, *, audit_path: Path | None = N
             try:
                 payload = {key: value.strip() for key, value in {"first_name": request.form.get("first_name", ""), "last_name": request.form.get("last_name", ""), "job_title": request.form.get("job_title", ""), "lob": request.form.get("lob", "")}.items() if value.strip()}
                 service.create(_current_user(), request.form.get("operation_type", ""), request.form.get("entity_id", ""), payload, request.form.get("reason", ""))
+                if sharepoint_root:
+                    service.export_pending_for_user(str(session["iam_user"]), sharepoint_root / "requests" / "pending")
                 record_audit(audit_path, str(session["iam_user"]), "REQUEST_CREATED", "change_request", request.form.get("entity_id", ""), new_values={"operation_type": request.form.get("operation_type", "")})
-                return render_template("requests/list.html", requests=service.list_requests(creator=str(session["iam_user"])), operation_options=OPERATION_OPTIONS, message="Request submitted for review.", error=None)
-            except (ValueError, PermissionError) as exc:
+                return render_template("requests/list.html", requests=service.list_requests(creator=str(session["iam_user"])), operation_options=OPERATION_OPTIONS, message="Request submitted and shared connector JSON created in SharePoint.", error=None)
+            except (OSError, ValueError, PermissionError) as exc:
                 error = str(exc)
         return render_template("requests/new.html", operation_options=OPERATION_OPTIONS, error=error)
 
