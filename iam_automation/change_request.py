@@ -48,6 +48,10 @@ class ChangeRequest:
     payload: dict[str, Any]
     reason: str
     status: str = "PENDING"
+    assigned_to: str | None = None
+    reviewed_by: str | None = None
+    review_note: str | None = None
+    updated_at_utc: str | None = None
 
 
 def utc_timestamp() -> str:
@@ -132,7 +136,8 @@ def validate_request_dict(data: dict[str, Any]) -> None:
         "reason",
         "status",
     }
-    unknown = set(data) - required
+    optional = {"assigned_to", "reviewed_by", "review_note", "updated_at_utc"}
+    unknown = set(data) - required - optional
     missing = required - set(data)
     if missing:
         raise RequestValidationError(f"Missing request fields: {sorted(missing)}")
@@ -148,8 +153,6 @@ def validate_request_dict(data: dict[str, Any]) -> None:
         raise RequestValidationError(f"Unsupported entity_type: {data['entity_type']}")
     if data["status"] not in REQUEST_STATUSES:
         raise RequestValidationError(f"Unsupported status: {data['status']}")
-    if data["status"] != "PENDING":
-        raise RequestValidationError("Submitted request files must have status PENDING")
     if not isinstance(data["expected_record_version"], int) or data["expected_record_version"] < 0:
         raise RequestValidationError("expected_record_version must be a non-negative integer")
     if not isinstance(data["payload"], dict) or not data["payload"]:
@@ -211,6 +214,8 @@ def import_pending_requests(
     for path in sorted(pending_folder.glob("*.json")):
         try:
             request = load_request_file(path)
+            if request.status != "PENDING":
+                raise RequestValidationError("Only PENDING request files can be imported.")
             if request.request_id in processed_ids:
                 target = quarantine_folder / path.name
                 shutil.move(str(path), str(target))

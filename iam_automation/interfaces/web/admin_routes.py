@@ -13,6 +13,7 @@ from ...application.notification_service import NotificationService
 from ...application.publication_service import PublicationService
 from ...application.salesforce_export_service import SalesforceExportService
 from ...application.request_service import RequestService
+from ...application.shared_request_service import SharedRequestService
 from ...application.governance_service import GovernanceService
 from ...application.session_service import SessionService
 from ...application.user_service import UserService
@@ -20,11 +21,12 @@ from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OP
 from ...identity_discovery import list_pending_discoveries
 
 
-def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None = None, local_runtime_path: Path | None = None, published_runtime_path: Path | None = None, audit_path: Path | None = None) -> Blueprint:
+def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None = None, sharepoint_root: Path | None = None, local_runtime_path: Path | None = None, published_runtime_path: Path | None = None, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("admin", __name__, url_prefix="/admin")
     notifications = NotificationService(database_path)
     delegations = DelegationService(database_path)
     requests = RequestService(database_path)
+    shared_requests = SharedRequestService(sharepoint_root) if sharepoint_root else None
     publication = PublicationService(database_path)
     governance = GovernanceService(local_runtime_path=local_runtime_path or database_path, published_runtime_path=published_runtime_path or database_path, audit_path=audit_path or database_path.parent / "audit")
     sessions = SessionService(database_path)
@@ -137,7 +139,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     @blueprint.get("/publication")
     @admin_required
     def publication_queue():
-        return render_template("requests/publication_queue.html", publications=publication.list_pending())
+        return render_template("requests/publication_queue.html", publications=publication.list_pending(), approved_requests=shared_requests.list_approved() if shared_requests else [])
 
     @blueprint.get("/exports/salesforce")
     @admin_required
@@ -159,6 +161,8 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     @blueprint.post("/governance/publish")
     @master_required
     def publish_runtime():
+        if ROLE_SUPER_OPERATOR in {normalize_role(role) for role in session.get("iam_roles", ())}:
+            return "SUPER_OPERATOR cannot publish the runtime database.", 403
         try:
             governance.publish(str(session["iam_user"]), request.form.get("expected_checksum", ""))
             return redirect(url_for("admin.governance_center"))
@@ -168,6 +172,8 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     @blueprint.post("/governance/restore")
     @master_required
     def restore_runtime():
+        if ROLE_SUPER_OPERATOR in {normalize_role(role) for role in session.get("iam_roles", ())}:
+            return "SUPER_OPERATOR cannot restore the runtime database.", 403
         try:
             governance.restore(str(session["iam_user"]), request.form.get("backup_name", ""))
             return redirect(url_for("admin.governance_center"))

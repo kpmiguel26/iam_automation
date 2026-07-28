@@ -82,7 +82,7 @@ def create_app(
     app.extensions["iam_file_watcher"] = None
     app.extensions["iam_refresh_lock"] = threading.Lock()
     if runtime_path:
-        app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), local_runtime_path=preflight_result.settings.local_runtime_db_path, published_runtime_path=preflight_result.settings.published_runtime_db_path, audit_path=preflight_result.settings.audit_folder_path))
+        app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), sharepoint_root=preflight_result.settings.sharepoint_root_path, local_runtime_path=preflight_result.settings.local_runtime_db_path, published_runtime_path=preflight_result.settings.published_runtime_db_path, audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_master_blueprint(runtime_path, preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_user_blueprint(runtime_path, audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), audit_path=preflight_result.settings.audit_folder_path))
