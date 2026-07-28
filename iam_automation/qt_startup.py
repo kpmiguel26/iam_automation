@@ -10,12 +10,12 @@ from .webapp import launch_local_webapp_process, stop_local_webapp
 try:  # Optional until the desktop/web UI dependencies are installed.
     from PySide6.QtCore import Qt, QThread, Signal
     from PySide6.QtGui import QIcon, QPixmap
-    from PySide6.QtWidgets import QApplication, QFileDialog, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
+    from PySide6.QtWidgets import QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
 except ModuleNotFoundError:  # pragma: no cover - exercised when optional UI deps are absent
     QApplication = None  # type: ignore[assignment,misc]
     QFileDialog = None  # type: ignore[assignment,misc]
     Qt = QIcon = QPixmap = QThread = Signal = None  # type: ignore[assignment,misc]
-    QApplication = QFileDialog = QLabel = QLineEdit = QPlainTextEdit = QPushButton = QScrollArea = QVBoxLayout = QWidget = None  # type: ignore[assignment,misc]
+    QApplication = QFileDialog = QFrame = QHBoxLayout = QLabel = QLineEdit = QPlainTextEdit = QPushButton = QScrollArea = QVBoxLayout = QWidget = None  # type: ignore[assignment,misc]
 
 
 class StartupWindow:
@@ -28,23 +28,53 @@ class StartupWindow:
         self.on_ready = on_ready
         self.widget = QWidget()
         self.widget.setWindowTitle("IAM Automation - Environment Check")
-        self.widget.setMinimumWidth(720)
+        self.widget.resize(940, 720)
+        self.widget.setMinimumSize(760, 560)
+        self.widget.setStyleSheet(
+            """
+            QWidget { background: #f4f7fb; color: #17233f; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; font-size: 13px; }
+            QLabel { background: transparent; }
+            QFrame#header { background: #10254d; border-radius: 10px; }
+            QLabel#logo { background: transparent; }
+            QLabel#productName { background: transparent; color: #ffffff; font-size: 20px; font-weight: 700; }
+            QLabel#productSubtitle { background: transparent; color: #b8c7e2; font-size: 12px; }
+            QLabel#headerTag { background: transparent; color: #7ce1d4; font-size: 11px; font-weight: 700; }
+            QLabel#sectionLabel { color: #087f83; font-size: 11px; font-weight: 700; padding-top: 8px; }
+            QLabel#statusLabel { background: #fff4d6; border: 1px solid #f0d58c; border-radius: 8px; color: #75540b; font-size: 14px; font-weight: 600; padding: 11px 14px; }
+            QLabel#statusLabel[ready="true"] { background: #e5f6ed; border-color: #a8dfc0; color: #17653c; }
+            QLabel#statusLabel[error="true"] { background: #fde9e7; border-color: #efb1ab; color: #9d2f2a; }
+            QLineEdit, QPlainTextEdit { background: white; border: 1px solid #d7dfec; border-radius: 7px; padding: 8px; }
+            QLineEdit:focus, QPlainTextEdit:focus { border: 1px solid #2e74c9; }
+            QScrollArea { background: white; border: 1px solid #d7dfec; border-radius: 7px; }
+            QPushButton { background: #edf2f8; border: 1px solid #cbd6e5; border-radius: 6px; color: #1b3157; font-weight: 600; padding: 8px 14px; min-height: 18px; }
+            QPushButton:hover { background: #e1eaf5; border-color: #8ca8ca; }
+            QPushButton:disabled { color: #9aa6b8; background: #eef1f5; border-color: #dfe4eb; }
+            QPushButton#primaryButton { background: #1266d6; border-color: #1266d6; color: white; }
+            QPushButton#primaryButton:hover { background: #0c55b6; }
+            QPushButton#successButton { background: #16834b; border-color: #16834b; color: white; }
+            QPushButton#dangerButton { color: #9d2f2a; border-color: #e2aaa6; }
+            """
+        )
         self.logo_label = QLabel()
+        self.logo_label.setObjectName("logo")
         logo_path = Path(__file__).resolve().parent / "static" / "kaiser_permanente_logo.png"
         logo = QPixmap(str(logo_path))
         if not logo.isNull():
             self.logo_label.setPixmap(logo.scaledToHeight(58, Qt.TransformationMode.SmoothTransformation))
         self.status_label = QLabel()
+        self.status_label.setObjectName("statusLabel")
+        self.status_label.setWordWrap(True)
         self.details_label = QLabel()
         self.details_label.setWordWrap(True)
         self.details_scroll = QScrollArea()
         self.details_scroll.setWidgetResizable(True)
         self.details_scroll.setWidget(self.details_label)
         self.details_scroll.setMinimumHeight(150)
-        self.details_scroll.setMaximumHeight(260)
+        self.details_scroll.setMaximumHeight(230)
         self.log_output = QPlainTextEdit()
         self.log_output.setReadOnly(True)
-        self.log_output.setMaximumHeight(150)
+        self.log_output.setMinimumHeight(100)
+        self.log_output.setMaximumHeight(170)
         self.path_input = QLineEdit()
         self.path_input.setReadOnly(True)
         self.browse_button = QPushButton("Browse")
@@ -52,24 +82,66 @@ class StartupWindow:
         self.start_button = QPushButton("Start Web App")
         self.open_button = QPushButton("Open App")
         self.stop_button = QPushButton("Stop Web App")
+        self.browse_button.setObjectName("secondaryButton")
+        self.retry_button.setObjectName("secondaryButton")
+        self.start_button.setObjectName("primaryButton")
+        self.open_button.setObjectName("successButton")
+        self.stop_button.setObjectName("dangerButton")
         self.open_button.setEnabled(False)
         self.stop_button.setEnabled(False)
         self.webapp_url: str | None = None
         self.webapp_process = None
         self.closing = False
         layout = QVBoxLayout(self.widget)
-        layout.addWidget(self.logo_label)
-        layout.addWidget(QLabel("SharePoint / OneDrive synchronized folder"))
-        layout.addWidget(self.path_input)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(10)
+        header = QFrame()
+        header.setObjectName("header")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(16, 12, 18, 12)
+        header_layout.addWidget(self.logo_label)
+        header_layout.addSpacing(14)
+        brand = QVBoxLayout()
+        product = QLabel("IAM Automation")
+        product.setObjectName("productName")
+        subtitle = QLabel("Local workspace control panel")
+        subtitle.setObjectName("productSubtitle")
+        brand.addWidget(product)
+        brand.addWidget(subtitle)
+        header_layout.addLayout(brand)
+        header_layout.addStretch()
+        header_tag = QLabel("PREFLIGHT")
+        header_tag.setObjectName("headerTag")
+        header_layout.addWidget(header_tag)
+        layout.addWidget(header)
+
+        path_label = QLabel("SHAREPOINT / ONEDRIVE SYNCHRONIZED FOLDER")
+        path_label.setObjectName("sectionLabel")
+        layout.addWidget(path_label)
+        path_row = QHBoxLayout()
+        path_row.setSpacing(8)
+        path_row.addWidget(self.path_input, 1)
+        path_row.addWidget(self.browse_button)
+        layout.addLayout(path_row)
         layout.addWidget(self.status_label)
+
+        details_label = QLabel("VALIDATION DETAILS")
+        details_label.setObjectName("sectionLabel")
+        layout.addWidget(details_label)
         layout.addWidget(self.details_scroll)
-        layout.addWidget(QLabel("Startup log"))
+        log_label = QLabel("STARTUP LOG")
+        log_label.setObjectName("sectionLabel")
+        layout.addWidget(log_label)
         layout.addWidget(self.log_output)
-        layout.addWidget(self.browse_button)
-        layout.addWidget(self.retry_button)
-        layout.addWidget(self.start_button)
-        layout.addWidget(self.open_button)
-        layout.addWidget(self.stop_button)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        actions.addStretch()
+        actions.addWidget(self.retry_button)
+        actions.addWidget(self.start_button)
+        actions.addWidget(self.open_button)
+        actions.addWidget(self.stop_button)
+        layout.addLayout(actions)
         self.browse_button.clicked.connect(self.browse)
         self.retry_button.clicked.connect(self.retry)
         self.start_button.clicked.connect(self.continue_to_login)
@@ -82,7 +154,7 @@ class StartupWindow:
     def apply_result(self, result: PreflightResult) -> None:
         if result.settings:
             self.path_input.setText(str(result.settings.sharepoint_root_path))
-        self.status_label.setText(f"{result.state.value}: {result.message}")
+        self._set_status(f"{result.state.value}: {result.message}", ready=result.ok, error=not result.ok)
         details = [f"{item['label']}: {item['status']} - {item['message']}" for item in result.resources]
         self.details_label.setText("\n".join(details))
         self._log(f"[{result.state.value}] {result.message}")
@@ -93,6 +165,14 @@ class StartupWindow:
 
     def _log(self, message: str) -> None:
         self.log_output.appendPlainText(message)
+
+    def _set_status(self, message: str, *, ready: bool = False, error: bool = False) -> None:
+        self.status_label.setText(message)
+        self.status_label.setProperty("ready", ready)
+        self.status_label.setProperty("error", error)
+        style = self.status_label.style()
+        style.unpolish(self.status_label)
+        style.polish(self.status_label)
 
     def discover(self) -> PreflightResult:
         result = self.controller.discover_sharepoint()
@@ -110,7 +190,7 @@ class StartupWindow:
     def mark_webapp_started(self, process, url: str) -> None:
         self.webapp_process = process
         self.webapp_url = url
-        self.status_label.setText(f"READY: Local webapp is running at {url}")
+        self._set_status(f"READY: Local webapp is running at {url}", ready=True)
         self._log(f"[WEBAPP] Flask/Waitress process started: {url}")
         self.details_label.setText(
             self.details_label.text()
@@ -124,7 +204,7 @@ class StartupWindow:
         if not self.webapp_url:
             return
         self.stop_button.setEnabled(False)
-        self.status_label.setText("STOPPING: Requesting a clean webapp shutdown...")
+        self._set_status("STOPPING: Requesting a clean webapp shutdown...")
         self.stop_worker = WebAppStopWorker()
         self.stop_worker.stopped.connect(self._webapp_stopped)
         self.stop_worker.failed.connect(self._webapp_stop_failed)
@@ -138,16 +218,14 @@ class StartupWindow:
         self.start_button.setEnabled(True)
         self.open_button.setEnabled(False)
         self.stop_button.setEnabled(False)
-        self.status_label.setText("READY: Webapp stopped. The control panel remains available.")
+        self._set_status("READY: Webapp stopped. The control panel remains available.", ready=True)
         if self.closing:
             self._finish_exit()
 
     def _webapp_stop_failed(self, message: str) -> None:
         self._log(f"[WEBAPP] Stop request failed: {message}")
         self.stop_button.setEnabled(True)
-        if self.stop_action:
-            self.stop_action.setEnabled(True)
-        self.status_label.setText(f"STOP_ERROR: {message}")
+        self._set_status(f"STOP_ERROR: {message}", error=True)
 
     def exit_app(self) -> None:
         if self.webapp_url:
@@ -162,7 +240,7 @@ class StartupWindow:
             application.quit()
 
     def mark_webapp_starting(self) -> None:
-        self.status_label.setText("STARTING: Local Flask/Waitress webapp...")
+        self._set_status("STARTING: Local Flask/Waitress webapp...")
         self._log("[WEBAPP] Starting Flask/Waitress process...")
         self.start_button.setEnabled(False)
         self.open_button.setEnabled(False)
@@ -182,7 +260,7 @@ class StartupWindow:
             user = self.controller.continue_to_login()
             self._log(f"[IDENTITY] Windows identity recorded: {user.username} on {user.computer} | application login required")
         except PermissionError as exc:
-            self.status_label.setText(f"{StartupState.UNAUTHORIZED_USER.value}: {exc}")
+            self._set_status(f"{StartupState.UNAUTHORIZED_USER.value}: {exc}", error=True)
             self.start_button.setEnabled(False)
             self.open_button.setEnabled(False)
             return

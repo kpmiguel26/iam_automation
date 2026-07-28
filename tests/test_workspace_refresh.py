@@ -3,13 +3,14 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from iam_automation.application.request_service import RequestService
 from iam_automation.application.workspace_refresh_service import WorkspaceRefreshService
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.identity import CurrentUser, ROLE_REQUESTER
-from iam_automation.runtime_sync import sync_runtime_snapshot
+from iam_automation.runtime_sync import runtime_manifest_path, sha256_file, sync_runtime_snapshot
 
 
 class WorkspaceRefreshTests(unittest.TestCase):
@@ -24,10 +25,14 @@ class WorkspaceRefreshTests(unittest.TestCase):
             request = RequestService(local).create(CurrentUser("requester", "VDI-01", (ROLE_REQUESTER,)), "CREATE_EMPLOYEE", "E100", {"first_name": "Test"}, "Refresh test")
             connection = sqlite3.connect(published)
             try:
-                connection.execute("UPDATE app_metadata SET updated_at_utc = datetime('now') WHERE metadata_key = 'schema_version'")
+                connection.execute("UPDATE app_metadata SET metadata_value = '1.0.1' WHERE metadata_key = 'schema_version'")
                 connection.commit()
             finally:
                 connection.close()
+            manifest_path = runtime_manifest_path(published)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["sha256"] = sha256_file(published)
+            manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
             service = WorkspaceRefreshService(local, published, root)
             version, exported = service.refresh("requester")
             self.assertTrue(version.published_checksum)
