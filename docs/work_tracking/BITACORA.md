@@ -181,3 +181,40 @@
 - Each workstation discovery now uses a unique filename and discovery ID, avoiding concurrent overwrite and OneDrive merge conflicts.
 - Preserved the legacy single-file API for existing tests and migration compatibility.
 - Restricted the file watcher to the identity-discovery directory so runtime manifests are not reported as identity events.
+
+### Safe Workspace Refresh - 2026-07-24
+
+- Added explicit workspace version comparison using published and local SQLite checksums.
+- Added a dashboard warning and `Refresh workspace` action; the application is not restarted and the user does not need to close the launcher.
+- Exported the current user's local `PENDING` requests to unique shared JSON files before replacing the local SQLite snapshot.
+- Added local backup, checksum validation, atomic replacement and runtime schema initialization to the refresh operation.
+- Blocked refresh while local publication items are pending, preventing administrative work from being silently discarded.
+- Revalidated the session roles from the refreshed SQLite when the account remains active.
+- Verified workspace refresh, backup/checksum, webapp and admin regressions: 12 tests passed.
+
+### Temporary Super Operator Bridge - 2026-07-28
+
+- Implemented a visible, temporary `SUPER_OPERATOR` elevation for the staffing and budget transition period.
+- The elevation is stored in SQLite as `temporary_elevations`; it is not persisted as a permanent application-user role and cannot be granted through the normal user CRUD.
+- A `MASTER_ADMIN` grants access from the Governance menu with an application-user dropdown, ISO UTC start and expiration, and a mandatory business reason.
+- Every grant, revocation and automatic expiration is recorded in the append-only audit trail. Active elevations are recalculated on login and on each authenticated request, so expiration removes operational access without requiring a code change or manual logout.
+- The elevation enables operational application administration, request review, approval assignment, delegation, ingestion and quarantine workflows. It does not grant Master security, role-matrix administration, session security, audit export/archive, Access publication, Access restore or changes to the authorization model.
+- Added a Master-controlled global switch to disable the bridge without rewriting security code. The control remains explicit, auditable and time-limited; no hidden backdoor or environment bypass was introduced.
+- Added regression coverage for grant, revoke, expiration, invalid dates/reasons, and the existing webapp/preflight suite.
+- Verification: full suite passed with 55 tests. This bridge is a temporary operating procedure and must be revoked or disabled when the permanent staffing model is approved.
+
+### Salesforce Export and Governed Runtime Publication - 2026-07-28
+
+- Pulled the official Salesforce Data Loader workbook from `docs/req/salesforce_template` and reviewed its 70-column structure and yellow input fields.
+- Added a Salesforce export service that generates a new timestamped workbook from approved `CREATE_EMPLOYEE` and `UPDATE_EMPLOYEE` requests in local SQLite. It preserves the official template, removes sample people and records the generated artifact in audit.
+- Added the Application Admin Control Center action **Salesforce export**. The output is written to the SharePoint-synchronized `generated_templates` folder; the workbook is downloaded by the operator for Salesforce/Data Loader review. No Salesforce import or automatic submission is performed.
+- Enabled the governed Master Admin runtime publication path already present in the application: it validates SQLite integrity, checks the expected published checksum, creates a backup, atomically updates the SharePoint snapshot and writes its manifest.
+- Added `docs/guides/SALESFORCE_EXPORT_CONFIGURATION.md` with template mapping, SharePoint folder behavior and the macOS/Windows development handoff procedure.
+- Clarified the environment boundary: macOS cannot publish to real SharePoint without a local OneDrive-synchronized library. macOS development uses `tests/fixtures/sharepoint_simulated` through `IAM_SHAREPOINT_ROOT_PATH`; Windows or a Mac with OneDrive performs real SharePoint publication.
+
+### Versioned SQLite Migrations - 2026-07-28
+
+- Added `iam_automation/database/migrations/` and an atomic migration runner with the `schema_migrations` ledger.
+- Registered the existing runtime structure as `v001_initial_schema` and added `v002_notification_indexes` as the first incremental migration.
+- Runtime bootstrap now applies pending migrations idempotently after creating the current baseline schema. Future features must add a versioned migration instead of replacing `db_sharepoint` with `db_dev`.
+- Added regression coverage for baseline registration, ordered application and idempotent reruns.

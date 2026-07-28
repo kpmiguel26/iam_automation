@@ -4,18 +4,19 @@ from functools import wraps
 from pathlib import Path
 from typing import Callable
 
-from flask import Blueprint, redirect, render_template, request, session, url_for
+from flask import Blueprint, redirect, render_template, request, send_file, session, url_for
 
 from ...application.delegation_service import DelegationService
 from ...application.audit_service import record_audit
 from ...application.import_service import ImportService
 from ...application.notification_service import NotificationService
 from ...application.publication_service import PublicationService
+from ...application.salesforce_export_service import SalesforceExportService
 from ...application.request_service import RequestService
 from ...application.governance_service import GovernanceService
 from ...application.session_service import SessionService
 from ...application.user_service import UserService
-from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
+from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
 from ...identity_discovery import list_pending_discoveries
 
 
@@ -29,12 +30,13 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     sessions = SessionService(database_path)
     imports = ImportService(database_path)
     users = UserService(database_path)
+    salesforce = SalesforceExportService(database_path, audit_path=audit_path)
 
     def admin_required(view: Callable):
         @wraps(view)
         def wrapped(*args, **kwargs):
             roles = {normalize_role(role) for role in session.get("iam_roles", ())}
-            if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
+            if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}:
                 return "Administrator role required.", 403
             return view(*args, **kwargs)
         return wrapped
@@ -136,6 +138,18 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     @admin_required
     def publication_queue():
         return render_template("requests/publication_queue.html", publications=publication.list_pending())
+
+    @blueprint.get("/exports/salesforce")
+    @admin_required
+    def export_salesforce():
+        try:
+            destination_folder = (local_runtime_path or database_path).parent / "generated_templates"
+            if audit_path and audit_path.parent.name:
+                destination_folder = audit_path.parent / "generated_templates"
+            destination = salesforce.generate(destination_folder, str(session["iam_user"]))
+            return send_file(destination, as_attachment=True, download_name=destination.name, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        except ValueError as exc:
+            return render_template("admin/control_center.html", username=str(session.get("iam_user", "")), roles=tuple(session.get("iam_roles", ())), unread_count=notifications.unread_count(str(session.get("iam_user", ""))), delegations=delegations.list_active(), pending_discoveries=[], message=None, error=str(exc)), 400
 
     @blueprint.get("/governance")
     @master_required

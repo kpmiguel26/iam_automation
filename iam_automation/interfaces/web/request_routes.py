@@ -8,7 +8,7 @@ from flask import Blueprint, render_template, request, session
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.audit_service import record_audit
 from ...application.user_service import UserService
-from ...identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, normalize_role
+from ...identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, ROLE_SUPER_OPERATOR, normalize_role
 
 
 def _current_user() -> CurrentUser:
@@ -32,7 +32,7 @@ def create_request_blueprint(database_path: Path, *, audit_path: Path | None = N
         @wraps(view)
         def wrapped(*args, **kwargs):
             roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
-            if not roles & {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
+            if not roles & {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}:
                 return "Reviewer role required.", 403
             return view(*args, **kwargs)
         return wrapped
@@ -41,13 +41,13 @@ def create_request_blueprint(database_path: Path, *, audit_path: Path | None = N
         @wraps(view)
         def wrapped(*args, **kwargs):
             roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
-            if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
+            if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}:
                 return "Application Admin role required.", 403
             return view(*args, **kwargs)
         return wrapped
 
     def reviewer_accounts():
-        allowed = {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}
+        allowed = {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}
         return [user for user in users.list_users() if user.active and allowed & set(user.roles)]
 
     @blueprint.get("/requests")

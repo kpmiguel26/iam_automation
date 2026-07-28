@@ -20,10 +20,11 @@ ROLE_MASTER_ADMIN = "MASTER_ADMIN"
 ROLE_APPLICATION_ADMIN = "APPLICATION_ADMIN"
 ROLE_WRITER = "WRITER"
 ROLE_AUDITOR = "AUDITOR"
+ROLE_SUPER_OPERATOR = "SUPER_OPERATOR"
 
 ROLE_ALIASES = {ROLE_ADMINISTRATOR: ROLE_APPLICATION_ADMIN}
 ADMIN_ROLES = {ROLE_MASTER_ADMIN, ROLE_APPLICATION_ADMIN, ROLE_ADMINISTRATOR}
-WRITER_ROLES = {ROLE_APPLICATION_ADMIN, ROLE_ADMINISTRATOR, ROLE_WRITER, ROLE_MASTER_ADMIN}
+WRITER_ROLES = {ROLE_APPLICATION_ADMIN, ROLE_ADMINISTRATOR, ROLE_WRITER, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}
 
 
 def normalize_role(role: str) -> str:
@@ -47,7 +48,7 @@ class CurrentUser:
 
     @property
     def is_application_admin(self) -> bool:
-        return bool({ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN} & set(self.normalized_roles))
+        return bool({ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR} & set(self.normalized_roles))
 
     @property
     def is_writer(self) -> bool:
@@ -55,11 +56,11 @@ class CurrentUser:
 
     @property
     def can_submit_requests(self) -> bool:
-        return bool(set(self.normalized_roles) & {ROLE_REQUESTER, ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_WRITER, ROLE_MASTER_ADMIN})
+        return bool(set(self.normalized_roles) & {ROLE_REQUESTER, ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_WRITER, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR})
 
     @property
     def can_review_requests(self) -> bool:
-        return bool(set(self.normalized_roles) & {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_WRITER, ROLE_MASTER_ADMIN})
+        return bool(set(self.normalized_roles) & {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_WRITER, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR})
 
 
 def windows_username() -> str:
@@ -160,7 +161,9 @@ def validate_app_user_from_sqlite(path: Path, username: str, password: str) -> C
         raise
     except Exception as exc:
         raise PermissionError(f"Application login database could not be read: {exc}") from exc
-    return CurrentUser(username=application_username, computer=computer_name(), roles=roles)
+    from .application.temporary_super_operator_service import TemporarySuperOperatorService
+
+    return CurrentUser(username=application_username, computer=computer_name(), roles=TemporarySuperOperatorService(path).effective_roles(application_username, roles))
 
 
 def auto_approve_current_user_for_development(path: Path, role: str = ROLE_REQUESTER) -> CurrentUser:

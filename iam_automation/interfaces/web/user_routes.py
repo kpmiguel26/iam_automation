@@ -10,7 +10,7 @@ from ...application.user_service import UserService
 from ...application.audit_service import record_audit
 from ...application.identity_service import IdentityService
 from ...application.role_catalog import ROLE_OPTIONS
-from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
+from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
 from ...identity_discovery import get_pending_discovery, list_pending_discoveries, mark_discovery
 from ...domain.users import ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_INACTIVE, ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED, ACCOUNT_STATUS_SUSPENDED
 
@@ -22,14 +22,14 @@ def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None
     def administrator_required(view: Callable):
         @wraps(view)
         def wrapped(*args, **kwargs):
-            if not {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN} & {normalize_role(str(role)) for role in session.get("iam_roles", ())}:
+            if not {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR} & {normalize_role(str(role)) for role in session.get("iam_roles", ())}:
                 return "Administrator role required.", 403
             return view(*args, **kwargs)
         return wrapped
 
     def render(message: str | None = None, error: str | None = None):
         roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
-        return render_template("admin/users.html", users=service.list_users(), message=message, error=error, role_options=ROLE_OPTIONS, can_assign_master=ROLE_MASTER_ADMIN in roles, account_statuses=(ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_SUSPENDED, ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED, ACCOUNT_STATUS_INACTIVE))
+        return render_template("admin/users.html", users=service.list_users(), message=message, error=error, role_options=[option for option in ROLE_OPTIONS if option.value != ROLE_SUPER_OPERATOR], can_assign_master=ROLE_MASTER_ADMIN in roles, account_statuses=(ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_SUSPENDED, ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED, ACCOUNT_STATUS_INACTIVE))
 
     @blueprint.get("")
     @administrator_required
@@ -74,7 +74,7 @@ def create_identity_blueprint(database_path: Path, *, discovery_file: Path | Non
         @wraps(view)
         def wrapped(*args, **kwargs):
             roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
-            if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
+            if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}:
                 return "Administrator role required.", 403
             return view(*args, **kwargs)
         return wrapped
@@ -82,7 +82,7 @@ def create_identity_blueprint(database_path: Path, *, discovery_file: Path | Non
     def render(message: str | None = None, error: str | None = None):
         roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
         pending = list_pending_discoveries(discovery_file) if discovery_file and discovery_file.exists() else []
-        return render_template("admin/windows_identities.html", identities=service.list_identities(), pending_discoveries=pending, message=message, error=error, role_options=ROLE_OPTIONS, can_assign_master=ROLE_MASTER_ADMIN in roles)
+        return render_template("admin/windows_identities.html", identities=service.list_identities(), pending_discoveries=pending, message=message, error=error, role_options=[option for option in ROLE_OPTIONS if option.value != ROLE_SUPER_OPERATOR], can_assign_master=ROLE_MASTER_ADMIN in roles)
 
     @blueprint.get("")
     @administrator_required

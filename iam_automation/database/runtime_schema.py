@@ -163,6 +163,17 @@ def initialize_runtime_database(path: Path) -> Path:
                 first_seen_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
                 last_seen_at_utc TEXT NOT NULL DEFAULT (datetime('now'))
             );
+            CREATE TABLE IF NOT EXISTS temporary_elevations (
+                elevation_id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                starts_at_utc TEXT NOT NULL,
+                expires_at_utc TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                granted_by TEXT NOT NULL,
+                created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                revoked_at_utc TEXT,
+                status TEXT NOT NULL DEFAULT 'ACTIVE'
+            );
             INSERT INTO app_metadata (metadata_key, metadata_value, updated_at_utc)
             VALUES ('schema_version', '1.0.0', datetime('now'))
             ON CONFLICT(metadata_key) DO NOTHING;
@@ -187,4 +198,7 @@ def initialize_runtime_database(path: Path) -> Path:
         connection.commit()
     finally:
         connection.close()
+    from .migration_runner import apply_pending_migrations
+
+    apply_pending_migrations(path, actor="runtime-bootstrap")
     return path

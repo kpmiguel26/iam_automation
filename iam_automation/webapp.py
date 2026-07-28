@@ -19,6 +19,9 @@ from .application.session_service import SessionService
 from .application.notification_service import NotificationService
 from .application.file_watch_service import FileWatchService
 from .application.overview_service import OverviewService
+from .application.workspace_refresh_service import WorkspaceRefreshService
+from .application.user_service import UserService
+from .application.temporary_super_operator_service import TemporarySuperOperatorService
 from .interfaces.web.admin_routes import create_admin_blueprint
 from .interfaces.web.master_routes import create_master_blueprint
 from .interfaces.web.user_routes import create_identity_blueprint, create_user_blueprint
@@ -77,6 +80,7 @@ def create_app(
     static_version = str(int(css_path.stat().st_mtime)) if css_path.is_file() else "dev"
     runtime_path = preflight_result.settings.local_runtime_db_path if preflight_result.settings else None
     app.extensions["iam_file_watcher"] = None
+    app.extensions["iam_refresh_lock"] = threading.Lock()
     if runtime_path:
         app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), local_runtime_path=preflight_result.settings.local_runtime_db_path, published_runtime_path=preflight_result.settings.published_runtime_db_path, audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_master_blueprint(runtime_path, preflight_result.settings.audit_folder_path))
@@ -90,6 +94,13 @@ def create_app(
             if SessionService(runtime_path).is_revoked(str(session["iam_user"]), str(session["iam_session_started_at"])):
                 session.clear()
                 return redirect(url_for("login"))
+            current = next((user for user in UserService(runtime_path).list_users() if user.username.lower() == str(session["iam_user"]).lower()), None)
+            if not current or not current.active or current.status != "ACTIVE":
+                session.clear()
+                return redirect(url_for("login"))
+            roles = TemporarySuperOperatorService(runtime_path).effective_roles(current.username, current.roles)
+            session["iam_roles"] = list(roles)
+            session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & set(roles))
 
     @app.context_processor
     def shared_template_context():
@@ -99,7 +110,7 @@ def create_app(
         unread_count = notification_service.unread_count(username) if notification_service else 0
         recent_notifications = notification_service.list_for_user(username, unread_only=True)[:5] if notification_service else []
         return {
-            "is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN"} & {str(role).upper() for role in roles}),
+            "is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & {str(role).upper() for role in roles}),
             "unread_notification_count": unread_count,
             "recent_notifications": recent_notifications,
             "static_version": static_version,
@@ -146,9 +157,10 @@ def create_app(
             return render_template("auth/login.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), error=str(exc)), 403
         session.clear()
         session["iam_user"] = user.username
-        normalized_roles = tuple(sorted({str(role).strip().upper() for role in getattr(user, "roles", ())}))
+        base_roles = tuple(str(role).strip().upper() for role in getattr(user, "roles", ()))
+        normalized_roles = TemporarySuperOperatorService(runtime_path).effective_roles(user.username, base_roles) if runtime_path.is_file() else base_roles
         session["iam_roles"] = list(normalized_roles)
-        session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN"} & set(normalized_roles))
+        session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & set(normalized_roles))
         from datetime import datetime, timezone
         session["iam_session_started_at"] = datetime.now(timezone.utc).isoformat()
         return redirect(url_for("dashboard"))
@@ -160,7 +172,25 @@ def create_app(
         username = session.get("iam_user")
         if not username:
             return redirect(url_for("login"))
-        return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path).snapshot(str(username)))
+        workspace = WorkspaceRefreshService(runtime_path, preflight_result.settings.published_runtime_db_path, preflight_result.settings.sharepoint_root_path)
+        return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path).snapshot(str(username)), workspace_version=workspace.version(), workspace_message=request.args.get("refreshed"))
+
+    @app.post("/workspace/refresh")
+    def refresh_workspace():
+        username = session.get("iam_user")
+        if not username or not runtime_path or not preflight_result.settings:
+            return redirect(url_for("login"))
+        workspace = WorkspaceRefreshService(runtime_path, preflight_result.settings.published_runtime_db_path, preflight_result.settings.sharepoint_root_path)
+        try:
+            with app.extensions["iam_refresh_lock"]:
+                version, exported = workspace.refresh(str(username))
+            current = next((user for user in UserService(runtime_path).list_users() if user.username.lower() == str(username).lower()), None)
+            if current:
+                session["iam_roles"] = list(current.roles)
+                session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN"} & set(current.roles))
+            return redirect(url_for("dashboard", refreshed=f"Workspace refreshed successfully. {exported} pending request(s) preserved."))
+        except Exception as exc:
+            return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=str(username), roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path).snapshot(str(username)), workspace_version=workspace.version(), workspace_error=str(exc)), 409
 
     @app.get("/profile")
     def profile():

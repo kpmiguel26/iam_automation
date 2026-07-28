@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Temporary Access{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 admin-page">
+  <a class="back-link" href="{{ url_for('admin.home') }}">Control Center</a>
+  <div class="page-heading mt-3">
+    <div><p class="eyebrow mb-1">Transition governance</p><h1>Temporary Super Operator</h1><p class="text-secondary mb-0">Temporary operational access while staffing resources are pending.</p></div>
+    <span class="status-pill status-pending"><span></span>Audited and time-limited</span>
+  </div>
+  {% if message %}<div class="alert alert-success mt-4">{{ message }}</div>{% endif %}
+  {% if error %}<div class="alert alert-danger mt-4">{{ error }}</div>{% endif %}
+  <div class="alert alert-warning mt-4"><strong>Explicit boundaries:</strong> this access cannot manage Master security, publish or restore Access, or alter the authorization model. It expires automatically and every operation remains audited.</div>
+  <section class="surface p-4 mt-4">
+    <div class="section-heading mb-3"><div><p class="eyebrow mb-1">Grant transition access</p><h2 class="h5 mb-0">Select an application user</h2></div></div>
+    <form class="row g-3" method="post">
+      <div class="col-md-3"><label class="form-label" for="username">Application user</label><select class="form-select" id="username" name="username" required><option value="">Select user</option>{% for user in users %}<option value="{{ user.username }}">{{ user.display_name or user.username }} ({{ user.username }})</option>{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-label" for="starts_at_utc">Starts ISO UTC</label><input class="form-control" id="starts_at_utc" name="starts_at_utc" placeholder="2026-07-28T14:00:00+00:00" required></div>
+      <div class="col-md-3"><label class="form-label" for="expires_at_utc">Expires ISO UTC</label><input class="form-control" id="expires_at_utc" name="expires_at_utc" placeholder="2026-08-04T14:00:00+00:00" required></div>
+      <div class="col-md-3"><label class="form-label" for="reason">Business reason</label><input class="form-control" id="reason" name="reason" placeholder="Pending staffing approval" required></div>
+      <div class="col-12"><button class="btn btn-primary">Grant temporary access</button></div>
+    </form>
+  </section>
+  <section class="surface overflow-hidden mt-4"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>User</th><th>Window</th><th>Reason</th><th>Status</th><th class="text-end">Action</th></tr></thead><tbody>
+    {% for elevation in elevations %}<tr><td><strong>{{ elevation.username }}</strong><div class="small text-secondary">Granted by {{ elevation.granted_by }}</div></td><td class="small text-secondary">{{ elevation.starts_at_utc }}<br>{{ elevation.expires_at_utc }}</td><td>{{ elevation.reason }}</td><td><span class="status-pill {% if elevation.status == 'ACTIVE' %}status-pending{% else %}status-inactive{% endif %}"><span></span>{{ elevation.status|title }}</span></td><td class="text-end">{% if elevation.status == 'ACTIVE' %}<form method="post" action="{{ url_for('master_admin.revoke_temporary_super_operator', elevation_id=elevation.elevation_id) }}"><button class="btn btn-sm btn-outline-danger">Revoke</button></form>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="5" class="empty-state">No temporary elevations recorded.</td></tr>{% endfor %}
+  </tbody></table></div></section>
+</div>
+{% endblock %}
