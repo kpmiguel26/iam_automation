@@ -1,0 +1,14 @@
+{
+  "assigned_to": null,
+  "bug_id": "ff697242-f03c-43f8-b4ac-013d9c25e066",
+  "computer": "",
+  "created_at_utc": "2026-07-29T17:00:27.916766+00:00",
+  "description": "implementar toast notifications",
+  "page": "implementar toast notifications",
+  "reporter": "migue",
+  "resolution": "",
+  "severity": "HIGH",
+  "status": "OPEN",
+  "title": "Implementar notificaciones toast",
+  "updated_at_utc": "2026-07-29T17:02:23.640971+00:00"
+}

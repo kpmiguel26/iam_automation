@@ -1,0 +1,14 @@
+{
+  "assigned_to": null,
+  "bug_id": "f9b47239-c075-4901-a968-4d1c879b9c8b",
+  "computer": "",
+  "created_at_utc": "2026-07-29T18:08:49.962613+00:00",
+  "description": "Leer la informacion de roster lock IAM - KP Vendor Central - IAM Automation\\rosterlocks , ingestar los datos y crear en base a eso los contactos dentro de la base de datos sql",
+  "page": "Roster lock ingest",
+  "reporter": "migue",
+  "resolution": "",
+  "severity": "CRITICAL",
+  "status": "OPEN",
+  "title": "INgesta de master roster lock",
+  "updated_at_utc": null
+}

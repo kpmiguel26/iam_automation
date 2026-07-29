@@ -1,0 +1,14 @@
+{
+  "assigned_to": null,
+  "bug_id": "cec714d3-6ff5-4962-a48a-9a4f6032f80c",
+  "computer": "",
+  "created_at_utc": "2026-07-29T17:31:33.129392+00:00",
+  "description": "http://127.0.0.1:52557/profile  - Darle opciones a los usuarios de modificar el perfil",
+  "page": "http://127.0.0.1:52557/profile",
+  "reporter": "migue",
+  "resolution": "",
+  "severity": "LOW",
+  "status": "OPEN",
+  "title": "Darle opciones a los usuarios de modificar el perfil",
+  "updated_at_utc": null
+}
