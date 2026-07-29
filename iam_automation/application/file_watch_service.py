@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from ..infrastructure.sqlite.orm import AppUserModel, FileObservationModel, UserRoleModel, orm_session
 from .notification_service import NotificationService
+from .roster_lock_ingestion_service import RosterLockIngestionService
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,8 @@ class FileWatchService:
                     previous.last_seen_at_utc = now
                 if changed:
                     created += 1
+                    if observation.file_kind == "ROSTER_LOCK":
+                        RosterLockIngestionService(self.database_path).ingest_file(Path(observation.path))
                     for username in admins:
                         session.add(self._notification(username, observation))
         return created
@@ -65,12 +68,13 @@ class FileWatchService:
             (self.sharepoint_root / "config", "CONFIGURATION"),
             (self.sharepoint_root / "database" / "snapshots" / "identity_discoveries", "IDENTITY_DISCOVERY"),
             (self.sharepoint_root / "database" / "snapshots", "PUBLISHED_RUNTIME"),
+            (self.sharepoint_root / "rosterlocks", "ROSTER_LOCK"),
         )
         observations: list[FileObservation] = []
         for root, kind in roots:
             if not root.is_dir():
                 continue
-            patterns = ("*.json", "*.toml") if kind == "CONFIGURATION" else (("iam_runtime.sqlite",) if kind == "PUBLISHED_RUNTIME" else ("*.json",))
+            patterns = ("*.json", "*.toml") if kind == "CONFIGURATION" else (("iam_runtime.sqlite",) if kind == "PUBLISHED_RUNTIME" else (("*.xlsx",) if kind == "ROSTER_LOCK" else ("*.json",)))
             for pattern in patterns:
                 for path in root.glob(pattern):
                     if path.is_file() and not path.name.startswith("."):
@@ -85,7 +89,7 @@ class FileWatchService:
                 select(AppUserModel).join(UserRoleModel).where(
                     AppUserModel.active.is_(True),
                     AppUserModel.status == "ACTIVE",
-                    UserRoleModel.role_name.in_(("APPLICATION_ADMIN", "MASTER_ADMIN", "ADMINISTRATOR")),
+                    UserRoleModel.role_name.in_(("APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR", "ADMINISTRATOR")),
                 )
             ).all()
             return tuple(sorted({row.username for row in rows}))
@@ -99,6 +103,7 @@ class FileWatchService:
             "CONFIGURATION": ("Configuration file detected", "A configuration file changed and is ready for review."),
             "IDENTITY_DISCOVERY": ("Identity discovery updated", "A workstation identity record is available for administrative review."),
             "PUBLISHED_RUNTIME": ("Workspace database updated", "A new published runtime database is available for local refresh."),
+            "ROSTER_LOCK": ("Roster Lock ingested", "A vendor Roster Lock workbook was staged for validation and reconciliation."),
         }
         title, message = labels[observation.file_kind]
         now = datetime.now(timezone.utc).isoformat()
@@ -111,7 +116,7 @@ class FileWatchService:
             message=f"{message} File: {Path(observation.path).name}",
             entity_type="file",
             entity_id=observation.path,
-            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/admin"),
+            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/admin/imports" if observation.file_kind == "ROSTER_LOCK" else "/admin"),
             status="UNREAD",
             created_at_utc=now,
         )

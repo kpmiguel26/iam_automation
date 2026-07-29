@@ -11,6 +11,7 @@ from sqlalchemy import create_engine
 _REVISION_TO_LEGACY_VERSION = {
     "0001_baseline": "v001_initial_schema",
     "0002_notification_indexes": "v002_notification_indexes",
+    "0003_ingestion_records": "v003_ingestion_records",
 }
 _LEGACY_TO_REVISION = {value: key for key, value in _REVISION_TO_LEGACY_VERSION.items()}
 
@@ -49,6 +50,8 @@ def _current_revision(connection) -> str | None:
 def _legacy_version_for_revision(revision: str | None) -> tuple[str, ...]:
     if revision == "0002_notification_indexes":
         return ("v001_initial_schema", "v002_notification_indexes")
+    if revision == "0003_ingestion_records":
+        return ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records")
     if revision == "0001_baseline":
         return ("v001_initial_schema",)
     return ()

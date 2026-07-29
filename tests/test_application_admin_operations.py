@@ -10,6 +10,7 @@ from iam_automation.application.file_watch_service import FileWatchService
 from iam_automation.application.import_service import ImportService
 from iam_automation.application.notification_service import NotificationService
 from iam_automation.application.request_service import RequestService
+from iam_automation.application.roster_lock_ingestion_service import RosterLockIngestionService
 from iam_automation.application.user_service import UserService
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.identity import CurrentUser, ROLE_REQUESTER
@@ -102,6 +103,21 @@ class ApplicationAdminOperationsTests(unittest.TestCase):
             notification = watcher.notifications.list_for_user("admin")[0]
             self.assertEqual(notification.title, "Workspace database updated")
             self.assertEqual(notification.target_route, "/dashboard")
+
+    def test_roster_lock_ingestion_stages_rows_and_quarantines_invalid_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            database = initialize_runtime_database(base / "runtime.sqlite")
+            source = base / "roster.xlsx"
+            from openpyxl import Workbook
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.append(["Vendor Name", "Vendor employee ID", "Employee first name"])
+            sheet.append(["TTEC", "E100", "Valid"])
+            sheet.append(["TTEC", "", "Missing ID"])
+            workbook.save(source)
+            result = RosterLockIngestionService(database).ingest_file(source)
+            self.assertEqual((result.total_rows, result.staged_rows, result.quarantine_rows), (2, 1, 1))
 
 
 if __name__ == "__main__":

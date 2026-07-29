@@ -133,6 +133,22 @@ def initialize_runtime_database(path: Path) -> Path:
                 resolved_by TEXT,
                 resolved_at_utc TEXT
             );
+            CREATE TABLE IF NOT EXISTS ingestion_records (
+                record_id TEXT PRIMARY KEY,
+                batch_id TEXT NOT NULL,
+                source_system TEXT NOT NULL,
+                source_file TEXT NOT NULL,
+                source_checksum TEXT NOT NULL,
+                row_number INTEGER NOT NULL,
+                source_record_key TEXT NOT NULL,
+                normalized_json TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'STAGED',
+                created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE (source_file, source_checksum, row_number)
+            );
+            CREATE INDEX IF NOT EXISTS idx_ingestion_records_source_key
+                ON ingestion_records (source_system, source_record_key, created_at_utc);
             CREATE TABLE IF NOT EXISTS session_revocations (
                 revocation_id TEXT PRIMARY KEY,
                 username TEXT NOT NULL,

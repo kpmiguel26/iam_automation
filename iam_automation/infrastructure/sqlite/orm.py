@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, create_engine, select
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 
@@ -163,6 +163,23 @@ class QuarantineRecordModel(Base):
     created_at_utc: Mapped[str] = mapped_column(String, default="")
     resolved_by: Mapped[str | None] = mapped_column(String, nullable=True)
     resolved_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class IngestionRecordModel(Base):
+    __tablename__ = "ingestion_records"
+    __table_args__ = (UniqueConstraint("source_file", "source_checksum", "row_number", name="uq_ingestion_source_row"),)
+
+    record_id: Mapped[str] = mapped_column(String, primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String)
+    source_system: Mapped[str] = mapped_column(String)
+    source_file: Mapped[str] = mapped_column(String)
+    source_checksum: Mapped[str] = mapped_column(String)
+    row_number: Mapped[int] = mapped_column(Integer)
+    source_record_key: Mapped[str] = mapped_column(String)
+    normalized_json: Mapped[str] = mapped_column(Text)
+    payload_json: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, default="STAGED")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
 
 
 class SystemProfileModel(Base):

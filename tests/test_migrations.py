@@ -15,7 +15,7 @@ class MigrationTests(unittest.TestCase):
             first = applied_migrations(database)
             second = apply_pending_migrations(database, actor="test")
 
-            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes"))
+            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records"))
             self.assertEqual(second, ())
             connection = sqlite3.connect(database)
             try:
