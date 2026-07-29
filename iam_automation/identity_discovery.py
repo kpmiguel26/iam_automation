@@ -10,6 +10,7 @@ from pathlib import Path
 DISCOVERY_FILENAME = "iam_identity_discovery.json"
 DISCOVERY_DIRECTORY = "identity_discoveries"
 DISCOVERY_SCHEMA_VERSION = "1.0"
+TRACEABILITY_DIRECTORY = "windows_traceability"
 
 
 @dataclass(frozen=True)
@@ -22,8 +23,50 @@ class IdentityDiscovery:
     discovered_at_utc: str
 
 
+@dataclass(frozen=True)
+class WindowsTraceabilityRecord:
+    traceability_id: str
+    username: str
+    computer: str
+    recorded_at_utc: str
+    authorization: str = "application_login_only"
+
+
 def discovery_path(sharepoint_root: Path) -> Path:
     return sharepoint_root / "database" / "snapshots" / DISCOVERY_DIRECTORY
+
+
+def traceability_path(sharepoint_root: Path) -> Path:
+    return sharepoint_root / "database" / "snapshots" / TRACEABILITY_DIRECTORY
+
+
+def record_windows_traceability(path: Path, username: str, computer: str) -> WindowsTraceabilityRecord:
+    """Write one shared Windows/VDI observation without overwriting another workstation."""
+    username = username.strip()
+    computer = computer.strip()
+    if not username or not computer:
+        raise ValueError("Windows username and computer are required for traceability.")
+    record = WindowsTraceabilityRecord(str(uuid.uuid4()), username, computer, datetime.now(timezone.utc).isoformat())
+    path.mkdir(parents=True, exist_ok=True)
+    _write(
+        path / f"windows_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}_{record.traceability_id}.json",
+        {"schema_version": DISCOVERY_SCHEMA_VERSION, "traceability": record.__dict__},
+    )
+    return record
+
+
+def list_windows_traceability(path: Path) -> list[WindowsTraceabilityRecord]:
+    records: list[WindowsTraceabilityRecord] = []
+    if not path.is_dir():
+        return records
+    for file_path in sorted(path.glob("windows_*.json"), reverse=True):
+        try:
+            data = json.loads(file_path.read_text(encoding="utf-8"))
+            item = data["traceability"]
+            records.append(WindowsTraceabilityRecord(str(item["traceability_id"]), str(item["username"]), str(item["computer"]), str(item["recorded_at_utc"]), str(item.get("authorization", "application_login_only"))))
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    return records
 
 
 def _read(path: Path) -> dict:

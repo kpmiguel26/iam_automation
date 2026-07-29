@@ -111,3 +111,15 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 @media (max-width: 640px) { .table-toolbar { align-items: stretch; flex-direction: column; } .search-box { max-width: none; } .kp-product-name { font-size: .9rem; padding-left: .75rem; } .kp-header-label { display: none; } .kp-logo { width: 155px; } .notification-menu { min-width: min(340px, calc(100vw - 2rem)); } .page-heading { align-items: flex-start; flex-direction: column; } .profile-grid { grid-template-columns: 1fr; } .profile-wide { grid-column: auto; } .alert-action { align-items: flex-start; flex-direction: column; } }
 .pending-panel { border-left: 4px solid #c57b13; }
 .pending-row { align-items: center; border-top: 1px solid #edf0f4; display: flex; justify-content: space-between; gap: 1rem; padding-top: .85rem; }
+.bug-thread { background: #fff; border: 1px solid #dce2ea; border-radius: .45rem; max-height: 260px; overflow-y: auto; padding: .7rem; }
+.bug-message { background: #f4f7fb; border-left: 3px solid var(--kp-teal); border-radius: .35rem; font-size: .85rem; margin-bottom: .55rem; padding: .65rem .75rem; }
+.bug-message:last-child { margin-bottom: 0; }
+.bug-message strong { color: var(--kp-navy); }
+.bug-card { border-top: 4px solid var(--kp-teal); transition: box-shadow .15s ease, transform .15s ease; }
+.bug-card:hover { box-shadow: 0 14px 28px rgba(14,32,70,.12); transform: translateY(-2px); }
+.issue-type-bug { background: #fde9e7; color: #9d2f2a; }
+.issue-type-feature { background: #e5f3f2; color: #075e61; }
+.issue-type-task { background: #e8eef9; color: #315a93; }
+.issue-type-question { background: #fff4dc; color: #8a5b12; }
+.accordion-button { gap: .5rem; }
+.accordion-button:not(.collapsed) { background: #f8fafc; box-shadow: inset 0 -1px 0 rgba(0,0,0,.08); color: var(--kp-navy); }

@@ -56,6 +56,25 @@ class BugReportServiceTests(unittest.TestCase):
             self.assertEqual(len(list((root / "bug_reports" / "in_progress").glob("*.json"))), 1)
             self.assertEqual(service.list_for_user("tester.one", is_admin=False)[0].resolution, updated.resolution)
 
+    def test_comments_are_persisted_on_shared_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = BugReportService(Path(directory))
+            bug = service.create(title="Login issue", description="The page shows an error.", severity="low", page="Login", reporter="tester.one", computer="VDI-01")
+            updated = service.add_comment(bug.bug_id, author="admin", message="Please retest after the next build.")
+            self.assertEqual(len(updated.comments), 1)
+            reloaded = service.list_for_user("tester.one", is_admin=False)[0]
+            self.assertEqual(reloaded.comments[0]["author"], "admin")
+            self.assertEqual(reloaded.comments[0]["message"], "Please retest after the next build.")
+
+    def test_issue_type_filters_and_priority_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = BugReportService(Path(directory))
+            service.create(title="Small enhancement", description="Add a shortcut.", severity="low", issue_type="feature", page="Overview", reporter="tester.one", computer="VDI-01")
+            critical = service.create(title="Blocking failure", description="The workflow cannot continue.", severity="critical", issue_type="bug", page="Approval queue", reporter="tester.one", computer="VDI-01")
+            ordered = service.list_for_user("tester.one", is_admin=False)
+            self.assertEqual(ordered[0].bug_id, critical.bug_id)
+            self.assertEqual([item.issue_type for item in service.list_for_user("tester.one", is_admin=False, issue_type="FEATURE")], ["FEATURE"])
+
 
 if __name__ == "__main__":
     unittest.main()

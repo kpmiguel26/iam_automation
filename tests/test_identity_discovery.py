@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from iam_automation.identity_discovery import list_pending_discoveries, mark_discovery, record_identity_discovery
+from iam_automation.identity_discovery import list_pending_discoveries, list_windows_traceability, mark_discovery, record_identity_discovery, record_windows_traceability
 
 
 class IdentityDiscoveryTests(unittest.TestCase):
@@ -28,6 +28,15 @@ class IdentityDiscoveryTests(unittest.TestCase):
             self.assertEqual(len(list_pending_discoveries(directory)), 2)
             mark_discovery(directory, first.discovery_id, "APPROVED", "admin")
             self.assertEqual(len(list_pending_discoveries(directory)), 1)
+
+    def test_windows_traceability_uses_one_shared_file_per_observation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp) / "database" / "snapshots" / "windows_traceability"
+            first = record_windows_traceability(directory, "DOMAIN\\one", "VDI-01")
+            second = record_windows_traceability(directory, "DOMAIN\\two", "VDI-02")
+            self.assertNotEqual(first.traceability_id, second.traceability_id)
+            self.assertEqual(len(tuple(directory.glob("windows_*.json"))), 2)
+            self.assertEqual([item.computer for item in list_windows_traceability(directory)], ["VDI-02", "VDI-01"])
 
 
 if __name__ == "__main__":

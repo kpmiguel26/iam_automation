@@ -14,6 +14,10 @@
   {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
   {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
   <div class="alert alert-info">Windows identities are recorded for audit and workspace traceability only. They do not receive application roles and do not authorize login.</div>
+  <section class="surface overflow-hidden mb-4">
+    <div class="p-3 border-bottom d-flex justify-content-between align-items-center"><div><p class="eyebrow mb-1">Shared workspace evidence</p><h2 class="h5 mb-0">Windows / VDI execution traceability</h2></div><span class="small text-secondary">{{ traceability|length }} shared record(s)</span></div>
+    <div class="p-3"><p class="small text-secondary mb-3">These observations are written as individual JSON files in SharePoint so multiple Windows workstations do not overwrite one another. macOS development sessions are intentionally excluded.</p><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Windows user</th><th>Computer / VDI</th><th>Recorded UTC</th><th>Purpose</th></tr></thead><tbody>{% for record in traceability %}<tr><td><strong>{{ record.username }}</strong></td><td><code>{{ record.computer }}</code></td><td class="small text-secondary">{{ record.recorded_at_utc }}</td><td><span class="badge role-badge">Traceability only</span></td></tr>{% else %}<tr><td colspan="4" class="empty-state">No shared Windows observations recorded yet.</td></tr>{% endfor %}</tbody></table></div></div>
+  </section>
   <div class="row g-3 mb-4">
     <div class="col-sm-4"><div class="surface p-3 stat-card"><span class="section-label">Registered</span><strong>{{ identities|length }}</strong></div></div>
     <div class="col-sm-4"><div class="surface p-3 stat-card"><span class="section-label">Active records</span><strong class="text-success">{{ identities|selectattr('active')|list|length }}</strong></div></div>

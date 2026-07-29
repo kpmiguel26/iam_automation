@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -12,6 +13,7 @@ from .database import initialize_runtime_database
 from .application.workspace_refresh_service import record_published_source_checksum
 from .identity import CurrentUser
 from .identity import computer_name, windows_username
+from .identity_discovery import record_windows_traceability, traceability_path
 from .runtime_sync import find_published_access_db, find_published_runtime_db, project_runtime_path, sync_runtime_snapshot
 from .settings_store import load_user_settings, save_user_settings, user_settings_path
 from .sharepoint_discovery import DiscoveryCandidate, discover_candidates
@@ -200,6 +202,8 @@ class StartupController:
                 computer=computer_name(),
                 new_values={"computer": computer_name(), "authorization": "application_login_only"},
             )
+            if sys.platform == "win32":
+                record_windows_traceability(traceability_path(self.settings.sharepoint_root_path), current_identity, computer_name())
         self.result = PreflightResult(self.state, True, "Environment and Windows identity are ready.", self.settings, self.result.resources, self.candidates, user)
         return user
 

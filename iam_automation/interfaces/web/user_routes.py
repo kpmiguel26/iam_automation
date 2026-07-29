@@ -12,7 +12,7 @@ from ...application.audit_service import record_audit
 from ...application.identity_service import IdentityService
 from ...application.role_catalog import ROLE_OPTIONS
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
-from ...identity_discovery import get_pending_discovery, list_pending_discoveries, mark_discovery
+from ...identity_discovery import get_pending_discovery, list_pending_discoveries, list_windows_traceability, mark_discovery
 from ...domain.users import ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_INACTIVE, ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED, ACCOUNT_STATUS_SUSPENDED
 
 
@@ -69,7 +69,7 @@ def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None
     return blueprint
 
 
-def create_identity_blueprint(database_path: Path, *, discovery_file: Path | None = None, audit_path: Path | None = None) -> Blueprint:
+def create_identity_blueprint(database_path: Path, *, discovery_file: Path | None = None, traceability_directory: Path | None = None, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("identity_admin", __name__, url_prefix="/admin/windows-identities")
     service = IdentityService(database_path)
 
@@ -85,7 +85,7 @@ def create_identity_blueprint(database_path: Path, *, discovery_file: Path | Non
     def render(message: str | None = None, error: str | None = None):
         roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
         pending = list_pending_discoveries(discovery_file) if discovery_file and discovery_file.exists() else []
-        return render_template("admin/windows_identities.html", identities=service.list_identities(), pending_discoveries=pending, message=message, error=error, role_options=[option for option in ROLE_OPTIONS if option.value != ROLE_SUPER_OPERATOR], can_assign_master=ROLE_MASTER_ADMIN in roles)
+        return render_template("admin/windows_identities.html", identities=service.list_identities(), traceability=list_windows_traceability(traceability_directory) if traceability_directory else [], pending_discoveries=pending, message=message, error=error, role_options=[option for option in ROLE_OPTIONS if option.value != ROLE_SUPER_OPERATOR], can_assign_master=ROLE_MASTER_ADMIN in roles)
 
     @blueprint.get("")
     @administrator_required

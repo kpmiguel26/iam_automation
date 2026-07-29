@@ -8,6 +8,7 @@ dist/
 *.lock.json
 
 # SQLite sidecar files are temporary and must not be synchronized.
+runtime.sqlite
 *.sqlite-wal
 *.sqlite-shm
 *.sqlite.tmp-*
