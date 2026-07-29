@@ -110,6 +110,14 @@ class StartupWindow:
         brand.addWidget(subtitle)
         header_layout.addLayout(brand)
         header_layout.addStretch()
+        self.preflight_icon = QLabel()
+        self.preflight_icon.setObjectName("preflightIcon")
+        self.preflight_icon.setToolTip("Environment preflight gate")
+        icon_path = Path(__file__).resolve().parent / "static" / "preflight_icon.svg"
+        icon = QIcon(str(icon_path))
+        if not icon.isNull():
+            self.preflight_icon.setPixmap(icon.pixmap(30, 30))
+        header_layout.addWidget(self.preflight_icon)
         header_tag = QLabel("PREFLIGHT")
         header_tag.setObjectName("headerTag")
         header_layout.addWidget(header_tag)
@@ -305,6 +313,11 @@ def run_desktop_app(controller: StartupController | None = None) -> int:
     if QApplication is None:
         raise RuntimeError("PySide6 is required to run IAM Automation.")
     application = QApplication.instance() or QApplication([])
+    application.setApplicationName("IAM Automation")
+    application.setApplicationDisplayName("IAM Automation")
+    application_icon = Path(__file__).resolve().parent / "static" / "preflight_icon.svg"
+    if application_icon.is_file():
+        application.setWindowIcon(QIcon(str(application_icon)))
     startup_controller = controller or StartupController()
     server_holder = []
     startup_workers = []

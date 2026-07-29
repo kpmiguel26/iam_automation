@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+dist/
 *.lock.json
 
 # SQLite sidecar files are temporary and must not be synchronized.
