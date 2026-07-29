@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -8,9 +9,13 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from ..infrastructure.sqlite.orm import AppUserModel, FileObservationModel, UserRoleModel, orm_session
+from ..infrastructure.sqlite.orm import AppUserModel, FileObservationModel, NotificationModel, UserRoleModel, orm_session
 from .notification_service import NotificationService
 from .roster_lock_ingestion_service import RosterLockIngestionService
+
+
+LOGGER = logging.getLogger(__name__)
+_WRITE_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True)
@@ -21,10 +26,11 @@ class FileObservation:
 
 
 class FileWatchService:
-    """Detect new or changed inbound JSON/config files and notify administrators.
+    """Detect shared changes and stage Roster Lock files safely.
 
-    The watcher observes only; it never imports or executes a file automatically.
-    An administrator must open the target workflow and explicitly process it.
+    JSON/configuration changes remain notification-driven. Roster Lock workbooks
+    are validated and staged automatically, but promotion into canonical workers
+    remains an explicit administrative action.
     """
 
     def __init__(self, database_path: Path, sharepoint_root: Path):
@@ -41,26 +47,65 @@ class FileWatchService:
         observations = self._discover_files()
         if not observations:
             return 0
-        admins = self._active_admins()
-        created = 0
-        now = datetime.now(timezone.utc).isoformat()
-        with orm_session(self.database_path) as session:
-            for observation in observations:
-                previous = session.get(FileObservationModel, observation.path)
-                changed = previous is None or previous.signature != observation.signature
-                if previous is None:
-                    session.add(FileObservationModel(path=observation.path, file_kind=observation.file_kind, signature=observation.signature, first_seen_at_utc=now, last_seen_at_utc=now))
-                else:
-                    previous.signature = observation.signature
-                    previous.file_kind = observation.file_kind
-                    previous.last_seen_at_utc = now
-                if changed:
-                    created += 1
-                    if observation.file_kind == "ROSTER_LOCK":
-                        RosterLockIngestionService(self.database_path).ingest_file(Path(observation.path))
+        with _WRITE_LOCK:
+            now = datetime.now(timezone.utc).isoformat()
+            changed = self._changed_observations(observations)
+            successful_ingestions: set[str] = set()
+            for observation in changed:
+                if observation.file_kind != "ROSTER_LOCK":
+                    successful_ingestions.add(observation.path)
+                    continue
+                try:
+                    RosterLockIngestionService(self.database_path).ingest_file(Path(observation.path))
+                    successful_ingestions.add(observation.path)
+                except Exception as exc:
+                    LOGGER.exception("Roster Lock ingestion failed for %s", observation.path)
+                    self._record_ingestion_failure(observation, exc)
+
+            # The observation is committed only after ingestion succeeds. A transient
+            # OneDrive or SQLite failure is therefore retried on the next poll.
+            admins = self._active_admins()
+            with orm_session(self.database_path) as session:
+                for observation in changed:
+                    if observation.path not in successful_ingestions:
+                        continue
+                    previous = session.get(FileObservationModel, observation.path)
+                    if previous is None:
+                        session.add(FileObservationModel(path=observation.path, file_kind=observation.file_kind, signature=observation.signature, first_seen_at_utc=now, last_seen_at_utc=now))
+                    else:
+                        previous.signature = observation.signature
+                        previous.file_kind = observation.file_kind
+                        previous.last_seen_at_utc = now
                     for username in admins:
                         session.add(self._notification(username, observation))
-        return created
+            return len(successful_ingestions)
+
+    def _changed_observations(self, observations: list[FileObservation]) -> list[FileObservation]:
+        with orm_session(self.database_path) as session:
+            return [
+                observation
+                for observation in observations
+                if (previous := session.get(FileObservationModel, observation.path)) is None
+                or previous.signature != observation.signature
+            ]
+
+    def _record_ingestion_failure(self, observation: FileObservation, error: Exception) -> None:
+        admins = self._active_admins()
+        with orm_session(self.database_path) as session:
+            for username in admins:
+                session.merge(NotificationModel(
+                    notification_id=hashlib.sha256(f"{username}:{observation.path}:{observation.signature}:failure".encode()).hexdigest(),
+                    recipient_username=username,
+                    notification_type="INGESTION_ERROR",
+                    severity="ERROR",
+                    title="Roster Lock ingestion failed",
+                    message=f"The workbook could not be staged and will be retried: {type(error).__name__}: {error}",
+                    entity_type="file",
+                    entity_id=observation.path,
+                    target_route="/admin/imports",
+                    status="UNREAD",
+                    created_at_utc=datetime.now(timezone.utc).isoformat(),
+                ))
 
     def _discover_files(self) -> list[FileObservation]:
         roots = (
@@ -140,7 +185,8 @@ class FileWatcher:
         while not self._stop.is_set():
             try:
                 self.service.scan_once()
-            except (OSError, RuntimeError):
-                # The next polling cycle will retry if OneDrive is temporarily unavailable.
-                pass
+            except Exception:
+                # The watcher is a long-lived auxiliary process. A bad file, a
+                # transient OneDrive state, or a database contention must not kill it.
+                LOGGER.exception("File watcher cycle failed; retrying on next poll")
             self._stop.wait(self.interval_seconds)

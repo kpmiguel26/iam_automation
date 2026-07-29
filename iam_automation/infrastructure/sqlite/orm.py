@@ -4,7 +4,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, select
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, event, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 
@@ -182,6 +183,97 @@ class IngestionRecordModel(Base):
     created_at_utc: Mapped[str] = mapped_column(String, default="")
 
 
+class WorkerModel(Base):
+    __tablename__ = "workers"
+
+    worker_id: Mapped[str] = mapped_column(String, primary_key=True)
+    first_name: Mapped[str] = mapped_column(String, default="")
+    last_name: Mapped[str] = mapped_column(String, default="")
+    display_name: Mapped[str] = mapped_column(String, default="")
+    canonical_email: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="PENDING")
+    record_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class WorkerIdentifierModel(Base):
+    __tablename__ = "worker_identifiers"
+    __table_args__ = (UniqueConstraint("source_system", "identifier_type", "normalized_value", name="uq_worker_identifier"),)
+
+    identifier_id: Mapped[str] = mapped_column(String, primary_key=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey("workers.worker_id"))
+    source_system: Mapped[str] = mapped_column(String)
+    identifier_type: Mapped[str] = mapped_column(String)
+    identifier_value: Mapped[str] = mapped_column(String)
+    normalized_value: Mapped[str] = mapped_column(String)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    confidence: Mapped[str] = mapped_column(String, default="HIGH")
+    valid_from_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    valid_to_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class WorkerEngagementModel(Base):
+    __tablename__ = "worker_engagements"
+
+    engagement_id: Mapped[str] = mapped_column(String, primary_key=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey("workers.worker_id"))
+    vendor_name: Mapped[str] = mapped_column(String, default="")
+    program: Mapped[str] = mapped_column(String, default="")
+    project: Mapped[str] = mapped_column(String, default="")
+    lob: Mapped[str] = mapped_column(String, default="")
+    supervisor_name: Mapped[str] = mapped_column(String, default="")
+    job_title: Mapped[str] = mapped_column(String, default="")
+    country: Mapped[str] = mapped_column(String, default="")
+    site_location: Mapped[str] = mapped_column(String, default="")
+    onboarding_date: Mapped[str] = mapped_column(String, default="")
+    production_start_date: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="PENDING")
+    npn: Mapped[str] = mapped_column(String, default="")
+    license_state: Mapped[str] = mapped_column(String, default="")
+    license_number: Mapped[str] = mapped_column(String, default="")
+    taxonomy_code: Mapped[str] = mapped_column(String, default="")
+    key_billable_function: Mapped[str] = mapped_column(String, default="")
+    source_system: Mapped[str] = mapped_column(String, default="")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class WorkerSourceLineageModel(Base):
+    __tablename__ = "worker_source_lineage"
+
+    lineage_id: Mapped[str] = mapped_column(String, primary_key=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey("workers.worker_id"))
+    engagement_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    batch_id: Mapped[str] = mapped_column(String)
+    source_system: Mapped[str] = mapped_column(String)
+    source_file: Mapped[str] = mapped_column(String)
+    source_checksum: Mapped[str] = mapped_column(String)
+    row_number: Mapped[int] = mapped_column(Integer)
+    field_name: Mapped[str] = mapped_column(String)
+    raw_value: Mapped[str] = mapped_column(Text, default="")
+    normalized_value: Mapped[str] = mapped_column(Text, default="")
+    observed_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class WorkerDiscrepancyModel(Base):
+    __tablename__ = "worker_discrepancies"
+
+    discrepancy_id: Mapped[str] = mapped_column(String, primary_key=True)
+    worker_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_system: Mapped[str] = mapped_column(String)
+    source_record_key: Mapped[str] = mapped_column(String)
+    field_name: Mapped[str] = mapped_column(String)
+    current_value: Mapped[str] = mapped_column(Text, default="")
+    incoming_value: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String, default="OPEN")
+    resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    resolved_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolved_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class SystemProfileModel(Base):
     __tablename__ = "system_profiles"
 
@@ -218,9 +310,21 @@ def create_engine_for_sqlite(database_path: Path):
     database_path = database_path.expanduser().resolve()
     return create_engine(
         f"sqlite:///{database_path.as_posix()}",
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "timeout": 30},
         future=True,
     )
+
+
+@event.listens_for(Engine, "connect")
+def _configure_sqlite_connection(dbapi_connection, connection_record):
+    if dbapi_connection.__class__.__module__.split(".")[0] != "sqlite3":
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
 
 
 def session_factory(database_path: Path):

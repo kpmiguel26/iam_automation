@@ -37,7 +37,7 @@ class StartupWindow:
         self.widget.setMinimumSize(760, 560)
         self.widget.setStyleSheet(
             """
-            QWidget { background: #f4f7fb; color: #17233f; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; font-size: 13px; }
+            QWidget { background: #f4f7fb; color: #17233f; font-family: "Helvetica Neue", Arial, sans-serif; font-size: 13px; }
             QLabel { background: transparent; }
             QFrame#header { background: #10254d; border-radius: 10px; }
             QLabel#logo { background: transparent; }

@@ -90,7 +90,11 @@ class RosterLockIngestionService:
         for key, value in payload.items():
             canonical = "_".join("".join(character.lower() if character.isalnum() else " " for character in key).split())
             normalized[canonical] = value
-        aliases = {"vendor employee id": "vendor_employee_id", "vendor name": "vendor_name", "employee first name": "first_name", "employee last name": "last_name", "vendor email address": "email"}
+        aliases = {
+            "employee_first_name": "first_name",
+            "employee_last_name": "last_name",
+            "vendor_email_address": "email",
+        }
         for source, target in aliases.items():
             if source in normalized and target not in normalized:
                 normalized[target] = normalized[source]

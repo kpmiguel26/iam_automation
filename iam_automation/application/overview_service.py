@@ -4,7 +4,7 @@ from pathlib import Path
 
 from sqlalchemy import func, select
 
-from ..infrastructure.sqlite.orm import ChangeRequestModel, DelegationModel, ImportBatchModel, NotificationModel, PublicationQueueModel, QuarantineRecordModel, orm_session
+from ..infrastructure.sqlite.orm import ChangeRequestModel, DelegationModel, ImportBatchModel, NotificationModel, PublicationQueueModel, QuarantineRecordModel, WorkerDiscrepancyModel, WorkerModel, orm_session
 
 
 class OverviewService:
@@ -21,6 +21,8 @@ class OverviewService:
                 "active_delegations": 0,
                 "unread_notifications": 0,
                 "import_batches": 0,
+                "employees": 0,
+                "employee_discrepancies": 0,
             }
         with orm_session(self.database_path) as session:
             request_counts = {
@@ -35,4 +37,6 @@ class OverviewService:
                 "active_delegations": int(session.scalar(select(func.count(DelegationModel.delegation_id)).where(DelegationModel.status == "ACTIVE")) or 0),
                 "unread_notifications": int(session.scalar(select(func.count(NotificationModel.notification_id)).where(NotificationModel.recipient_username == username, NotificationModel.status == "UNREAD")) or 0),
                 "import_batches": int(session.scalar(select(func.count(ImportBatchModel.batch_id))) or 0),
+                "employees": int(session.scalar(select(func.count(WorkerModel.worker_id))) or 0),
+                "employee_discrepancies": int(session.scalar(select(func.count(WorkerDiscrepancyModel.discrepancy_id)).where(WorkerDiscrepancyModel.status == "OPEN")) or 0),
             }

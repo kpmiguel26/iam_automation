@@ -20,7 +20,7 @@ Roster Lock and Fieldglass records are matched using a documented identity strat
 
 ### 4. Canonical worker profile
 
-The future canonical profile will contain the stable worker identity and contact attributes used by downstream processes. Each attribute will retain source lineage and last-observed timestamps.
+The canonical profile is implemented in SQLite as `workers`, `worker_identifiers` and `worker_engagements`. A worker has an internal immutable ID; vendor, Fieldglass, NUID and Salesforce identifiers remain external aliases. Rehires reuse the worker identity and create a new engagement.
 
 ### 5. Downstream publication
 
@@ -33,13 +33,18 @@ Approved records become requests or controlled writer operations. Salesforce, NI
 | `import_batches` | One execution or source-file version |
 | `ingestion_records` | Source row staging and lineage |
 | `quarantine_records` | Invalid or disputed source rows |
-| `canonical_workers` | Future merged worker profile |
-| `worker_source_lineage` | Future per-field source evidence |
-| `worker_discrepancies` | Future conflicts requiring review |
+| `workers` | Canonical worker profile |
+| `worker_identifiers` | External source identifiers |
+| `worker_engagements` | Vendor/project/assignment history |
+| `worker_source_lineage` | Per-field source evidence |
+| `worker_discrepancies` | Conflicts requiring review |
 
-The first feature adds only `ingestion_records`; canonical entities wait for the official Fieldglass contract and stakeholder approval.
+Roster Lock remains staging-first. An administrator explicitly promotes a staged record into a pending canonical worker and engagement; the watcher never performs that promotion automatically.
+
+## Employee workspace
+
+Authenticated users can view `Operations > Employees`. The directory supports search and filters, while each profile exposes identity, engagements, source identifiers, lineage and discrepancies. Administrative reconciliation actions remain protected by backend authorization.
 
 ## Concurrency and Refresh
 
 The watcher may detect a new file while a user is working. Detection and staging are safe because they append a batch and do not replace the local runtime snapshot. Workspace SQLite refresh remains controlled and is blocked when local publication work is pending.
-

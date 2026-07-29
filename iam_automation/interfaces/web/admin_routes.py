@@ -7,6 +7,7 @@ from typing import Callable
 from flask import Blueprint, redirect, render_template, request, send_file, session, url_for
 
 from ...application.delegation_service import DelegationService
+from ...application.employee_service import EmployeeService
 from ...application.audit_service import record_audit
 from ...application.import_service import ImportService
 from ...application.notification_service import NotificationService
@@ -33,6 +34,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     sessions = SessionService(database_path)
     imports = ImportService(database_path)
     users = UserService(database_path)
+    employees = EmployeeService(database_path)
     salesforce = SalesforceExportService(database_path, audit_path=audit_path)
 
     def admin_required(view: Callable):
@@ -159,7 +161,46 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                     message = f"Import {batch.batch_id[:8]} processed: {batch.valid_rows} valid, {batch.quarantine_rows} quarantined."
                 except (ValueError, RuntimeError) as exc:
                     error = str(exc)
-        return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), message=message, error=error)
+        return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=message, error=error)
+
+    @blueprint.post("/imports/records/<record_id>/promote")
+    @admin_required
+    def promote_ingestion_record(record_id: str):
+        try:
+            worker_id = employees.promote_ingestion_record(record_id, str(session["iam_user"]))
+            return redirect(url_for("employees.employee_detail", worker_id=worker_id))
+        except ValueError as exc:
+            return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=None, error=str(exc)), 400
+
+    @blueprint.post("/imports/records/promote-all")
+    @admin_required
+    def promote_all_ingestion_records():
+        try:
+            result = employees.promote_all_staged_records(str(session["iam_user"]))
+            message = (
+                f"Bulk promotion complete: {result['processed']} processed, "
+                f"{result['created']} new workers, {result['reused']} existing workers reused, "
+                f"{result['failed']} failed."
+            )
+            if result["failed"]:
+                message += " Review the failed staged records before retrying."
+            return render_template(
+                "admin/imports.html",
+                batches=imports.list_batches(),
+                quarantine=imports.list_quarantine(open_only=True),
+                staged_records=employees.list_staged_records(),
+                message=message,
+                error=None,
+            )
+        except (ValueError, RuntimeError) as exc:
+            return render_template(
+                "admin/imports.html",
+                batches=imports.list_batches(),
+                quarantine=imports.list_quarantine(open_only=True),
+                staged_records=employees.list_staged_records(),
+                message=None,
+                error=str(exc),
+            ), 400
 
     @blueprint.post("/imports/quarantine/<quarantine_id>/resolve")
     @admin_required
@@ -167,7 +208,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         try:
             imports.resolve_quarantine(quarantine_id, str(session["iam_user"]))
         except ValueError as exc:
-            return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), message=None, error=str(exc)), 400
+            return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=None, error=str(exc)), 400
         return redirect(url_for("admin.import_center"))
 
     @blueprint.get("/publication")
