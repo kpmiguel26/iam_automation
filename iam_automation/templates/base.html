@@ -18,7 +18,7 @@
       <button class="btn notification-button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Open notifications" title="Notifications"><span class="nav-symbol">●</span>{% if unread_notification_count %}<span class="notification-badge">{{ unread_notification_count }}</span>{% endif %}</button>
       <div class="dropdown-menu dropdown-menu-end notification-menu shadow-sm p-0">
         <div class="notification-menu-header"><strong>Notifications</strong><a href="{{ url_for('notifications_page') }}">View all</a></div>
-        {% for item in recent_notifications %}<a class="notification-preview" href="{{ item.target_route or url_for('notifications_page') }}"><span class="notification-severity severity-{{ item.severity|lower }}"></span><span><strong>{{ item.title }}</strong><small>{{ item.message }}</small></span></a>{% else %}<div class="notification-empty">You are all caught up.</div>{% endfor %}
+        {% for item in recent_notifications %}<a class="notification-preview" href="{{ url_for('notification_open', notification_id=item.notification_id) }}"><span class="notification-severity severity-{{ item.severity|lower }}"></span><span><strong>{{ item.title }}</strong><small>{{ item.message }}</small></span></a>{% else %}<div class="notification-empty">You are all caught up.</div>{% endfor %}
       </div>
     </div>
     <div class="dropdown">
@@ -40,6 +40,7 @@
   </nav>
   {% endif %}
 </header>
+{% if request.args.get('notice') %}<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080"><div id="iamToast" class="toast align-items-center text-bg-{{ request.args.get('notice_type', 'info') }} border-0" role="status" aria-live="polite" aria-atomic="true"><div class="d-flex"><div class="toast-body">{{ request.args.get('notice') }}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div></div></div>{% endif %}
 {% if session.get('iam_user') %}<div class="container-fluid px-4 px-lg-5 pt-3"><div class="alert alert-warning py-2 mb-0 small"><strong>Development build:</strong> This workspace is under active testing. Please report bugs from the Workspace menu.</div></div>{% endif %}
 {% if session.get('is_admin') and publication_pending %}<div class="container-fluid px-4 px-lg-5 pt-3"><div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mb-0"><span><strong>Local changes are waiting for publication.</strong> User, role, or password changes are currently available only on this workstation.</span>{% if 'MASTER_ADMIN' in session.get('iam_roles', []) or 'APPLICATION_ADMIN' in session.get('iam_roles', []) %}<a class="btn btn-sm btn-warning" href="{{ url_for('admin.governance_center') }}">Open database administration</a>{% else %}<span class="small">An Application Admin or Master Admin must publish the runtime database.</span>{% endif %}</div></div>{% endif %}
 <main>{% block content %}{% endblock %}</main>
@@ -47,5 +48,13 @@
 {% block scripts %}{% endblock %}
 <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/utc-date-inputs.js') }}"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var toast = document.getElementById('iamToast');
+    if (toast && window.bootstrap) {
+      bootstrap.Toast.getOrCreateInstance(toast, { delay: 3500 }).show();
+    }
+  });
+</script>
 </body>
 </html>

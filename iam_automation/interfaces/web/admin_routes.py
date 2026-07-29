@@ -72,20 +72,44 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     @blueprint.get("/notifications")
     @admin_required
     def notification_center():
-        notifications.expire(str(session["iam_user"]))
-        return render_template("admin/notifications.html", notifications=notifications.list_for_user(str(session["iam_user"])))
+        username = str(session["iam_user"])
+        notifications.expire(username)
+        items = notifications.list_for_user(username)
+        status = request.args.get("status", "ALL").upper()
+        severity = request.args.get("severity", "ALL").upper()
+        if status != "ALL":
+            items = [item for item in items if item.status == status]
+        if severity != "ALL":
+            items = [item for item in items if item.severity == severity]
+        return render_template("admin/notifications.html", notifications=items, filters={"status": status, "severity": severity}, unread_count=notifications.unread_count(username))
 
     @blueprint.post("/notifications/<notification_id>/read")
     @admin_required
     def mark_notification_read(notification_id: str):
         notifications.mark_read(str(session["iam_user"]), notification_id)
-        return redirect(url_for("admin.notification_center"))
+        return redirect(url_for("admin.notification_center", notice="Notification marked as read.", notice_type="success"))
 
     @blueprint.post("/notifications/<notification_id>/resolve")
     @admin_required
     def resolve_notification(notification_id: str):
         notifications.resolve(str(session["iam_user"]), notification_id)
-        return redirect(url_for("admin.notification_center"))
+        return redirect(url_for("admin.notification_center", notice="Notification resolved.", notice_type="success"))
+
+    @blueprint.post("/notifications/read-all")
+    @admin_required
+    def mark_all_notifications_read():
+        count = notifications.mark_all_read(str(session["iam_user"]))
+        return redirect(url_for("admin.notification_center", notice=f"{count} notification(s) marked as read.", notice_type="success"))
+
+    @blueprint.get("/notifications/<notification_id>/open")
+    @admin_required
+    def open_notification(notification_id: str):
+        username = str(session["iam_user"])
+        item = next((item for item in notifications.list_for_user(username) if item.notification_id == notification_id), None)
+        if item is None:
+            return redirect(url_for("admin.notification_center", notice="Notification was not found.", notice_type="warning"))
+        notifications.mark_read(username, notification_id)
+        return redirect(item.target_route or url_for("admin.notification_center"))
 
     @blueprint.route("/delegations", methods=["GET", "POST"])
     @admin_required

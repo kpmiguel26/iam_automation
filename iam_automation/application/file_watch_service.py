@@ -31,7 +31,7 @@ class FileWatchService:
         self.sharepoint_root = sharepoint_root
         self.notifications = NotificationService(database_path)
 
-    def start(self, interval_seconds: float = 3.0) -> "FileWatcher":
+    def start(self, interval_seconds: float = 1.0) -> "FileWatcher":
         watcher = FileWatcher(self, interval_seconds)
         watcher.start()
         return watcher
@@ -64,12 +64,13 @@ class FileWatchService:
             (self.sharepoint_root / "requests" / "pending", "PENDING_REQUEST"),
             (self.sharepoint_root / "config", "CONFIGURATION"),
             (self.sharepoint_root / "database" / "snapshots" / "identity_discoveries", "IDENTITY_DISCOVERY"),
+            (self.sharepoint_root / "database" / "snapshots", "PUBLISHED_RUNTIME"),
         )
         observations: list[FileObservation] = []
         for root, kind in roots:
             if not root.is_dir():
                 continue
-            patterns = ("*.json", "*.toml") if kind == "CONFIGURATION" else ("*.json",)
+            patterns = ("*.json", "*.toml") if kind == "CONFIGURATION" else (("iam_runtime.sqlite",) if kind == "PUBLISHED_RUNTIME" else ("*.json",))
             for pattern in patterns:
                 for path in root.glob(pattern):
                     if path.is_file() and not path.name.startswith("."):
@@ -97,6 +98,7 @@ class FileWatchService:
             "PENDING_REQUEST": ("New request file detected", "A new JSON request is waiting in the pending folder."),
             "CONFIGURATION": ("Configuration file detected", "A configuration file changed and is ready for review."),
             "IDENTITY_DISCOVERY": ("Identity discovery updated", "A workstation identity record is available for administrative review."),
+            "PUBLISHED_RUNTIME": ("Workspace database updated", "A new published runtime database is available for local refresh."),
         }
         title, message = labels[observation.file_kind]
         now = datetime.now(timezone.utc).isoformat()
@@ -109,7 +111,7 @@ class FileWatchService:
             message=f"{message} File: {Path(observation.path).name}",
             entity_type="file",
             entity_id=observation.path,
-            target_route="/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/admin",
+            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/admin"),
             status="UNREAD",
             created_at_utc=now,
         )

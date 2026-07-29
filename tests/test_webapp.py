@@ -44,6 +44,10 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(b"PRE-001", response.data)
         self.assertIn(b"Report a bug", response.data)
 
+    def test_workspace_status_requires_login(self):
+        app = webapp.create_app(self.make_result(True))
+        self.assertEqual(app.test_client().get("/workspace/status").status_code, 401)
+
     def test_local_server_uses_loopback_and_ephemeral_port(self):
         app = webapp.create_app(self.make_result(True))
         server = webapp.LocalWebAppServer(app)

@@ -63,7 +63,10 @@ def create_bug_report_blueprint(database_path: Path, sharepoint_root: Path) -> B
             return str(exc), 400
         actor = str(session["iam_user"])
         record_audit(sharepoint_root / "audit", actor, "BUG_REPORT_UPDATED", "bug_report", updated.bug_id, new_values={"status": updated.status, "assigned_to": updated.assigned_to, "resolution": updated.resolution})
-        notifications.create(updated.reporter, "BUG_REPORT_UPDATED", "Bug report updated", f"Your bug report {updated.bug_id[:8]} is now {updated.status.replace('_', ' ').title()}.", severity="INFO", target_route="/bug-reports", entity_type="bug_report", entity_id=updated.bug_id)
+        notification_type = "BUG_REPORT_CLOSED" if updated.status == "CLOSED" else "BUG_REPORT_UPDATED"
+        notification_title = "Bug report closed" if updated.status == "CLOSED" else "Bug report updated"
+        notification_message = f"Your bug report {updated.bug_id[:8]} was closed." if updated.status == "CLOSED" else f"Your bug report {updated.bug_id[:8]} is now {updated.status.replace('_', ' ').title()}."
+        notifications.create(updated.reporter, notification_type, notification_title, notification_message, severity="INFO", target_route="/bug-reports", entity_type="bug_report", entity_id=updated.bug_id)
         return redirect(url_for("bug_reports.index"))
 
     @blueprint.post("/<bug_id>/comments")

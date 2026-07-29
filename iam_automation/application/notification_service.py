@@ -20,6 +20,11 @@ class Notification:
     message: str
     target_route: str
     status: str
+    entity_type: str
+    entity_id: str
+    created_at_utc: str
+    read_at_utc: str | None
+    expires_at_utc: str | None
 
 
 class NotificationService:
@@ -41,6 +46,15 @@ class NotificationService:
             statement = statement.where(NotificationModel.status == "UNREAD")
         with orm_session(self.database_path) as session:
             return [self._to_notification(row) for row in session.scalars(statement).all()]
+
+    def mark_all_read(self, username: str) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(select(NotificationModel).where(NotificationModel.recipient_username == username, NotificationModel.status == "UNREAD")).all()
+            for row in rows:
+                row.status = "READ"
+                row.read_at_utc = now
+            return len(rows)
 
     def create(self, recipient_username: str, notification_type: str, title: str, message: str, *, severity: str = "INFO", target_route: str = "", entity_type: str = "", entity_id: str = "", expires_at_utc: str | None = None) -> str:
         notification_id = str(uuid.uuid4())
@@ -96,4 +110,4 @@ class NotificationService:
         # were routed to the approval queue instead of Imports.
         if row.notification_type == "FILE_DETECTED" and "/requests/pending/" in row.entity_id:
             target_route = "/admin/approvals"
-        return Notification(row.notification_id, row.recipient_username, row.notification_type, row.severity, row.title, row.message, target_route, row.status)
+        return Notification(row.notification_id, row.recipient_username, row.notification_type, row.severity, row.title, row.message, target_route, row.status, row.entity_type, row.entity_id, row.created_at_utc, row.read_at_utc, row.expires_at_utc)

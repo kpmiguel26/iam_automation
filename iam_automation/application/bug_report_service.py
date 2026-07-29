@@ -58,6 +58,8 @@ class BugReportService:
         bugs = self._load_all()
         if not is_admin:
             bugs = [bug for bug in bugs if bug.reporter.lower() == reporter.lower()]
+        if not status:
+            bugs = [bug for bug in bugs if bug.status != "CLOSED"]
         if issue_type:
             bugs = [bug for bug in bugs if bug.issue_type == issue_type]
         if status:

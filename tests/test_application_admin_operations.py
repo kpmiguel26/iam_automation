@@ -29,6 +29,18 @@ class ApplicationAdminOperationsTests(unittest.TestCase):
             self.assertEqual(statuses[expired_id], "EXPIRED")
             self.assertEqual(statuses[active_id], "RESOLVED")
 
+    def test_notifications_can_be_marked_read_in_bulk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            service = NotificationService(database)
+            first_id = service.create("admin", "TEST", "First", "First event")
+            second_id = service.create("admin", "TEST", "Second", "Second event")
+            self.assertEqual(service.mark_all_read("admin"), 2)
+            self.assertEqual(service.unread_count("admin"), 0)
+            statuses = {item.notification_id: item.status for item in service.list_for_user("admin")}
+            self.assertEqual(statuses[first_id], "READ")
+            self.assertEqual(statuses[second_id], "READ")
+
     def test_expired_delegations_are_retained_for_administration(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
@@ -76,6 +88,20 @@ class ApplicationAdminOperationsTests(unittest.TestCase):
             notifications = watcher.notifications.list_for_user("admin")
             self.assertEqual(len(notifications), 1)
             self.assertEqual(notifications[0].notification_type, "FILE_DETECTED")
+
+    def test_file_watcher_detects_published_runtime_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            database = initialize_runtime_database(base / "runtime.sqlite")
+            UserService(database).create_user("admin", "Admin", "secret", ["MASTER_ADMIN"])
+            snapshots = base / "database" / "snapshots"
+            snapshots.mkdir(parents=True)
+            (snapshots / "iam_runtime.sqlite").write_bytes(b"published-v1")
+            watcher = FileWatchService(database, base)
+            self.assertEqual(watcher.scan_once(), 1)
+            notification = watcher.notifications.list_for_user("admin")[0]
+            self.assertEqual(notification.title, "Workspace database updated")
+            self.assertEqual(notification.target_route, "/dashboard")
 
 
 if __name__ == "__main__":

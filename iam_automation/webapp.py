@@ -189,6 +189,20 @@ def create_app(
         workspace = WorkspaceRefreshService(runtime_path, preflight_result.settings.published_runtime_db_path, preflight_result.settings.sharepoint_root_path)
         return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path).snapshot(str(username)), workspace_version=workspace.version(), workspace_message=request.args.get("refreshed"))
 
+    @app.get("/workspace/status")
+    def workspace_status():
+        username = session.get("iam_user")
+        if not username or not runtime_path or not runtime_path.is_file():
+            return {"status": "unauthorized"}, 401
+        workspace = WorkspaceRefreshService(runtime_path, preflight_result.settings.published_runtime_db_path, preflight_result.settings.sharepoint_root_path)
+        version = workspace.version()
+        return {
+            "status": "ok",
+            "update_available": version.update_available,
+            "published_checksum": version.published_checksum,
+            "local_checksum": version.local_checksum,
+        }
+
     @app.post("/workspace/refresh")
     def refresh_workspace():
         username = session.get("iam_user")
@@ -226,13 +240,25 @@ def create_app(
         service = NotificationService(runtime_path)
         return render_template("notifications.html", notifications=service.list_for_user(str(username)))
 
+    @app.get("/notifications/<notification_id>/open")
+    def notification_open(notification_id: str):
+        username = session.get("iam_user")
+        if not username or not runtime_path or not runtime_path.is_file():
+            return redirect(url_for("login"))
+        service = NotificationService(runtime_path)
+        item = next((candidate for candidate in service.list_for_user(str(username)) if candidate.notification_id == notification_id), None)
+        if item is None:
+            return redirect(url_for("notifications_page", notice="Notification was not found.", notice_type="warning"))
+        service.mark_read(str(username), notification_id)
+        return redirect(item.target_route or url_for("notifications_page"))
+
     @app.post("/notifications/<notification_id>/read")
     def notification_read(notification_id: str):
         username = session.get("iam_user")
         if not username or not runtime_path or not runtime_path.is_file():
             return redirect(url_for("login"))
         NotificationService(runtime_path).mark_read(str(username), notification_id)
-        return redirect(url_for("notifications_page"))
+        return redirect(url_for("notifications_page", notice="Notification marked as read.", notice_type="success"))
 
     @app.post("/notifications/<notification_id>/resolve")
     def notification_resolve(notification_id: str):
@@ -240,7 +266,7 @@ def create_app(
         if not username or not runtime_path or not runtime_path.is_file():
             return redirect(url_for("login"))
         NotificationService(runtime_path).resolve(str(username), notification_id)
-        return redirect(url_for("notifications_page"))
+        return redirect(url_for("notifications_page", notice="Notification resolved.", notice_type="success"))
 
     @app.get("/logout")
     def logout():
