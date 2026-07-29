@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ctypes
+import sys
 import webbrowser
 from pathlib import Path
 from typing import Callable
@@ -28,6 +30,9 @@ class StartupWindow:
         self.on_ready = on_ready
         self.widget = QWidget()
         self.widget.setWindowTitle("IAM Automation - Environment Check")
+        icon_path = Path(__file__).resolve().parent / "static" / "preflight_icon.svg"
+        if icon_path.is_file():
+            self.widget.setWindowIcon(QIcon(str(icon_path)))
         self.widget.resize(940, 720)
         self.widget.setMinimumSize(760, 560)
         self.widget.setStyleSheet(
@@ -113,7 +118,6 @@ class StartupWindow:
         self.preflight_icon = QLabel()
         self.preflight_icon.setObjectName("preflightIcon")
         self.preflight_icon.setToolTip("Environment preflight gate")
-        icon_path = Path(__file__).resolve().parent / "static" / "preflight_icon.svg"
         icon = QIcon(str(icon_path))
         if not icon.isNull():
             self.preflight_icon.setPixmap(icon.pixmap(30, 30))
@@ -312,6 +316,11 @@ else:  # pragma: no cover - only used when the optional UI dependency is absent
 def run_desktop_app(controller: StartupController | None = None) -> int:
     if QApplication is None:
         raise RuntimeError("PySide6 is required to run IAM Automation.")
+    if sys.platform == "win32":
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("KaiserPermanente.IAMAutomation")
+        except (AttributeError, OSError):
+            pass
     application = QApplication.instance() or QApplication([])
     application.setApplicationName("IAM Automation")
     application.setApplicationDisplayName("IAM Automation")
