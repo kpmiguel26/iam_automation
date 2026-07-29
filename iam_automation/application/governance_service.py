@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ..audit import append_audit_event, build_event
 from ..runtime_sync import RuntimeSnapshot, publish_runtime_snapshot, sha256_file
+from .publication_state import clear_publication_pending
 
 
 class GovernanceService:
@@ -18,6 +19,7 @@ class GovernanceService:
 
     def publish(self, actor: str, expected_checksum: str | None = None) -> RuntimeSnapshot:
         snapshot = publish_runtime_snapshot(self.local_runtime_path, self.published_runtime_path, actor=actor, expected_checksum=expected_checksum or None)
+        clear_publication_pending(self.local_runtime_path)
         self._audit(actor, "PUBLISH_RUNTIME_SNAPSHOT", "SUCCESS", {"checksum": snapshot.checksum})
         return snapshot
 
@@ -27,6 +29,7 @@ class GovernanceService:
         if backup.parent != backup_root or not backup.is_file() or backup.suffix != ".sqlite":
             raise ValueError("The selected runtime backup is invalid.")
         snapshot = publish_runtime_snapshot(backup, self.published_runtime_path, actor=actor)
+        clear_publication_pending(self.local_runtime_path)
         self._audit(actor, "RESTORE_RUNTIME_SNAPSHOT", "SUCCESS", {"backup": backup.name, "checksum": snapshot.checksum})
         return snapshot
 

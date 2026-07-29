@@ -123,7 +123,6 @@
 - Added a separate WFM later-scope section to the stakeholder guide so WFM does not expand the current IAM ingestion MVP.
 - Confirmed the next IAM gate is approval of official Fieldglass/Roster Lock formats, field ownership, source precedence and business validation rules.
 - Updated the backlog with the new requirements follow-up work.
-
 ### Admin Control Center Closure and Ingestion Handoff - 2026-07-24
 
 - Confirmed the Admin Control Center functional scope is complete: application users, Windows identities, Master Admin, roles, delegations, notifications, approvals, audit, session security and governance.
@@ -132,3 +131,90 @@
 - Created the next feature branch: `feature/iam-data-ingestion-foundation`.
 - Defined the next objective as the IAM ingestion foundation: official Fieldglass/Roster Lock contracts, canonical worker profile, source precedence, preview, validation, duplicate detection, lineage and quarantine.
 - Kept WFM requirements archived and excluded from the current IAM user-story scope and ingestion branch.
+
+### User and Access Refinement Session - 2026-07-24
+
+- Created `2026-07-24_USER_ACCESS_REFINEMENT.md` as the working document for today.
+- Separated the Windows identity gate, IAM application account, business worker identity and local session as distinct concepts.
+- Documented controlled account states, human-readable role labels, administrator boundaries, delegation continuity and notification ownership.
+- Added user/access acceptance scenarios for login, authorization, last-admin protection, identity discovery, delegation expiry and session revocation.
+- Explicitly kept official Fieldglass, Roster Lock and downstream template decisions out of scope until stakeholders provide the formats next week.
+
+### User Account Lifecycle Refinement - 2026-07-24
+
+- Added controlled application-account statuses: `ACTIVE`, `SUSPENDED`, `INACTIVE` and `PASSWORD_RESET_REQUIRED`.
+- Added SQLite migration support and SQLAlchemy ORM persistence for the new status field while preserving the legacy `active` compatibility property.
+- Restricted application login to accounts with `ACTIVE` status.
+- Updated Application Users administration to use human-readable status selectors and status metrics.
+- Added validation tests for status persistence, lifecycle transitions and invalid status rejection.
+- Focused verification passed: 12 tests passed outside the restricted sandbox. Resource cleanup warnings remain non-blocking and pre-existing.
+
+### Windows Identity Traceability Refinement - 2026-07-24
+
+- Removed Windows identity approval and development auto-approval from the startup authorization path.
+- Preflight now records the detected username and computer as an append-only `WINDOWS_IDENTITY_RECORDED` audit event.
+- The preflight result carries the detected identity with no application roles; application authorization remains exclusively in the IAM account login.
+- Updated launcher and login messaging to distinguish traceability from authentication.
+- Retained the legacy approved-identity structures for compatibility and future policy decisions, but they are no longer a hard gate.
+- Reworked the Windows identity administration view to manage traceability records only; it no longer presents roles or preflight authorization controls.
+
+### Navigation and Command Surface Refinement - 2026-07-24
+
+- Replaced the expanded Office-style link row with compact Bootstrap dropdown menus for Workspace, Operations, Administration and Governance.
+- Added grouped links for application users, Windows traceability, notifications, delegations and Master governance.
+- Reduced table density and normalized action-button sizing so audit export and archive commands stay compact and inline.
+- Removed the obsolete Control Center alert for Windows identity approval and relabeled the area as traceability.
+- Focused webapp, Admin Control Center and Master Admin tests passed: 8 tests passed outside the restricted sandbox.
+
+### Operational Watcher and Workspace Overview - 2026-07-24
+
+- Added a background file watcher in the local Flask/Waitress process for pending JSON requests, configuration files and identity-discovery snapshots.
+- The watcher persists file signatures in SQLite and creates one in-app notification per new or changed file; it never imports or executes files automatically.
+- Changed delegation creation from free-text usernames to active application-user selection, with backend validation and retained delegation history.
+- Added SQLite-backed workspace metrics for request lifecycle, unread alerts, quarantine, publication queue, imports and active delegations.
+- Added a request lifecycle bar chart and data-readiness panel to the workspace overview.
+- Added regression coverage confirming a pending JSON file generates one notification only.
+
+### Multi-Workstation Identity Discovery - 2026-07-24
+
+- Changed identity discovery storage from one shared JSON document to independent event files under `database/snapshots/identity_discoveries/`.
+- Each workstation discovery now uses a unique filename and discovery ID, avoiding concurrent overwrite and OneDrive merge conflicts.
+- Preserved the legacy single-file API for existing tests and migration compatibility.
+- Restricted the file watcher to the identity-discovery directory so runtime manifests are not reported as identity events.
+
+### Safe Workspace Refresh - 2026-07-24
+
+- Added explicit workspace version comparison using published and local SQLite checksums.
+- Added a dashboard warning and `Refresh workspace` action; the application is not restarted and the user does not need to close the launcher.
+- Exported the current user's local `PENDING` requests to unique shared JSON files before replacing the local SQLite snapshot.
+- Added local backup, checksum validation, atomic replacement and runtime schema initialization to the refresh operation.
+- Blocked refresh while local publication items are pending, preventing administrative work from being silently discarded.
+- Revalidated the session roles from the refreshed SQLite when the account remains active.
+- Verified workspace refresh, backup/checksum, webapp and admin regressions: 12 tests passed.
+
+### Temporary Super Operator Bridge - 2026-07-28
+
+- Implemented a visible, temporary `SUPER_OPERATOR` elevation for the staffing and budget transition period.
+- The elevation is stored in SQLite as `temporary_elevations`; it is not persisted as a permanent application-user role and cannot be granted through the normal user CRUD.
+- A `MASTER_ADMIN` grants access from the Governance menu with an application-user dropdown, ISO UTC start and expiration, and a mandatory business reason.
+- Every grant, revocation and automatic expiration is recorded in the append-only audit trail. Active elevations are recalculated on login and on each authenticated request, so expiration removes operational access without requiring a code change or manual logout.
+- The elevation enables operational application administration, request review, approval assignment, delegation, ingestion and quarantine workflows. It does not grant Master security, role-matrix administration, session security, audit export/archive, Access publication, Access restore or changes to the authorization model.
+- Added a Master-controlled global switch to disable the bridge without rewriting security code. The control remains explicit, auditable and time-limited; no hidden backdoor or environment bypass was introduced.
+- Added regression coverage for grant, revoke, expiration, invalid dates/reasons, and the existing webapp/preflight suite.
+- Verification: full suite passed with 55 tests. This bridge is a temporary operating procedure and must be revoked or disabled when the permanent staffing model is approved.
+
+### Salesforce Export and Governed Runtime Publication - 2026-07-28
+
+- Pulled the official Salesforce Data Loader workbook from `docs/req/salesforce_template` and reviewed its 70-column structure and yellow input fields.
+- Added a Salesforce export service that generates a new timestamped workbook from approved `CREATE_EMPLOYEE` and `UPDATE_EMPLOYEE` requests in local SQLite. It preserves the official template, removes sample people and records the generated artifact in audit.
+- Added the Application Admin Control Center action **Salesforce export**. The output is written to the SharePoint-synchronized `generated_templates` folder; the workbook is downloaded by the operator for Salesforce/Data Loader review. No Salesforce import or automatic submission is performed.
+- Enabled the governed Master Admin runtime publication path already present in the application: it validates SQLite integrity, checks the expected published checksum, creates a backup, atomically updates the SharePoint snapshot and writes its manifest.
+- Added `docs/guides/SALESFORCE_EXPORT_CONFIGURATION.md` with template mapping, SharePoint folder behavior and the macOS/Windows development handoff procedure.
+- Clarified the environment boundary: macOS cannot publish to real SharePoint without a local OneDrive-synchronized library. macOS development uses `tests/fixtures/sharepoint_simulated` through `IAM_SHAREPOINT_ROOT_PATH`; Windows or a Mac with OneDrive performs real SharePoint publication.
+
+### Versioned SQLite Migrations - 2026-07-28
+
+- Added `iam_automation/database/migrations/` and an atomic migration runner with the `schema_migrations` ledger.
+- Registered the existing runtime structure as `v001_initial_schema` and added `v002_notification_indexes` as the first incremental migration.
+- Runtime bootstrap now applies pending migrations idempotently after creating the current baseline schema. Future features must add a versioned migration instead of replacing `db_sharepoint` with `db_dev`.
+- Added regression coverage for baseline registration, ordered application and idempotent reruns.

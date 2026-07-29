@@ -1,0 +1,14 @@
+{
+  "assigned_to": null,
+  "bug_id": "53689c54-b141-42b0-b36b-7b522c39c916",
+  "computer": "",
+  "created_at_utc": "2026-07-29T17:00:54.168932+00:00",
+  "description": "Revisar el bug reports table   - http://127.0.0.1:58938/bug-reports",
+  "page": "Revisar el bug reports table   - http://127.0.0.1:58938/bug-reports",
+  "reporter": "migue",
+  "resolution": "",
+  "severity": "MEDIUM",
+  "status": "OPEN",
+  "title": "Revisar el bug reports table",
+  "updated_at_utc": null
+}

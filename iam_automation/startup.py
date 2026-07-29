@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from . import config
+from .application.audit_service import record_audit
 from .database import initialize_runtime_database
-from .identity import CurrentUser, auto_approve_current_user_for_development, load_approved_users_from_sqlite, validate_current_user, validate_current_user_from_sqlite
+from .application.workspace_refresh_service import record_published_source_checksum
+from .identity import CurrentUser
 from .identity import computer_name, windows_username
-from .identity_discovery import discovery_path, mark_discovery, record_identity_discovery
-from .runtime_sync import find_published_access_db, find_published_runtime_db, project_runtime_path, publish_runtime_snapshot, sync_runtime_snapshot
+from .identity_discovery import record_windows_traceability, traceability_path
+from .runtime_sync import find_published_access_db, find_published_runtime_db, project_runtime_path, sync_runtime_snapshot
 from .settings_store import load_user_settings, save_user_settings, user_settings_path
 from .sharepoint_discovery import DiscoveryCandidate, discover_candidates
 from .workspace_layout import ensure_sharepoint_structure
@@ -166,6 +169,7 @@ class StartupController:
             try:
                 snapshot = sync_runtime_snapshot(self.settings.published_runtime_db_path, self.settings.local_runtime_db_path)
                 initialize_runtime_database(snapshot.local_path)
+                record_published_source_checksum(snapshot.local_path, snapshot.checksum)
                 resources.append({
                     "key": "runtime_sync",
                     "label": "Local runtime SQLite synchronization",
@@ -186,42 +190,21 @@ class StartupController:
     def continue_to_login(self) -> CurrentUser:
         if self.state != StartupState.READY or not self.result or not self.result.ok:
             raise RuntimeError("SharePoint preflight must pass before login.")
-        try:
-            runtime_users = load_approved_users_from_sqlite(self.settings.local_runtime_db_path) if self.settings else {}
-            current_identity = windows_username()
-            discovery_file = discovery_path(self.settings.sharepoint_root_path)
-            discovery = None
-            if current_identity.lower() not in runtime_users:
-                discovery = record_identity_discovery(discovery_file, current_identity, computer_name(), config.dev_default_role())
-            if runtime_users:
-                try:
-                    user = validate_current_user_from_sqlite(self.settings.local_runtime_db_path)
-                except PermissionError:
-                    if not config.dev_auto_approve_users_enabled():
-                        self.state = StartupState.UNAUTHORIZED_USER
-                        raise PermissionError(f"Identity discovery is pending admin approval: {current_identity}")
-                    user = auto_approve_current_user_for_development(self.settings.local_runtime_db_path, config.dev_default_role())
-                    publish_runtime_snapshot(
-                        self.settings.local_runtime_db_path,
-                        self.settings.published_runtime_db_path,
-                        actor=f"development-auto-approval:{user.username}",
-                    )
-            else:
-                if not config.dev_auto_approve_users_enabled():
-                    self.state = StartupState.UNAUTHORIZED_USER
-                    raise PermissionError(f"Identity discovery is pending admin approval: {current_identity}")
-                user = auto_approve_current_user_for_development(self.settings.local_runtime_db_path, config.dev_default_role())
-                publish_runtime_snapshot(
-                    self.settings.local_runtime_db_path,
-                    self.settings.published_runtime_db_path,
-                    actor=f"development-auto-approval:{user.username}",
-                )
-            if discovery:
-                mark_discovery(discovery_file, discovery.discovery_id, "AUTO_APPROVED_DEVELOPMENT", user.username)
-        except PermissionError:
-            self.state = StartupState.UNAUTHORIZED_USER
-            raise
-        self.result = PreflightResult(self.state, True, "Environment and user are ready.", self.settings, self.result.resources, self.candidates, user)
+        current_identity = windows_username()
+        user = CurrentUser(username=current_identity, computer=computer_name(), roles=())
+        if self.settings:
+            record_audit(
+                self.settings.audit_folder_path,
+                current_identity,
+                "WINDOWS_IDENTITY_RECORDED",
+                "windows_identity",
+                current_identity,
+                computer=computer_name(),
+                new_values={"computer": computer_name(), "authorization": "application_login_only"},
+            )
+            if sys.platform == "win32":
+                record_windows_traceability(traceability_path(self.settings.sharepoint_root_path), current_identity, computer_name())
+        self.result = PreflightResult(self.state, True, "Environment and Windows identity are ready.", self.settings, self.result.resources, self.candidates, user)
         return user
 
     def retry(self) -> PreflightResult:

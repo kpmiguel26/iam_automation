@@ -48,15 +48,17 @@ Both launchers require Python 3.10 or newer, create or reuse `.venv`, upgrade th
 
 The desktop panel requires PySide6, which the launchers install from `requirements.txt`. On Windows, the launcher supports Python 3.10 or newer and starts the panel with `pythonw.exe` after setup. The control panel remains a normal window on both platforms and can be minimized using the operating system controls.
 
-During the current local development phase, the preflight registers the current VDI, Windows, or macOS identity in the runtime SQLite automatically. The default development role is `REQUESTER`; set `IAM_DEV_DEFAULT_ROLE=ADMINISTRATOR` when needed for testing. A strict approved-user gate remains a planned production hardening step.
+During the current local development phase, preflight records the current VDI, Windows, or macOS identity for audit traceability. It does not assign application roles or block the user. Application authorization is handled by the separate IAM application account login.
 
-The startup preflight validates the current Windows identity separately from the IAM Automation application login. Application accounts are stored in the runtime SQLite database with password hashes. Create the first application account with:
+The startup preflight records the current Windows identity separately from the IAM Automation application login. Application accounts are stored in the runtime SQLite database with password hashes. Create the first application account with:
 
 ```text
 python scripts/create_runtime_database.py --path runtime.sqlite --publish-root "C:\path\to\SharePoint" --app-username iam.admin --app-password "choose-a-password" --role ADMINISTRATOR
 ```
 
 The web login never uses the Windows username as application credentials and never stores a plaintext password.
+
+For local QA credentials and account bootstrap commands, see [`TEST_USERS_README.md`](./TEST_USERS_README.md). These credentials are development-only.
 
 For an interactive bootstrap that keeps the password out of the command history, use `scripts/create_app_user.py` and enter the password when prompted.
 

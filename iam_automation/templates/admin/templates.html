@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Templates{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 admin-page">
+  <p class="eyebrow">Operations · Templates</p>
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4"><div><h1>Templates</h1><p class="text-secondary mb-0">Review the approved source workbook before generating an output file.</p></div><span class="badge text-bg-info">{{ approved_row_count }} approved data rows</span></div>
+  {% if template_error %}<div class="alert alert-danger">{{ template_error }}</div>{% endif %}
+  <section class="surface p-4">
+    <div class="d-flex flex-wrap justify-content-between gap-3 align-items-start"><div><p class="section-label">Salesforce · Official source</p><h2 class="h4">Salesforce Data Loader template</h2><p class="text-secondary mb-0">The template is reviewed once as an official baseline. Worker data is validated separately for each import or export.</p></div><div class="d-flex gap-2"><a class="btn btn-outline-primary" href="{{ url_for('admin.download_salesforce_template') }}">Download template</a>{% if approved_row_count %}<a class="btn btn-primary" href="{{ url_for('admin.export_salesforce') }}">Generate populated export</a>{% else %}<button class="btn btn-primary" disabled>Generate populated export</button>{% endif %}</div></div>
+    <div class="row g-3 mt-3"><div class="col-md-6"><div class="small text-secondary">Template file</div><code class="small">{{ salesforce_template_name|default('SF PROD TEMPLATE -- KPMA RITM2254022 2025_08_13.xlsx') }}</code></div><div class="col-md-6"><div class="small text-secondary">SHA-256 baseline</div><code class="small text-break">{{ template_checksum or 'Unavailable' }}</code></div></div>
+    <div class="alert alert-light border mt-4 mb-0">No worker data is required to review the structure. Population will be enabled after the official worker source and mappings are configured.</div>
+    <div class="mt-4"><p class="section-label">Workbook preview</p><div class="table-responsive border rounded"><table class="table table-sm table-striped align-middle mb-0"><thead><tr>{% for header in preview_headers %}<th>{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in preview_rows %}<tr>{% for value in row %}<td class="small text-nowrap">{{ value if value is not none else '' }}</td>{% endfor %}</tr>{% else %}<tr><td class="text-secondary">No preview rows available.</td></tr>{% endfor %}</tbody></table></div><div class="form-text">Preview shows the first 12 columns and sample rows from the official workbook. Generated exports will use the full 70-column structure.</div></div>
+    <div class="mt-4"><p class="section-label">All workbook columns</p><div class="row row-cols-1 row-cols-md-3 row-cols-lg-4 g-2">{% for column in columns %}<div class="col"><div class="border rounded p-2 small bg-light">{{ column }}</div></div>{% else %}<div class="text-secondary">Template columns are not available.</div>{% endfor %}</div></div>
+  </section>
+</div>
+{% endblock %}

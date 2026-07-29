@@ -1,0 +1,14 @@
+{
+  "assigned_to": null,
+  "bug_id": "f839a8fc-6669-4a96-864f-9d45beb6eb8a",
+  "computer": "",
+  "created_at_utc": "2026-07-29T17:06:56.949937+00:00",
+  "description": "Implementar refresh mas agresivo  - Notificaciones y acciones de usuarios",
+  "page": "Implementar refresh mas agresivo  - Notificaciones y acciones de usuarios",
+  "reporter": "migue",
+  "resolution": "",
+  "severity": "CRITICAL",
+  "status": "OPEN",
+  "title": "Implementar refresh mas agresivo",
+  "updated_at_utc": null
+}

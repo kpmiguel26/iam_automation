@@ -31,6 +31,17 @@ class RequestServiceTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 service.decide(item.request_id, requester, "APPROVED", "Self approval")
 
+    def test_pending_request_is_exported_to_sharepoint_connector_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            database = initialize_runtime_database(root / "runtime.sqlite")
+            service = RequestService(database)
+            service.create(CurrentUser("requester", "VDI-01", (ROLE_REQUESTER,)), "CREATE_EMPLOYEE", "W-103", {"first_name": "Mia"}, "Onboarding")
+            exported = service.export_pending_for_user("requester", root / "sharepoint" / "requests" / "pending")
+            files = tuple((root / "sharepoint" / "requests" / "pending").glob("*.json"))
+            self.assertEqual(exported, 1)
+            self.assertEqual(len(files), 1)
+
     def test_approval_enqueues_publication_and_delegation_reassigns_queue(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")

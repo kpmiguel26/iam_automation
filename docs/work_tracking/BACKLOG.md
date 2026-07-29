@@ -21,10 +21,24 @@
 - [x] Rework authenticated navigation into Office-style command bar with notification preview.
 - [x] Add general user profile and notification pages for non-admin users.
 - [x] Add application session revocation and expiration rules.
-- [x] Complete request, approval and reviewer workflow; delegation, SLA and publication handoff are implemented.
+- [~] Complete request, approval and reviewer workflow; initial CRUD is implemented, delegation and SLA remain.
 - [x] Add queue reassignment and delegation integration to approval workflow.
 - [x] Add initial SLA calculation and overdue escalation notification.
 - [x] Enqueue approved requests as `PENDING_PUBLICATION`.
+
+## User And Access Refinement - Current Work Session
+
+Working document: [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACCESS_REFINEMENT.md)
+
+- [ ] Approve the identity-layer glossary: Windows identity, application account, worker identity and session.
+- [~] Confirm controlled account states and recovery behavior; initial SQLite/ORM implementation is complete, recovery and rehire policy remain open.
+- [ ] Approve the human-readable role and permission matrix.
+- [ ] Confirm last-administrator protection and self-demotion rules.
+- [ ] Confirm identity discovery, pending approval and development strict-mode behavior.
+- [ ] Confirm reviewer assignment, delegation scope, expiry and fallback escalation.
+- [ ] Confirm notification recipients, severity, lifecycle and retention.
+- [ ] Execute the user/access UAT checklist and record stakeholder sign-off.
+- [ ] Carry the approved decisions into the ORM, services, routes and authorization tests.
 
 ## Data Operations - Next Objective: IAM Ingestion Foundation
 
@@ -68,14 +82,6 @@
 - [ ] Keep Smartsheet CSV synchronized with this backlog.
 - [ ] Prepare a feature pull request from `feature/admin-control-center`.
 - [ ] Merge only after tests and review are complete.
-
-## Admin Control Center Closure
-
-- [x] Merge `feature/admin-control-center` into `main`.
-- [x] Publish the completed Admin Control Center to `origin/main`.
-- [x] Preserve local SQLite and audit artifacts outside feature commits.
-- [ ] Complete release hardening tests for authorization, expiry and publication conflict handling.
-- [ ] Run Windows/macOS user acceptance and sign-off.
 
 ## Requirements Follow-up
 

@@ -1,0 +1,14 @@
+{
+  "assigned_to": null,
+  "bug_id": "a0b3511b-3edc-444c-a9fc-f41d8630e2b7",
+  "computer": "Windows 11",
+  "created_at_utc": "2026-07-29T17:04:43.299498+00:00",
+  "description": "cuando me activaste el permiso para poder auto aprobarme, no funcion\u00f3",
+  "page": "Approval Queue",
+  "reporter": "Marco.X.Pallavidino",
+  "resolution": "",
+  "severity": "LOW",
+  "status": "OPEN",
+  "title": "permiso de aprobaci\u00f3n propio",
+  "updated_at_utc": null
+}

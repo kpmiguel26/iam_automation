@@ -36,8 +36,11 @@ class RuntimeSyncTests(unittest.TestCase):
             create_runtime(published)
             sync_runtime_snapshot(published, root / "runtime.sqlite")
             connection = sqlite3.connect(published)
-            connection.execute("INSERT INTO settings (key, value) VALUES ('changed', 'yes')")
-            connection.commit()
+            try:
+                connection.execute("INSERT INTO settings (key, value) VALUES ('changed', 'yes')")
+                connection.commit()
+            finally:
+                connection.close()
             connection.close()
             with self.assertRaises(RuntimeDatabaseError):
                 sync_runtime_snapshot(published, root / "runtime.sqlite")
@@ -51,8 +54,11 @@ class RuntimeSyncTests(unittest.TestCase):
             local = root / "runtime.sqlite"
             sync_runtime_snapshot(published, local)
             connection = sqlite3.connect(local)
-            connection.execute("UPDATE settings SET value = 'two' WHERE key = 'version'")
-            connection.commit()
+            try:
+                connection.execute("UPDATE settings SET value = 'two' WHERE key = 'version'")
+                connection.commit()
+            finally:
+                connection.close()
             connection.close()
             snapshot = publish_runtime_snapshot(local, published, actor="admin", expected_checksum=snapshot_checksum(published))
             self.assertTrue(snapshot.manifest_path.exists())

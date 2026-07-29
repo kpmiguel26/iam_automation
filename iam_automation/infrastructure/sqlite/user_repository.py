@@ -27,7 +27,7 @@ class UserRepository:
 
     def create_user(self, username: str, display_name: str, password_hash: str, roles: tuple[str, ...]) -> None:
         with orm_session(self.database_path) as session:
-            user = AppUserModel(username=username, display_name=display_name, password_hash=password_hash, active=True)
+            user = AppUserModel(username=username, display_name=display_name, password_hash=password_hash, active=True, status="ACTIVE")
             user.roles = [UserRoleModel(username=username, role_name=role) for role in roles]
             session.add(user)
 
@@ -38,6 +38,7 @@ class UserRepository:
         display_name: str,
         roles: tuple[str, ...],
         active: bool,
+        status: str = "ACTIVE",
         password_hash: str | None = None,
     ) -> None:
         with orm_session(self.database_path) as session:
@@ -46,6 +47,7 @@ class UserRepository:
                 raise ValueError(f"Application user was not found: {username}")
             user.display_name = display_name
             user.active = active
+            user.status = status
             if password_hash:
                 user.password_hash = password_hash
             session.execute(delete(UserRoleModel).where(UserRoleModel.username == username))
@@ -54,4 +56,5 @@ class UserRepository:
     @staticmethod
     def _to_user(row: AppUserModel) -> ApplicationUser:
         roles = tuple(sorted(normalize_role(role.role_name) for role in row.roles))
-        return ApplicationUser(row.username, row.display_name, bool(row.active), roles)
+        status = str(getattr(row, "status", "") or ("ACTIVE" if row.active else "INACTIVE")).upper()
+        return ApplicationUser(row.username, row.display_name, status == "ACTIVE", roles, status)

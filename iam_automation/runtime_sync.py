@@ -78,6 +78,18 @@ def validate_runtime_database(path: Path) -> None:
         raise RuntimeDatabaseError(f"Runtime SQLite database could not be opened: {path}: {exc}") from exc
 
 
+def checkpoint_runtime_database(path: Path) -> None:
+    """Flush SQLite WAL content before hashing or copying a runtime snapshot."""
+    try:
+        connection = sqlite3.connect(path)
+        try:
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            connection.close()
+    except sqlite3.Error as exc:
+        raise RuntimeDatabaseError(f"SQLite WAL checkpoint failed: {path}: {exc}") from exc
+
+
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     temporary = path.with_suffix(path.suffix + f".{uuid.uuid4().hex}.tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -109,6 +121,7 @@ def sync_runtime_snapshot(published_path: Path, local_path: Path | None = None) 
     """Validate and atomically copy the published SQLite snapshot into the project root."""
     local = local_path or project_runtime_path()
     manifest_path = runtime_manifest_path(published_path)
+    checkpoint_runtime_database(published_path)
     validate_runtime_database(published_path)
     manifest = _load_or_create_manifest(published_path, manifest_path)
     local.parent.mkdir(parents=True, exist_ok=True)
@@ -125,6 +138,7 @@ def sync_runtime_snapshot(published_path: Path, local_path: Path | None = None) 
 
 def publish_runtime_snapshot(local_path: Path, published_path: Path, *, actor: str, expected_checksum: str | None = None) -> RuntimeSnapshot:
     """Publish an admin-edited local SQLite snapshot with backup and optimistic concurrency."""
+    checkpoint_runtime_database(local_path)
     validate_runtime_database(local_path)
     if published_path.exists() and expected_checksum and sha256_file(published_path) != expected_checksum:
         raise RuntimeDatabaseError("Published runtime SQLite changed since it was downloaded.")
