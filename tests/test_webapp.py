@@ -32,6 +32,22 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(client.get("/logout").status_code, 302)
         self.assertEqual(client.get("/dashboard").status_code, 302)
 
+    def test_testing_help_requires_login_and_is_available_in_session(self):
+        user = type("User", (), {"username": "tester", "roles": ("REQUESTER",)})()
+        app = webapp.create_app(self.make_result(True), app_authenticator=lambda username, password: user)
+        client = app.test_client()
+        self.assertEqual(client.get("/help/testing").status_code, 302)
+        client.post("/login", data={"username": "tester", "password": "secret"})
+        response = client.get("/help/testing")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Testing &amp; Help Center", response.data)
+        self.assertIn(b"PRE-001", response.data)
+        self.assertIn(b"Report a bug", response.data)
+
+    def test_workspace_status_requires_login(self):
+        app = webapp.create_app(self.make_result(True))
+        self.assertEqual(app.test_client().get("/workspace/status").status_code, 401)
+
     def test_local_server_uses_loopback_and_ephemeral_port(self):
         app = webapp.create_app(self.make_result(True))
         server = webapp.LocalWebAppServer(app)

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 
-from ..domain.users import ApplicationUser
+from ..domain.users import ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_INACTIVE, ACCOUNT_STATUSES, ApplicationUser
 from ..identity import ROLE_APPLICATION_ADMIN, ROLE_AUDITOR, ROLE_MASTER_ADMIN, ROLE_REQUESTER, ROLE_REVIEWER, ROLE_WRITER, normalize_role
 from ..infrastructure.sqlite.user_repository import UserRepository
 
@@ -38,13 +38,15 @@ class UserService:
         password: str,
         roles: list[str],
         active: bool,
+        status: str | None = None,
     ) -> None:
         if not self.repository.get_user(username):
             raise ValueError(f"Application user was not found: {username}")
         password_hash = generate_password_hash(password) if password.strip() else None
         normalized_roles = self._roles(roles)
+        normalized_status = self._status(status, active)
         current = self.repository.get_user(username)
-        if current and current.active and not active:
+        if current and current.active and normalized_status != ACCOUNT_STATUS_ACTIVE:
             if self._is_last_active_role(current.roles, ROLE_MASTER_ADMIN):
                 raise ValueError("The last active administrator (MASTER_ADMIN) cannot be deactivated.")
             if self._is_last_active_admin(current.roles):
@@ -57,7 +59,8 @@ class UserService:
             username,
             display_name=display_name.strip(),
             roles=normalized_roles,
-            active=active,
+            active=normalized_status == ACCOUNT_STATUS_ACTIVE,
+            status=normalized_status,
             password_hash=password_hash,
         )
 
@@ -73,6 +76,15 @@ class UserService:
         normalized = tuple(sorted({normalize_role(role) for role in roles if role.strip()}))
         if not normalized or not set(normalized).issubset(ALLOWED_ROLES):
             raise ValueError(f"Roles must be selected from: {', '.join(sorted(ALLOWED_ROLES))}")
+        return normalized
+
+    @staticmethod
+    def _status(status: str | None, active: bool) -> str:
+        if not status:
+            return ACCOUNT_STATUS_ACTIVE if active else ACCOUNT_STATUS_INACTIVE
+        normalized = status.strip().upper()
+        if normalized not in ACCOUNT_STATUSES:
+            raise ValueError(f"Status must be selected from: {', '.join(sorted(ACCOUNT_STATUSES))}")
         return normalized
 
     def _is_last_active_admin(self, current_roles: tuple[str, ...]) -> bool:

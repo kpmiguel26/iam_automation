@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import json
+import logging
 import multiprocessing
 import os
 import queue
@@ -14,13 +15,20 @@ from typing import Callable
 from urllib.request import Request, urlopen
 
 from .identity import CurrentUser, validate_app_user_from_sqlite
-from .identity_discovery import discovery_path
+from .identity_discovery import discovery_path, traceability_path
 from .application.session_service import SessionService
 from .application.notification_service import NotificationService
+from .application.file_watch_service import FileWatchService
+from .application.overview_service import OverviewService
+from .application.workspace_refresh_service import WorkspaceRefreshService
+from .application.publication_state import publication_pending
+from .application.user_service import UserService
+from .application.temporary_super_operator_service import TemporarySuperOperatorService
 from .interfaces.web.admin_routes import create_admin_blueprint
 from .interfaces.web.master_routes import create_master_blueprint
 from .interfaces.web.user_routes import create_identity_blueprint, create_user_blueprint
 from .interfaces.web.request_routes import create_request_blueprint
+from .interfaces.web.bug_report_routes import create_bug_report_blueprint
 from .startup import PreflightResult
 
 try:
@@ -71,15 +79,27 @@ def create_app(
     app.secret_key = secrets.token_urlsafe(32)
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+    @app.errorhandler(404)
+    def not_found(error):
+        return render_template("errors/404.html"), 404
+
+    @app.errorhandler(500)
+    def internal_server_error(error):
+        return render_template("errors/500.html"), 500
+
     css_path = Path(__file__).resolve().parent / "static" / "css" / "app.css"
     static_version = str(int(css_path.stat().st_mtime)) if css_path.is_file() else "dev"
     runtime_path = preflight_result.settings.local_runtime_db_path if preflight_result.settings else None
+    app.extensions["iam_file_watcher"] = None
+    app.extensions["iam_refresh_lock"] = threading.Lock()
     if runtime_path:
-        app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), local_runtime_path=preflight_result.settings.local_runtime_db_path, published_runtime_path=preflight_result.settings.published_runtime_db_path, audit_path=preflight_result.settings.audit_folder_path))
+        app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), sharepoint_root=preflight_result.settings.sharepoint_root_path, local_runtime_path=preflight_result.settings.local_runtime_db_path, published_runtime_path=preflight_result.settings.published_runtime_db_path, audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_master_blueprint(runtime_path, preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_user_blueprint(runtime_path, audit_path=preflight_result.settings.audit_folder_path))
-        app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), audit_path=preflight_result.settings.audit_folder_path))
-        app.register_blueprint(create_request_blueprint(runtime_path, audit_path=preflight_result.settings.audit_folder_path))
+        app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), traceability_directory=traceability_path(preflight_result.settings.sharepoint_root_path), audit_path=preflight_result.settings.audit_folder_path))
+        app.register_blueprint(create_request_blueprint(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path, audit_path=preflight_result.settings.audit_folder_path))
+        app.register_blueprint(create_bug_report_blueprint(runtime_path, preflight_result.settings.sharepoint_root_path))
 
     @app.before_request
     def enforce_session_revocation():
@@ -87,6 +107,13 @@ def create_app(
             if SessionService(runtime_path).is_revoked(str(session["iam_user"]), str(session["iam_session_started_at"])):
                 session.clear()
                 return redirect(url_for("login"))
+            current = next((user for user in UserService(runtime_path).list_users() if user.username.lower() == str(session["iam_user"]).lower()), None)
+            if not current or not current.active or current.status != "ACTIVE":
+                session.clear()
+                return redirect(url_for("login"))
+            roles = TemporarySuperOperatorService(runtime_path).effective_roles(current.username, current.roles)
+            session["iam_roles"] = list(roles)
+            session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & set(roles))
 
     @app.context_processor
     def shared_template_context():
@@ -96,10 +123,11 @@ def create_app(
         unread_count = notification_service.unread_count(username) if notification_service else 0
         recent_notifications = notification_service.list_for_user(username, unread_only=True)[:5] if notification_service else []
         return {
-            "is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN"} & {str(role).upper() for role in roles}),
+            "is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & {str(role).upper() for role in roles}),
             "unread_notification_count": unread_count,
             "recent_notifications": recent_notifications,
             "static_version": static_version,
+            "publication_pending": publication_pending(runtime_path),
         }
 
     @app.get("/health")
@@ -143,9 +171,10 @@ def create_app(
             return render_template("auth/login.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), error=str(exc)), 403
         session.clear()
         session["iam_user"] = user.username
-        normalized_roles = tuple(sorted({str(role).strip().upper() for role in getattr(user, "roles", ())}))
+        base_roles = tuple(str(role).strip().upper() for role in getattr(user, "roles", ()))
+        normalized_roles = TemporarySuperOperatorService(runtime_path).effective_roles(user.username, base_roles) if runtime_path.is_file() else base_roles
         session["iam_roles"] = list(normalized_roles)
-        session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN"} & set(normalized_roles))
+        session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & set(normalized_roles))
         from datetime import datetime, timezone
         session["iam_session_started_at"] = datetime.now(timezone.utc).isoformat()
         return redirect(url_for("dashboard"))
@@ -157,13 +186,51 @@ def create_app(
         username = session.get("iam_user")
         if not username:
             return redirect(url_for("login"))
-        return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())))
+        workspace = WorkspaceRefreshService(runtime_path, preflight_result.settings.published_runtime_db_path, preflight_result.settings.sharepoint_root_path)
+        return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path).snapshot(str(username)), workspace_version=workspace.version(), workspace_message=request.args.get("refreshed"))
+
+    @app.get("/workspace/status")
+    def workspace_status():
+        username = session.get("iam_user")
+        if not username or not runtime_path or not runtime_path.is_file():
+            return {"status": "unauthorized"}, 401
+        workspace = WorkspaceRefreshService(runtime_path, preflight_result.settings.published_runtime_db_path, preflight_result.settings.sharepoint_root_path)
+        version = workspace.version()
+        return {
+            "status": "ok",
+            "update_available": version.update_available,
+            "published_checksum": version.published_checksum,
+            "local_checksum": version.local_checksum,
+        }
+
+    @app.post("/workspace/refresh")
+    def refresh_workspace():
+        username = session.get("iam_user")
+        if not username or not runtime_path or not preflight_result.settings:
+            return redirect(url_for("login"))
+        workspace = WorkspaceRefreshService(runtime_path, preflight_result.settings.published_runtime_db_path, preflight_result.settings.sharepoint_root_path)
+        try:
+            with app.extensions["iam_refresh_lock"]:
+                version, exported = workspace.refresh(str(username))
+            current = next((user for user in UserService(runtime_path).list_users() if user.username.lower() == str(username).lower()), None)
+            if current:
+                session["iam_roles"] = list(current.roles)
+                session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & set(current.roles))
+            return redirect(url_for("dashboard", refreshed=f"Workspace refreshed successfully. {exported} pending request(s) preserved."))
+        except Exception as exc:
+            return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=str(username), roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path).snapshot(str(username)), workspace_version=workspace.version(), workspace_error=str(exc)), 409
 
     @app.get("/profile")
     def profile():
         if not session.get("iam_user"):
             return redirect(url_for("login"))
         return render_template("profile.html", username=str(session["iam_user"]), roles=tuple(session.get("iam_roles", ())), sharepoint_path=str(preflight_result.settings.sharepoint_root_path))
+
+    @app.get("/help/testing")
+    def testing_help():
+        if not session.get("iam_user"):
+            return redirect(url_for("login"))
+        return render_template("help/testing.html")
 
     @app.get("/notifications")
     def notifications_page():
@@ -173,13 +240,25 @@ def create_app(
         service = NotificationService(runtime_path)
         return render_template("notifications.html", notifications=service.list_for_user(str(username)))
 
+    @app.get("/notifications/<notification_id>/open")
+    def notification_open(notification_id: str):
+        username = session.get("iam_user")
+        if not username or not runtime_path or not runtime_path.is_file():
+            return redirect(url_for("login"))
+        service = NotificationService(runtime_path)
+        item = next((candidate for candidate in service.list_for_user(str(username)) if candidate.notification_id == notification_id), None)
+        if item is None:
+            return redirect(url_for("notifications_page", notice="Notification was not found.", notice_type="warning"))
+        service.mark_read(str(username), notification_id)
+        return redirect(item.target_route or url_for("notifications_page"))
+
     @app.post("/notifications/<notification_id>/read")
     def notification_read(notification_id: str):
         username = session.get("iam_user")
         if not username or not runtime_path or not runtime_path.is_file():
             return redirect(url_for("login"))
         NotificationService(runtime_path).mark_read(str(username), notification_id)
-        return redirect(url_for("notifications_page"))
+        return redirect(url_for("notifications_page", notice="Notification marked as read.", notice_type="success"))
 
     @app.post("/notifications/<notification_id>/resolve")
     def notification_resolve(notification_id: str):
@@ -187,7 +266,7 @@ def create_app(
         if not username or not runtime_path or not runtime_path.is_file():
             return redirect(url_for("login"))
         NotificationService(runtime_path).resolve(str(username), notification_id)
-        return redirect(url_for("notifications_page"))
+        return redirect(url_for("notifications_page", notice="Notification resolved.", notice_type="success"))
 
     @app.get("/logout")
     def logout():
@@ -195,6 +274,14 @@ def create_app(
         return redirect(url_for("login"))
 
     return app
+
+
+def start_file_watcher(preflight_result: PreflightResult):
+    if not preflight_result.settings:
+        return None
+    database_path = preflight_result.settings.local_runtime_db_path
+    watcher = FileWatchService(database_path, preflight_result.settings.sharepoint_root_path).start()
+    return watcher
 
 
 @dataclass
@@ -215,6 +302,9 @@ class LocalWebAppServer:
     def start(self) -> str:
         if create_server is None:
             raise RuntimeError("Flask and Waitress are required to start the local webapp.")
+        # Waitress emits a warning when static assets briefly queue during page load.
+        # Keep real request/server errors visible while avoiding normal startup noise.
+        logging.getLogger("waitress.queue").setLevel(logging.ERROR)
         self._server = create_server(self.app, host=self.host, port=self.port, threads=4)
         self.port = int(self._server.effective_port)  # type: ignore[attr-defined]
         self._thread = threading.Thread(target=self._run, name="iam-local-webapp", daemon=True)
@@ -241,6 +331,8 @@ def _serve_webapp_process(preflight_result: PreflightResult, ready_queue) -> Non
             server.stop()
 
     app = create_app(preflight_result, shutdown_callback=shutdown_server, shutdown_token=shutdown_token)
+    watcher = start_file_watcher(preflight_result)
+    app.extensions["iam_file_watcher"] = watcher
     server = LocalWebAppServer(app)
     server_holder["server"] = server
     url = server.start()
@@ -250,6 +342,8 @@ def _serve_webapp_process(preflight_result: PreflightResult, ready_queue) -> Non
         if server._thread:
             server._thread.join()
     finally:
+        if watcher:
+            watcher.stop()
         server.stop()
         try:
             webapp_pid_path().unlink()

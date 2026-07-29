@@ -18,6 +18,10 @@ SHAREPOINT_FOLDERS = (
     "templates",
     "exports",
     "manifests",
+    "bug_reports/open",
+    "bug_reports/in_progress",
+    "bug_reports/resolved",
+    "bug_reports/closed",
 )
 
 

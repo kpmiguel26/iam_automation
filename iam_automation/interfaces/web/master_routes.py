@@ -7,12 +7,17 @@ from flask import Blueprint, redirect, render_template, request, send_file, sess
 
 from ...application.master_admin_service import MasterAdminService
 from ...application.role_catalog import ROLE_OPTIONS
+from ...application.temporary_super_operator_service import TemporarySuperOperatorService
+from ...application.user_service import UserService
+from ...application.publication_state import mark_publication_pending
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
 
 
 def create_master_blueprint(database_path: Path, audit_path: Path) -> Blueprint:
     blueprint = Blueprint("master_admin", __name__, url_prefix="/admin/master")
     service = MasterAdminService(database_path, audit_path)
+    temporary_access = TemporarySuperOperatorService(database_path, audit_path)
+    users = UserService(database_path)
 
     def master_required(view):
         @wraps(view)
@@ -46,10 +51,42 @@ def create_master_blueprint(database_path: Path, audit_path: Path) -> Blueprint:
             "Manage application users": {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN},
             "Review approval queue": {"REVIEWER", ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN},
             "Operate publication": {"WRITER", ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN},
+            "Temporary operational superuser": {"SUPER_OPERATOR"},
             "Configure global security": {ROLE_MASTER_ADMIN},
             "Export audit evidence": {"AUDITOR", ROLE_MASTER_ADMIN},
         }
         return render_template("admin/master_roles.html", role_options=ROLE_OPTIONS, permissions=permissions)
+
+    @blueprint.route("/temporary-super-operator", methods=["GET", "POST"])
+    @master_required
+    def temporary_super_operator():
+        error = None
+        message = None
+        if request.method == "POST":
+            try:
+                temporary_access.grant(
+                    request.form.get("username", ""),
+                    request.form.get("starts_at_utc", ""),
+                    request.form.get("expires_at_utc", ""),
+                    request.form.get("reason", ""),
+                    str(session["iam_user"]),
+                )
+                message = "Temporary Super Operator access granted and audited."
+            except (ValueError, PermissionError) as exc:
+                error = str(exc)
+        return render_template(
+            "admin/temporary_super_operator.html",
+            users=[user for user in users.list_users() if user.active and user.status == "ACTIVE"],
+            elevations=temporary_access.list_all(),
+            message=message,
+            error=error,
+        )
+
+    @blueprint.post("/temporary-super-operator/<elevation_id>/revoke")
+    @master_required
+    def revoke_temporary_super_operator(elevation_id: str):
+        temporary_access.revoke(elevation_id, str(session["iam_user"]))
+        return redirect(url_for("master_admin.temporary_super_operator"))
 
     @blueprint.post("/administrators/save")
     @master_required
@@ -63,6 +100,7 @@ def create_master_blueprint(database_path: Path, audit_path: Path) -> Blueprint:
                 roles,
                 request.form.get("active", "1") == "1",
             )
+            mark_publication_pending(database_path, actor=str(session["iam_user"]), reason=f"Administrator account updated: {request.form.get('username', '')}")
             return render_admins(message="Administrator account saved.")
         except (ValueError, PermissionError) as exc:
             return render_admins(error=str(exc)), 400
@@ -82,6 +120,7 @@ def create_master_blueprint(database_path: Path, audit_path: Path) -> Blueprint:
                     },
                     "strict_identity_gate": request.form.get("strict_identity_gate") == "1",
                     "break_glass_enabled": request.form.get("break_glass_enabled") == "1",
+                    "temporary_super_operator_enabled": request.form.get("temporary_super_operator_enabled") == "1",
                 }
                 service.save_settings(values, str(session["iam_user"]))
                 message = "Global settings saved."

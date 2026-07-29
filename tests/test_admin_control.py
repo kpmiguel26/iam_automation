@@ -6,7 +6,7 @@ from pathlib import Path
 
 from iam_automation import webapp
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_REQUESTER
+from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_REQUESTER, ROLE_SUPER_OPERATOR
 from iam_automation.startup import PreflightResult, StartupSettings, StartupState
 
 
@@ -38,6 +38,17 @@ class AdminControlTests(unittest.TestCase):
                 session["iam_roles"] = [ROLE_REQUESTER]
             self.assertEqual(client.get("/admin").status_code, 403)
             self.assertEqual(client.get("/admin/users").status_code, 403)
+
+    def test_temporary_super_operator_cannot_manage_master_security_or_publish_access(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            operator = CurrentUser("operator", "PC01", (ROLE_SUPER_OPERATOR,))
+            client = webapp.create_app(self.make_result(database), app_authenticator=lambda _u, _p: operator).test_client()
+            with client.session_transaction() as session:
+                session["iam_user"] = operator.username
+                session["iam_roles"] = list(operator.roles)
+            self.assertEqual(client.get("/admin/master/settings").status_code, 403)
+            self.assertEqual(client.post("/admin/governance/publish").status_code, 403)
 
 
 if __name__ == "__main__":

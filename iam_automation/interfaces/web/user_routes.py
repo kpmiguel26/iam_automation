@@ -7,11 +7,13 @@ from typing import Callable
 from flask import Blueprint, render_template, request, session
 
 from ...application.user_service import UserService
+from ...application.publication_state import mark_publication_pending
 from ...application.audit_service import record_audit
 from ...application.identity_service import IdentityService
 from ...application.role_catalog import ROLE_OPTIONS
-from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, normalize_role
-from ...identity_discovery import get_pending_discovery, list_pending_discoveries, mark_discovery
+from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
+from ...identity_discovery import get_pending_discovery, list_pending_discoveries, list_windows_traceability, mark_discovery
+from ...domain.users import ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_INACTIVE, ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED, ACCOUNT_STATUS_SUSPENDED
 
 
 def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None) -> Blueprint:
@@ -21,14 +23,14 @@ def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None
     def administrator_required(view: Callable):
         @wraps(view)
         def wrapped(*args, **kwargs):
-            if not {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN} & {normalize_role(str(role)) for role in session.get("iam_roles", ())}:
+            if not {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR} & {normalize_role(str(role)) for role in session.get("iam_roles", ())}:
                 return "Administrator role required.", 403
             return view(*args, **kwargs)
         return wrapped
 
     def render(message: str | None = None, error: str | None = None):
         roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
-        return render_template("admin/users.html", users=service.list_users(), message=message, error=error, role_options=ROLE_OPTIONS, can_assign_master=ROLE_MASTER_ADMIN in roles)
+        return render_template("admin/users.html", users=service.list_users(), message=message, error=error, role_options=[option for option in ROLE_OPTIONS if option.value != ROLE_SUPER_OPERATOR], can_assign_master=ROLE_MASTER_ADMIN in roles, account_statuses=(ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_SUSPENDED, ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED, ACCOUNT_STATUS_INACTIVE))
 
     @blueprint.get("")
     @administrator_required
@@ -43,6 +45,7 @@ def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None
             if ROLE_MASTER_ADMIN in {normalize_role(role) for role in roles} and ROLE_MASTER_ADMIN not in {normalize_role(role) for role in session.get("iam_roles", ())}:
                 return render(error="Only MASTER_ADMIN can assign MASTER_ADMIN."), 403
             service.create_user(request.form.get("username", ""), request.form.get("display_name", ""), request.form.get("password", ""), roles)
+            mark_publication_pending(database_path, actor=str(session["iam_user"]), reason="Application user created")
             record_audit(audit_path, str(session["iam_user"]), "APPLICATION_USER_CREATED", "app_user", request.form.get("username", ""), new_values={"roles": roles})
             return render(message="Application user created.")
         except ValueError as exc:
@@ -55,8 +58,10 @@ def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None
             roles = request.form.getlist("roles") or request.form.get("roles", "").split(",")
             if ROLE_MASTER_ADMIN in {normalize_role(role) for role in roles} and ROLE_MASTER_ADMIN not in {normalize_role(role) for role in session.get("iam_roles", ())}:
                 return render(error="Only MASTER_ADMIN can assign MASTER_ADMIN."), 403
-            service.update_user(username, display_name=request.form.get("display_name", ""), password=request.form.get("password", ""), roles=roles, active=request.form.get("active") == "1")
-            record_audit(audit_path, str(session["iam_user"]), "APPLICATION_USER_UPDATED", "app_user", username, new_values={"roles": roles, "active": request.form.get("active") == "1"})
+            status = request.form.get("status", ACCOUNT_STATUS_ACTIVE)
+            service.update_user(username, display_name=request.form.get("display_name", ""), password=request.form.get("password", ""), roles=roles, active=status == ACCOUNT_STATUS_ACTIVE, status=status)
+            mark_publication_pending(database_path, actor=str(session["iam_user"]), reason=f"Application user updated: {username}")
+            record_audit(audit_path, str(session["iam_user"]), "APPLICATION_USER_UPDATED", "app_user", username, new_values={"roles": roles, "status": status})
             return render(message=f"Application user updated: {username}")
         except ValueError as exc:
             return render(error=str(exc)), 400
@@ -64,7 +69,7 @@ def create_user_blueprint(database_path: Path, *, audit_path: Path | None = None
     return blueprint
 
 
-def create_identity_blueprint(database_path: Path, *, discovery_file: Path | None = None, audit_path: Path | None = None) -> Blueprint:
+def create_identity_blueprint(database_path: Path, *, discovery_file: Path | None = None, traceability_directory: Path | None = None, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("identity_admin", __name__, url_prefix="/admin/windows-identities")
     service = IdentityService(database_path)
 
@@ -72,7 +77,7 @@ def create_identity_blueprint(database_path: Path, *, discovery_file: Path | Non
         @wraps(view)
         def wrapped(*args, **kwargs):
             roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
-            if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
+            if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}:
                 return "Administrator role required.", 403
             return view(*args, **kwargs)
         return wrapped
@@ -80,7 +85,7 @@ def create_identity_blueprint(database_path: Path, *, discovery_file: Path | Non
     def render(message: str | None = None, error: str | None = None):
         roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
         pending = list_pending_discoveries(discovery_file) if discovery_file and discovery_file.exists() else []
-        return render_template("admin/windows_identities.html", identities=service.list_identities(), pending_discoveries=pending, message=message, error=error, role_options=ROLE_OPTIONS, can_assign_master=ROLE_MASTER_ADMIN in roles)
+        return render_template("admin/windows_identities.html", identities=service.list_identities(), traceability=list_windows_traceability(traceability_directory) if traceability_directory else [], pending_discoveries=pending, message=message, error=error, role_options=[option for option in ROLE_OPTIONS if option.value != ROLE_SUPER_OPERATOR], can_assign_master=ROLE_MASTER_ADMIN in roles)
 
     @blueprint.get("")
     @administrator_required

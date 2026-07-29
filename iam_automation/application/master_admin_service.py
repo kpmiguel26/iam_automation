@@ -18,6 +18,7 @@ DEFAULT_SETTINGS = {
     "approval_sla_hours": {"CREATE_EMPLOYEE": 24, "UPDATE_EMPLOYEE": 16, "DEACTIVATE_EMPLOYEE": 8},
     "strict_identity_gate": False,
     "break_glass_enabled": True,
+    "temporary_super_operator_enabled": True,
 }
 
 
@@ -52,7 +53,7 @@ class MasterAdminService:
             sla = {key: max(1, int(value)) for key, value in values.get("approval_sla_hours", current["approval_sla_hours"]).items()}
         except (TypeError, ValueError) as exc:
             raise ValueError("SLA hours must be positive whole numbers.") from exc
-        updated = {"approval_sla_hours": sla, "strict_identity_gate": bool(values.get("strict_identity_gate", False)), "break_glass_enabled": bool(values.get("break_glass_enabled", True))}
+        updated = {"approval_sla_hours": sla, "strict_identity_gate": bool(values.get("strict_identity_gate", False)), "break_glass_enabled": bool(values.get("break_glass_enabled", True)), "temporary_super_operator_enabled": bool(values.get("temporary_super_operator_enabled", current.get("temporary_super_operator_enabled", True)))}
         with orm_session(self.database_path) as session:
             row = session.get(SystemProfileModel, "global_settings")
             if row is None:

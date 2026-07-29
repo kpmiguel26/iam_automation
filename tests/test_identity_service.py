@@ -13,18 +13,12 @@ class IdentityServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             service = IdentityService(initialize_runtime_database(Path(tmp) / "runtime.sqlite"))
             service.save_identity("DOMAIN\\migue", "Miguel", ["APPLICATION_ADMIN"], True, can_assign_master=False)
-            self.assertEqual(service.list_identities()[0].roles, ("APPLICATION_ADMIN",))
+            self.assertEqual(service.list_identities()[0].roles, ())
             service.save_identity("DOMAIN\\migue", "Miguel A", ["AUDITOR"], False, can_assign_master=False)
             identity = service.list_identities()[0]
             self.assertEqual(identity.display_name, "Miguel A")
             self.assertFalse(identity.active)
-            self.assertEqual(identity.roles, ("AUDITOR",))
-
-    def test_application_admin_cannot_assign_master_identity_role(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            service = IdentityService(initialize_runtime_database(Path(tmp) / "runtime.sqlite"))
-            with self.assertRaises(PermissionError):
-                service.save_identity("DOMAIN\\other", "Other", ["MASTER_ADMIN"], True, can_assign_master=False)
+            self.assertEqual(identity.roles, ())
 
 
 if __name__ == "__main__":

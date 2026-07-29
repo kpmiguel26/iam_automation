@@ -1,0 +1,14 @@
+{
+  "assigned_to": null,
+  "bug_id": "f0395ab1-fd93-4b13-8c0a-e77f3b409660",
+  "computer": "",
+  "created_at_utc": "2026-07-29T17:04:01.479630+00:00",
+  "description": "http://127.0.0.1:52557/admin/windows-identities",
+  "page": "http://127.0.0.1:52557/admin/windows-identities",
+  "reporter": "migue",
+  "resolution": "",
+  "severity": "CRITICAL",
+  "status": "OPEN",
+  "title": "Windows traceability debe ser shared",
+  "updated_at_utc": null
+}

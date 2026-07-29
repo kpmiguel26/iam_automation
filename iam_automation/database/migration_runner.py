@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine
+
+
+_REVISION_TO_LEGACY_VERSION = {
+    "0001_baseline": "v001_initial_schema",
+    "0002_notification_indexes": "v002_notification_indexes",
+}
+_LEGACY_TO_REVISION = {value: key for key, value in _REVISION_TO_LEGACY_VERSION.items()}
+
+
+def _alembic_config(connection) -> Config:
+    config_path = Path(__file__).with_name("alembic.ini")
+    config = Config(str(config_path))
+    config.set_main_option("script_location", str(config_path.with_name("alembic")))
+    config.attributes["connection"] = connection
+    return config
+
+
+def _legacy_versions(database_path: Path) -> tuple[str, ...]:
+    connection = sqlite3.connect(database_path)
+    try:
+        exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+        ).fetchone()
+        if not exists:
+            return ()
+        return tuple(row[0] for row in connection.execute("SELECT version FROM schema_migrations ORDER BY version"))
+    finally:
+        connection.close()
+
+
+def _current_revision(connection) -> str | None:
+    exists = connection.exec_driver_sql(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'alembic_version'"
+    ).first()
+    if not exists:
+        return None
+    row = connection.exec_driver_sql("SELECT version_num FROM alembic_version ORDER BY version_num DESC").first()
+    return str(row[0]) if row else None
+
+
+def _legacy_version_for_revision(revision: str | None) -> tuple[str, ...]:
+    if revision == "0002_notification_indexes":
+        return ("v001_initial_schema", "v002_notification_indexes")
+    if revision == "0001_baseline":
+        return ("v001_initial_schema",)
+    return ()
+
+
+def apply_pending_migrations(database_path: Path, actor: str = "system") -> tuple[str, ...]:
+    """Upgrade a runtime SQLite database to the current Alembic head.
+
+    Databases created by the original runner are stamped at their equivalent
+    Alembic revision without replaying DDL. This preserves existing data while
+    moving schema ownership to the standard SQLAlchemy migration tool.
+    """
+    del actor  # Alembic owns revision state; audit actors remain application-level data.
+    path = database_path.expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    engine = create_engine(f"sqlite:///{path.as_posix()}", connect_args={"check_same_thread": False})
+    try:
+        with engine.connect() as connection:
+            before = _current_revision(connection)
+            if before is None:
+                legacy = set(_legacy_versions(path))
+                config = _alembic_config(connection)
+                if "v002_notification_indexes" in legacy:
+                    command.stamp(config, "0002_notification_indexes")
+                elif "v001_initial_schema" in legacy:
+                    command.stamp(config, "0001_baseline")
+                else:
+                    command.upgrade(config, "head")
+            else:
+                command.upgrade(_alembic_config(connection), "head")
+            connection.commit()
+            after = _current_revision(connection)
+    finally:
+        engine.dispose()
+
+    before_versions = set(_legacy_version_for_revision(before))
+    after_versions = _legacy_version_for_revision(after)
+    return tuple(version for version in after_versions if version not in before_versions)
+
+
+def applied_migrations(database_path: Path) -> tuple[str, ...]:
+    path = database_path.expanduser().resolve()
+    if not path.is_file():
+        return ()
+    legacy = _legacy_versions(path)
+    if legacy:
+        return legacy
+    engine = create_engine(f"sqlite:///{path.as_posix()}", connect_args={"check_same_thread": False})
+    try:
+        with engine.connect() as connection:
+            return _legacy_version_for_revision(_current_revision(connection))
+    finally:
+        engine.dispose()

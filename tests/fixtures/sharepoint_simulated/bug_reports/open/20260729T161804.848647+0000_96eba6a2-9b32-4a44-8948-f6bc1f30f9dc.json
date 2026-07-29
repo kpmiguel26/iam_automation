@@ -1,0 +1,14 @@
+{
+  "assigned_to": null,
+  "bug_id": "96eba6a2-9b32-4a44-8948-f6bc1f30f9dc",
+  "computer": "AA",
+  "created_at_utc": "2026-07-29T16:18:04.848647+00:00",
+  "description": "testing",
+  "page": "Tetsing",
+  "reporter": "migue",
+  "resolution": "",
+  "severity": "LOW",
+  "status": "OPEN",
+  "title": "Test",
+  "updated_at_utc": "2026-07-29T17:02:25.944579+00:00"
+}

@@ -19,6 +19,7 @@ class AppUserModel(Base):
     display_name: Mapped[str] = mapped_column(String, default="")
     password_hash: Mapped[str] = mapped_column(String)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String, default="ACTIVE")
     roles: Mapped[list["UserRoleModel"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
@@ -170,6 +171,30 @@ class SystemProfileModel(Base):
     profile_name: Mapped[str] = mapped_column(String, primary_key=True)
     profile_json: Mapped[str] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class FileObservationModel(Base):
+    __tablename__ = "file_observations"
+
+    path: Mapped[str] = mapped_column(String, primary_key=True)
+    file_kind: Mapped[str] = mapped_column(String)
+    signature: Mapped[str] = mapped_column(String)
+    first_seen_at_utc: Mapped[str] = mapped_column(String, default="")
+    last_seen_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class TemporaryElevationModel(Base):
+    __tablename__ = "temporary_elevations"
+
+    elevation_id: Mapped[str] = mapped_column(String, primary_key=True)
+    username: Mapped[str] = mapped_column(String)
+    starts_at_utc: Mapped[str] = mapped_column(String)
+    expires_at_utc: Mapped[str] = mapped_column(String)
+    reason: Mapped[str] = mapped_column(Text)
+    granted_by: Mapped[str] = mapped_column(String)
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    revoked_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="ACTIVE")
 
 
 def create_engine_for_sqlite(database_path: Path):

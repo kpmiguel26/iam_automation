@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Something went wrong{% endblock %}
+{% block content %}
+<div class="container py-5">
+  <section class="surface p-5 text-center">
+    <p class="eyebrow">IAM Automation</p>
+    <h1>Something went wrong</h1>
+    <p class="text-secondary">The operation could not be completed. Review the application log or try again.</p>
+    <a class="btn btn-primary" href="{{ url_for('dashboard') }}">Return to workspace</a>
+  </section>
+</div>
+{% endblock %}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..identity import ROLE_APPLICATION_ADMIN, ROLE_AUDITOR, ROLE_MASTER_ADMIN, ROLE_REQUESTER, ROLE_REVIEWER, ROLE_WRITER
+from ..identity import ROLE_APPLICATION_ADMIN, ROLE_AUDITOR, ROLE_MASTER_ADMIN, ROLE_REQUESTER, ROLE_REVIEWER, ROLE_WRITER, ROLE_SUPER_OPERATOR
 
 
 @dataclass(frozen=True)
@@ -20,4 +20,5 @@ ROLE_OPTIONS = (
     RoleOption(ROLE_AUDITOR, "Auditor", "Reads and exports evidence."),
     RoleOption(ROLE_APPLICATION_ADMIN, "Application Administrator", "Operates users, approvals and data workflows."),
     RoleOption(ROLE_MASTER_ADMIN, "Master Administrator", "Controls security, recovery and global settings.", admin_only=True),
+    RoleOption(ROLE_SUPER_OPERATOR, "Temporary Super Operator", "Temporary operational access; cannot publish Access or manage Master security.", admin_only=True),
 )

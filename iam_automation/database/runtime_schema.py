@@ -30,6 +30,7 @@ def initialize_runtime_database(path: Path) -> Path:
                 display_name TEXT NOT NULL DEFAULT '',
                 password_hash TEXT NOT NULL,
                 active INTEGER NOT NULL DEFAULT 1,
+                status TEXT NOT NULL DEFAULT 'ACTIVE',
                 created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at_utc TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -155,6 +156,24 @@ def initialize_runtime_database(path: Path) -> Path:
                 profile_json TEXT NOT NULL,
                 active INTEGER NOT NULL DEFAULT 1
             );
+            CREATE TABLE IF NOT EXISTS file_observations (
+                path TEXT PRIMARY KEY,
+                file_kind TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                first_seen_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                last_seen_at_utc TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS temporary_elevations (
+                elevation_id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                starts_at_utc TEXT NOT NULL,
+                expires_at_utc TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                granted_by TEXT NOT NULL,
+                created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                revoked_at_utc TEXT,
+                status TEXT NOT NULL DEFAULT 'ACTIVE'
+            );
             INSERT INTO app_metadata (metadata_key, metadata_value, updated_at_utc)
             VALUES ('schema_version', '1.0.0', datetime('now'))
             ON CONFLICT(metadata_key) DO NOTHING;
@@ -172,7 +191,14 @@ def initialize_runtime_database(path: Path) -> Path:
         for column, definition in (("entity_type", "TEXT NOT NULL DEFAULT ''"), ("entity_id", "TEXT NOT NULL DEFAULT ''"), ("expires_at_utc", "TEXT")):
             if column not in notification_columns:
                 connection.execute(f"ALTER TABLE notifications ADD COLUMN {column} {definition}")
+        app_user_columns = {row[1] for row in connection.execute("PRAGMA table_info(app_users)")}
+        if "status" not in app_user_columns:
+            connection.execute("ALTER TABLE app_users ADD COLUMN status TEXT NOT NULL DEFAULT 'ACTIVE'")
+        connection.execute("UPDATE app_users SET status = CASE WHEN active = 1 THEN 'ACTIVE' ELSE 'INACTIVE' END WHERE status IS NULL OR status = ''")
         connection.commit()
     finally:
         connection.close()
+    from .migration_runner import apply_pending_migrations
+
+    apply_pending_migrations(path, actor="runtime-bootstrap")
     return path

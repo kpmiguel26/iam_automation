@@ -9,6 +9,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from ..identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, normalize_role
+from ..change_request import ChangeRequest, submit_request
 from ..infrastructure.sqlite.orm import ApprovalAssignmentModel, ChangeRequestModel, NotificationModel, SystemProfileModel, orm_session
 from .publication_service import PublicationService
 
@@ -53,6 +54,33 @@ class RequestService:
             statement = statement.where(ChangeRequestModel.status.in_(("PENDING", "UNDER_REVIEW")))
         with orm_session(self.database_path) as session:
             return [self._to_item(row) for row in session.scalars(statement).all()]
+
+    def export_pending_for_user(self, username: str, pending_folder: Path) -> int:
+        """Export local pending work before a workspace snapshot is refreshed."""
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(select(ChangeRequestModel).where(ChangeRequestModel.created_by == username, ChangeRequestModel.status == "PENDING")).all()
+            exported = 0
+            pending_folder.mkdir(parents=True, exist_ok=True)
+            for row in rows:
+                if any(pending_folder.glob(f"*_{row.request_id}.json")):
+                    continue
+                request = ChangeRequest(
+                    request_id=row.request_id,
+                    created_at_utc=row.created_at_utc,
+                    created_by=row.created_by,
+                    computer_name=row.computer_name,
+                    application_version=row.application_version,
+                    operation_type=row.operation_type,
+                    entity_type=row.entity_type,
+                    entity_id=row.entity_id,
+                    expected_record_version=row.expected_record_version,
+                    payload=json.loads(row.payload_json),
+                    reason=row.reason,
+                    status="PENDING",
+                )
+                submit_request(request, pending_folder)
+                exported += 1
+            return exported
 
     def create(self, user: CurrentUser, operation_type: str, entity_id: str, payload: dict, reason: str, *, entity_type: str = "Employee") -> RequestItem:
         operation_type = operation_type.strip().upper()
