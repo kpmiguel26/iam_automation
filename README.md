@@ -28,6 +28,18 @@ python scripts/submit_change_request.py --pending-folder /tmp/iam_requests/pendi
 python scripts/admin_import_pending_requests.py --requests-root /tmp/iam_requests --username DOMAIN\\admin
 ```
 
+To create a versioned runnable source ZIP for another workstation, use the launcher for that platform:
+
+```bash
+./package_source.sh
+```
+
+```bat
+package_source.bat
+```
+
+The archive is written to `dist/` with the project version, UTC build timestamp, and Git commit in its filename. It contains `PACKAGE_MANIFEST.json` with the build metadata. Local databases, Access files, credentials, virtual environments, logs, and generated SharePoint fixture data are intentionally excluded. Extract the ZIP and run the included `run.sh` or `run_windows.bat` from the extracted project folder.
+
 The desktop launcher first discovers and validates the local OneDrive-synchronized SharePoint path. It opens the local Flask webapp only after the environment and current user have passed validation. Flask is served by Waitress on `127.0.0.1` with an ephemeral port. The local control panel uses PySide6 and is not a centralized API or service.
 
 Convenience launchers are available for both platforms:
