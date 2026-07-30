@@ -36,6 +36,26 @@ class SharedRequestServiceTests(unittest.TestCase):
             self.assertTrue(self_approval)
             self.assertEqual(item.status, "APPROVED")
 
+    def test_roster_lock_import_is_a_shared_request_for_reviewer_approval(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "sharepoint"
+            service = SharedRequestService(root)
+            requester = CurrentUser("admin", "VDI-01", (ROLE_REQUESTER,))
+            reviewer = CurrentUser("reviewer", "VDI-02", (ROLE_REVIEWER,))
+            request = service.create(
+                requester,
+                "IMPORT_ROSTER_LOCK",
+                "batch-001",
+                {"batch_ids": ["batch-001"], "record_ids": ["record-001"], "record_count": 1},
+                "Review roster lock import",
+            )
+            service.assign(request.request_id, reviewer.username, "admin", "Import review")
+            item, self_approval = service.decide(request.request_id, reviewer, "APPROVED", "Validated source workbook")
+            self.assertFalse(self_approval)
+            self.assertEqual(item.operation_type, "IMPORT_ROSTER_LOCK")
+            self.assertEqual(item.entity_type, "ImportBatch")
+            self.assertEqual(item.status, "APPROVED")
+
 
 if __name__ == "__main__":
     unittest.main()

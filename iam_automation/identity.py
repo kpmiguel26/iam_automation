@@ -60,7 +60,7 @@ class CurrentUser:
 
     @property
     def can_review_requests(self) -> bool:
-        return bool(set(self.normalized_roles) & {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_WRITER, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR})
+        return bool(set(self.normalized_roles) - {ROLE_REQUESTER})
 
 
 def windows_username() -> str:

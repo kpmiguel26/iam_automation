@@ -7,7 +7,7 @@ from pathlib import Path
 from iam_automation.application.request_service import RequestService
 from iam_automation.application.publication_service import PublicationService
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.identity import CurrentUser, ROLE_REQUESTER, ROLE_REVIEWER
+from iam_automation.identity import CurrentUser, ROLE_REQUESTER, ROLE_REVIEWER, ROLE_WRITER
 
 
 class RequestServiceTests(unittest.TestCase):
@@ -30,6 +30,16 @@ class RequestServiceTests(unittest.TestCase):
             item = service.create(requester, "UPDATE_EMPLOYEE", "W-101", {"lob": "IT"}, "Update assignment")
             with self.assertRaises(PermissionError):
                 service.decide(item.request_id, requester, "APPROVED", "Self approval")
+
+    def test_any_non_requester_role_can_decide_another_users_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = RequestService(initialize_runtime_database(Path(tmp) / "runtime.sqlite"))
+            requester = CurrentUser("requester", "VDI-01", (ROLE_REQUESTER,))
+            writer = CurrentUser("writer", "VDI-02", (ROLE_WRITER,))
+            item = service.create(requester, "UPDATE_EMPLOYEE", "W-104", {"lob": "IT"}, "Update assignment")
+            decided = service.decide(item.request_id, writer, "APPROVED", "Validated")
+            self.assertEqual(decided.status, "APPROVED")
+            self.assertEqual(decided.reviewed_by, "writer")
 
     def test_pending_request_is_exported_to_sharepoint_connector_folder(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -119,8 +119,8 @@ class RequestService:
         if not note.strip():
             raise ValueError("A review note is required.")
         roles = {normalize_role(role) for role in reviewer.roles}
-        if not roles & {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
-            raise PermissionError("Reviewer role required.")
+        if not roles - {"REQUESTER"}:
+            raise PermissionError("A requester-only account cannot approve requests.")
         with orm_session(self.database_path) as session:
             row = self._get(session, request_id)
             if row.created_by.lower() == reviewer.username.lower():

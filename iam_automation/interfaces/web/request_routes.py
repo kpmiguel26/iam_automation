@@ -8,6 +8,7 @@ from flask import Blueprint, render_template, request, session
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.shared_request_service import SharedRequestService
 from ...application.audit_service import record_audit
+from ...application.employee_service import EmployeeService
 from ...application.notification_service import NotificationService
 from ...application.user_service import UserService
 from ...identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, ROLE_SUPER_OPERATOR, normalize_role
@@ -22,6 +23,7 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
     service = SharedRequestService(sharepoint_root) if sharepoint_root else RequestService(database_path)
     users = UserService(database_path)
     notifications = NotificationService(database_path)
+    employees = EmployeeService(database_path)
 
     def authenticated(view):
         @wraps(view)
@@ -35,8 +37,8 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
         @wraps(view)
         def wrapped(*args, **kwargs):
             roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
-            if not roles & {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}:
-                return "Reviewer role required.", 403
+            if not roles - {"REQUESTER"}:
+                return "A requester-only account cannot approve requests.", 403
             return view(*args, **kwargs)
         return wrapped
 
@@ -50,8 +52,7 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
         return wrapped
 
     def reviewer_accounts():
-        allowed = {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}
-        return [user for user in users.list_users() if user.active and allowed & set(user.roles)]
+        return [user for user in users.list_users() if user.active and set(user.roles) - {"REQUESTER"}]
 
     @blueprint.get("/requests")
     @authenticated
@@ -100,6 +101,10 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
             self_approval = result[1] if isinstance(result, tuple) else False
             record_audit(audit_path, str(session["iam_user"]), "REQUEST_SELF_APPROVED_BREAK_GLASS" if self_approval else "REQUEST_DECIDED", "change_request", request_id, new_values={"decision": request.form.get("decision", ""), "break_glass": self_approval})
             if decided_item.status == "APPROVED":
+                if decided_item.operation_type == "IMPORT_ROSTER_LOCK":
+                    result = employees.promote_staged_records(decided_item.payload.get("record_ids", []), str(session["iam_user"]))
+                    if result["failed"]:
+                        raise ValueError(f"Import approved, but {result['failed']} record(s) could not be promoted.")
                 for user in users.list_users():
                     if user.active and {normalize_role(role) for role in user.roles} & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
                         notifications.create(user.username, "REQUEST_READY_FOR_PUBLICATION", "Approved request ready for publication", f"Request {request_id[:8]} was approved and is waiting in the Publication Queue.", severity="WARNING", target_route="/admin/publication", entity_type="change_request", entity_id=request_id)

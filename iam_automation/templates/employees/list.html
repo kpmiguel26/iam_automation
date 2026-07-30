@@ -3,45 +3,29 @@
 {% block content %}
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell employee-directory-page">
   <div class="page-heading">
-    <div><p class="eyebrow">Operations</p><h1>Employee directory</h1><p class="text-secondary mb-0">Find canonical worker profiles, engagements and source identifiers.</p></div>
-    <span class="status-pill status-active"><span></span><span id="employeeResultCount">{{ workers|length }}</span> shown</span>
+    <div><p class="eyebrow">Operations</p><h1>Employee directory</h1><p class="text-secondary mb-0">Browse canonical worker profiles by page or vendor group.</p></div>
+    <span class="status-pill status-active"><span></span>{{ total_workers }} shown</span>
   </div>
 
   <section class="surface employee-search-panel mt-4" aria-label="Employee directory filters">
-    <div class="employee-search-row">
+    <form method="get" class="employee-search-row">
       <div class="employee-search-field">
         <label class="form-label small text-secondary" for="employeeSearch">Search the directory</label>
-        <div class="input-group">
-          <span class="input-group-text directory-search-icon" aria-hidden="true">⌕</span>
-          <input id="employeeSearch" class="form-control" name="q" value="{{ filters.q }}" placeholder="Name, email, vendor ID or vendor" autocomplete="off" data-employee-search>
-        </div>
-        <div class="form-text">Results update as you type.</div>
+        <div class="input-group"><span class="input-group-text directory-search-icon" aria-hidden="true">⌕</span><input id="employeeSearch" class="form-control" name="q" value="{{ filters.q }}" placeholder="Name, email, vendor ID or vendor" autocomplete="off"></div>
       </div>
-      <div>
-        <label class="form-label small text-secondary" for="employeeStatus">Status</label>
-        <select id="employeeStatus" class="form-select" data-employee-status>
-          <option value="ALL">All statuses</option>
-          {% for item in statuses %}<option value="{{ item }}"{% if filters.status == item %} selected{% endif %}>{{ item.replace('_', ' ').title() }}</option>{% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="form-label small text-secondary" for="employeeVendor">Vendor</label>
-        <select id="employeeVendor" class="form-select" data-employee-vendor>
-          <option value="ALL">All vendors</option>
-          {% for item in vendors %}<option value="{{ item }}"{% if filters.vendor == item %} selected{% endif %}>{{ item }}</option>{% endfor %}
-        </select>
-      </div>
-      <button class="btn btn-light employee-reset" type="button" data-employee-reset>Clear filters</button>
-    </div>
-    <div class="employee-filter-summary"><span id="employeeFilterSummary">Showing all canonical employees</span><span class="small text-secondary">Select a name to open the full profile</span></div>
+      <div><label class="form-label small text-secondary" for="employeeStatus">Profile status</label><select id="employeeStatus" class="form-select" name="status"><option value="ALL">All statuses</option>{% for item in statuses %}<option value="{{ item }}"{% if filters.status == item %} selected{% endif %}>{{ item.replace('_', ' ').title() }}</option>{% endfor %}</select></div>
+      <div><label class="form-label small text-secondary" for="employeeVendor">Vendor group</label><select id="employeeVendor" class="form-select" name="vendor"><option value="ALL">All vendors</option>{% for item in vendors %}<option value="{{ item }}"{% if filters.vendor == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+      <div class="d-flex gap-2"><button class="btn btn-primary" type="submit">Apply</button><a class="btn btn-light employee-reset" href="{{ url_for('employees.employee_directory') }}">Clear</a></div>
+    </form>
+    <div class="employee-filter-summary"><span>{% if filters.vendor != 'ALL' %}Showing {{ filters.vendor }} employees{% elif filters.q %}Showing matches for “{{ filters.q }}”{% else %}Showing all canonical employees{% endif %}</span><span class="small text-secondary">Page {{ page }} of {{ page_count }} · 25 records per page</span></div>
   </section>
 
   <section class="surface table-responsive mt-4 employee-table-surface">
     <table class="table table-hover align-middle mb-0 employee-directory-table">
       <thead><tr><th>Employee</th><th>Identifier</th><th>Vendor / engagement</th><th>Status</th><th>Source</th><th>Review</th></tr></thead>
-      <tbody id="employeeDirectoryBody">
+      <tbody>
       {% for worker in workers %}
-        <tr data-employee-row data-search="{{ [worker.display_name, worker.email, worker.identifier, worker.vendor_name, worker.job_title, worker.source_system]|join(' ')|lower }}" data-status="{{ worker.status }}" data-vendor="{{ worker.vendor_name }}">
+        <tr>
           <td><div class="employee-name-cell"><span class="avatar avatar-sm">{{ (worker.display_name or '?')[:1]|upper }}</span><div><a class="fw-semibold text-decoration-none" href="{{ url_for('employees.employee_detail', worker_id=worker.worker_id) }}">{{ worker.display_name or 'Unnamed worker' }}</a><div class="small text-secondary text-break">{{ worker.email or 'No canonical email' }}</div></div></div></td>
           <td><code>{{ worker.identifier or 'Pending identifier' }}</code></td>
           <td><strong>{{ worker.vendor_name or 'No engagement' }}</strong><div class="small text-secondary">{{ worker.job_title or 'Role not provided' }}</div></td>
@@ -49,13 +33,20 @@
           <td class="small text-secondary">{{ worker.source_system or 'Pending' }}</td>
           <td>{% if worker.discrepancy_count %}<span class="badge text-bg-warning">{{ worker.discrepancy_count }} open</span>{% else %}<span class="small text-success">Clear</span>{% endif %}</td>
         </tr>
-      {% else %}<tr><td colspan="6" class="empty-state"><div class="empty-state-icon">◎</div><strong>No canonical employees yet.</strong><div class="small text-secondary mt-2">Roster Lock files remain in Imports until a staged record is explicitly matched and promoted.</div></td></tr>{% endfor %}
-        <tr id="employeeNoMatches" class="d-none"><td colspan="6" class="empty-state"><div class="empty-state-icon">⌕</div><strong>No employees match these filters.</strong><div class="small text-secondary mt-2">Try a different name, identifier, vendor or status.</div></td></tr>
+      {% else %}<tr><td colspan="6" class="empty-state"><div class="empty-state-icon">◎</div><strong>No employees match these filters.</strong><div class="small text-secondary mt-2">Try another search or vendor group.</div></td></tr>{% endfor %}
       </tbody>
     </table>
   </section>
+
+  {% if page_count > 1 %}
+  <nav class="d-flex justify-content-between align-items-center mt-3" aria-label="Employee directory pages">
+    <span class="small text-secondary">Showing {{ ((page - 1) * 25) + 1 if total_workers else 0 }}–{{ [page * 25, total_workers]|min }} of {{ total_workers }}</span>
+    <div class="btn-group" role="group">
+      {% if page > 1 %}<a class="btn btn-light" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, page=page - 1) }}">Previous</a>{% endif %}
+      <span class="btn btn-light disabled">{{ page }} / {{ page_count }}</span>
+      {% if page < page_count %}<a class="btn btn-light" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, page=page + 1) }}">Next</a>{% endif %}
+    </div>
+  </nav>
+  {% endif %}
 </div>
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/employee-directory.js') }}"></script>
 {% endblock %}

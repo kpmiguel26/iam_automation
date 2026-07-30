@@ -10,6 +10,7 @@ import secrets
 import threading
 import webbrowser
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 from urllib.request import Request, urlopen
@@ -81,6 +82,19 @@ def create_app(
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
+    @app.template_filter("human_datetime")
+    def human_datetime(value: object) -> str:
+        """Render stored UTC timestamps for people while preserving ISO in data."""
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return text
+        hour = parsed.strftime("%I").lstrip("0") or "0"
+        return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}, {hour}:{parsed:%M} {parsed:%p} UTC"
+
     @app.errorhandler(404)
     def not_found(error):
         return render_template("errors/404.html"), 404
@@ -101,7 +115,7 @@ def create_app(
         app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), traceability_directory=traceability_path(preflight_result.settings.sharepoint_root_path), audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_request_blueprint(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path, audit_path=preflight_result.settings.audit_folder_path))
     app.register_blueprint(create_bug_report_blueprint(runtime_path, preflight_result.settings.sharepoint_root_path))
-    app.register_blueprint(create_employee_blueprint(runtime_path))
+    app.register_blueprint(create_employee_blueprint(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path if preflight_result.settings else None, audit_path=preflight_result.settings.audit_folder_path if preflight_result.settings else None))
 
     @app.before_request
     def enforce_session_revocation():

@@ -19,7 +19,7 @@ from ...application.governance_service import GovernanceService
 from ...application.publication_state import publication_pending
 from ...application.session_service import SessionService
 from ...application.user_service import UserService
-from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
+from ...identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
 from ...identity_discovery import list_pending_discoveries
 
 
@@ -201,6 +201,29 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                 message=None,
                 error=str(exc),
             ), 400
+
+    @blueprint.post("/imports/request-approval")
+    @admin_required
+    def request_import_approval():
+        if shared_requests is None:
+            return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=None, error="A SharePoint workspace is required to create an import approval request."), 400
+        staged = [item for item in employees.list_staged_records() if item["status"] == "STAGED"]
+        if not staged:
+            return redirect(url_for("admin.import_center", notice="There are no staged records waiting for approval.", notice_type="info"))
+        try:
+            actor = str(session["iam_user"])
+            batch_ids = sorted({item["batch_id"] for item in staged})
+            request_item = shared_requests.create(
+                CurrentUser(actor, "local-web", tuple(session.get("iam_roles", ()))),
+                "IMPORT_ROSTER_LOCK",
+                batch_ids[0] if len(batch_ids) == 1 else "MULTIPLE_BATCHES",
+                {"batch_ids": batch_ids, "record_ids": [item["record_id"] for item in staged], "record_count": len(staged)},
+                "Review and approve the staged Roster Lock import before creating canonical employees.",
+            )
+            record_audit(audit_path, actor, "IMPORT_REQUEST_CREATED", "import_batch", request_item.entity_id, new_values={"request_id": request_item.request_id, "record_count": len(staged)})
+            return redirect(url_for("admin.import_center", notice=f"Import approval request {request_item.request_id[:8]} created for {len(staged)} record(s).", notice_type="success"))
+        except (OSError, ValueError, PermissionError) as exc:
+            return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=None, error=str(exc)), 400
 
     @blueprint.post("/imports/quarantine/<quarantine_id>/resolve")
     @admin_required

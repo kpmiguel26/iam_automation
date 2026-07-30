@@ -39,23 +39,42 @@ class EmployeeService:
         self.database_path = database_path
 
     def list_workers(self, search: str = "", status: str = "ALL", vendor: str = "ALL") -> list[EmployeeSummary]:
-        search = search.strip().lower()
+        """Return the full directory for internal callers and small datasets."""
+        workers, _ = self.list_workers_page(search=search, status=status, vendor=vendor, page=1, per_page=None)
+        return workers
+
+    def list_workers_page(self, *, search: str = "", status: str = "ALL", vendor: str = "ALL", page: int = 1, per_page: int | None = 25) -> tuple[list[EmployeeSummary], int]:
+        """Query only one directory page; filtering stays in SQLite."""
+        search = search.strip()
+        page = max(1, int(page))
+        if per_page is not None:
+            per_page = max(1, min(int(per_page), 100))
         with orm_session(self.database_path) as session:
-            workers = session.scalars(select(WorkerModel).order_by(WorkerModel.display_name, WorkerModel.worker_id)).all()
+            filters = []
+            if status != "ALL":
+                filters.append(WorkerModel.status == status)
+            if vendor != "ALL":
+                filters.append(select(WorkerEngagementModel.worker_id).where(WorkerEngagementModel.worker_id == WorkerModel.worker_id, WorkerEngagementModel.vendor_name == vendor).exists())
+            if search:
+                pattern = f"%{search}%"
+                filters.append(or_(
+                    WorkerModel.display_name.ilike(pattern),
+                    WorkerModel.canonical_email.ilike(pattern),
+                    select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.worker_id == WorkerModel.worker_id, WorkerIdentifierModel.identifier_value.ilike(pattern)).exists(),
+                    select(WorkerEngagementModel.worker_id).where(WorkerEngagementModel.worker_id == WorkerModel.worker_id, or_(WorkerEngagementModel.vendor_name.ilike(pattern), WorkerEngagementModel.job_title.ilike(pattern))).exists(),
+                ))
+            statement = select(WorkerModel).where(*filters).order_by(WorkerModel.display_name, WorkerModel.worker_id)
+            total = int(session.scalar(select(func.count()).select_from(WorkerModel).where(*filters)) or 0)
+            if per_page is not None:
+                statement = statement.offset((page - 1) * per_page).limit(per_page)
+            workers = session.scalars(statement).all()
             result: list[EmployeeSummary] = []
             for worker in workers:
                 engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker.worker_id).order_by(WorkerEngagementModel.updated_at_utc.desc()))
                 identifier = session.scalar(select(WorkerIdentifierModel).where(WorkerIdentifierModel.worker_id == worker.worker_id, WorkerIdentifierModel.active.is_(True)).order_by(WorkerIdentifierModel.created_at_utc))
                 discrepancy_count = session.scalar(select(func.count()).select_from(WorkerDiscrepancyModel).where(WorkerDiscrepancyModel.worker_id == worker.worker_id, WorkerDiscrepancyModel.status == "OPEN")) or 0
-                values = " ".join((worker.display_name, worker.canonical_email, identifier.identifier_value if identifier else "", engagement.vendor_name if engagement else "")).lower()
-                if search and search not in values:
-                    continue
-                if status != "ALL" and worker.status != status:
-                    continue
-                if vendor != "ALL" and (not engagement or engagement.vendor_name != vendor):
-                    continue
                 result.append(EmployeeSummary(worker.worker_id, worker.display_name, worker.canonical_email, worker.status, identifier.identifier_value if identifier else "", engagement.vendor_name if engagement else "", engagement.job_title if engagement else "", identifier.source_system if identifier else "", int(discrepancy_count)))
-            return result
+            return result, total
 
     def filter_values(self) -> tuple[list[str], list[str]]:
         with orm_session(self.database_path) as session:
@@ -202,6 +221,31 @@ class EmployeeService:
                         reused += 1
                 except (ValueError, json.JSONDecodeError) as exc:
                     errors.append({"record_id": record.record_id, "source_record_key": record.source_record_key, "error": str(exc)})
+            session.commit()
+        return {"processed": processed, "created": created, "reused": reused, "failed": len(errors), "errors": errors}
+
+    def promote_staged_records(self, record_ids: list[str], actor: str) -> dict[str, object]:
+        """Apply only the records approved by an import request."""
+        del actor
+        selected_ids = {str(record_id) for record_id in record_ids if str(record_id).strip()}
+        if not selected_ids:
+            raise ValueError("The import request contains no staged records.")
+        now = datetime.now(timezone.utc).isoformat()
+        processed = created = reused = 0
+        errors: list[dict[str, str]] = []
+        with orm_session(self.database_path) as session:
+            records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(selected_ids))).all()
+            for record in records:
+                if record.status != "STAGED":
+                    errors.append({"record_id": record.record_id, "error": f"Record is no longer staged: {record.status}."})
+                    continue
+                try:
+                    _, was_created = self._promote_record_in_session(session, record, now)
+                    processed += 1
+                    created += int(was_created)
+                    reused += int(not was_created)
+                except (ValueError, json.JSONDecodeError) as exc:
+                    errors.append({"record_id": record.record_id, "error": str(exc)})
             session.commit()
         return {"processed": processed, "created": created, "reused": reused, "failed": len(errors), "errors": errors}
 

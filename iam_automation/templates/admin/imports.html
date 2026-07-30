@@ -3,74 +3,12 @@
 {% block content %}
 <div class="container-fluid px-4 px-lg-5 py-4 admin-page">
   <a class="back-link" href="{{ url_for('admin.home') }}">Control Center</a>
-  <p class="eyebrow mt-3 mb-1">Data operations</p>
-  <h1>Imports and quarantine</h1>
+  <p class="eyebrow mt-3 mb-1">Data operations</p><h1>Imports and quarantine</h1>
   <p class="text-secondary">Files are validated before any business data changes. Invalid rows remain isolated.</p>
-
-  {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
-  {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
-
-  <section class="surface p-4 mb-4">
-    <form method="post" enctype="multipart/form-data" class="row align-items-end g-3">
-      <div class="col-md-9">
-        <label class="form-label">Excel or CSV source</label>
-        <input class="form-control" type="file" name="file" accept=".csv,.xlsx" required>
-      </div>
-      <div class="col-md-3"><button class="btn btn-primary w-100">Validate import</button></div>
-    </form>
-    <div class="form-text mt-3">Roster Lock workbooks are staged first. Promotion to Employees is an explicit administrative action.</div>
-  </section>
-
-  <section class="surface table-responsive mb-4">
-    <div class="p-3 border-bottom"><h2 class="h5 mb-0">Import batches</h2></div>
-    <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>File</th><th>Status</th><th>Rows</th><th>Created</th></tr></thead>
-      <tbody>
-      {% for batch in batches %}
-        <tr>
-          <td><strong>{{ batch.filename }}</strong><div class="small text-secondary">{{ batch.source_type }} · {{ batch.batch_id[:8] }}</div></td>
-          <td>{{ batch.status }}</td>
-          <td>{{ batch.valid_rows }} valid / {{ batch.quarantine_rows }} quarantined</td>
-          <td class="small text-secondary">{{ batch.created_at_utc }}</td>
-        </tr>
-      {% else %}<tr><td colspan="4" class="empty-state">No imports processed.</td></tr>{% endfor %}
-      </tbody>
-    </table>
-  </section>
-
-  <section class="surface table-responsive mb-4">
-    <div class="p-3 border-bottom d-flex justify-content-between align-items-center gap-3 staged-candidates-toolbar">
-      <div><h2 class="h5 mb-0">Staged worker candidates</h2><div class="small text-secondary">Promote the full batch when the source file has been reviewed.</div></div>
-      <div class="d-flex align-items-center gap-3 flex-shrink-0">
-        <a class="small" href="{{ url_for('employees.employee_directory') }}">View Employees</a>
-        {% if staged_records|selectattr('status', 'equalto', 'STAGED')|list %}
-          <form method="post" action="{{ url_for('admin.promote_all_ingestion_records') }}" onsubmit="return confirm('Promote all staged worker candidates?');"><button class="btn btn-sm btn-primary">Promote all staged</button></form>
-        {% endif %}
-      </div>
-    </div>
-    <table class="table table-hover align-middle mb-0 staged-candidates-table">
-      <thead><tr><th class="staged-key">Source key</th><th class="staged-worker">Worker candidate</th><th class="staged-file">File</th><th class="staged-status">Status</th><th class="staged-action text-end">Action</th></tr></thead>
-      <tbody>
-      {% for item in staged_records %}
-        <tr>
-          <td class="staged-key"><code>{{ item.source_record_key }}</code></td>
-          <td class="staged-worker"><span class="d-block text-truncate" title="{{ item.payload.get('first_name', '') }} {{ item.payload.get('last_name', '') }}">{{ item.payload.get('first_name', '') }} {{ item.payload.get('last_name', '') }}</span><div class="small text-secondary text-truncate" title="{{ item.payload.get('email', '') }}">{{ item.payload.get('email', '') }}</div></td>
-          <td class="staged-file"><span class="d-block text-truncate" title="{{ item.source_file }}">{{ item.source_file }}</span></td>
-          <td class="staged-status">{{ item.status }}</td>
-          <td class="staged-action text-end">
-            {% if item.status == 'STAGED' %}<form method="post" action="{{ url_for('admin.promote_ingestion_record', record_id=item.record_id) }}"><button class="btn btn-sm btn-outline-primary">Create candidate</button></form>{% else %}<span class="small text-success">Matched</span>{% endif %}
-          </td>
-        </tr>
-      {% else %}<tr><td colspan="5" class="empty-state">No staged worker candidates.</td></tr>{% endfor %}
-      </tbody>
-    </table>
-  </section>
-
-  <section class="surface overflow-hidden">
-    <div class="p-3 border-bottom"><h2 class="h5 mb-0">Open quarantine</h2></div>
-    {% for item in quarantine %}
-      <div class="p-3 border-bottom"><div class="d-flex justify-content-between"><strong>Row {{ item.row_number }}</strong><span class="badge text-bg-warning">OPEN</span></div><p class="small mb-2">{{ item.reason }}</p><code class="small d-block mb-2">{{ item.payload }}</code><form method="post" action="{{ url_for('admin.resolve_quarantine', quarantine_id=item.quarantine_id) }}"><button class="btn btn-sm btn-outline-success">Resolve after correction</button></form></div>
-    {% else %}<p class="p-3 text-secondary mb-0">Quarantine is clear.</p>{% endfor %}
-  </section>
+  {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+  <section class="surface p-4 mb-4"><form method="post" enctype="multipart/form-data" class="row align-items-end g-3"><div class="col-md-9"><label class="form-label">Excel or CSV source</label><input class="form-control" type="file" name="file" accept=".csv,.xlsx" required></div><div class="col-md-3"><button class="btn btn-primary w-100">Validate import</button></div></form><div class="form-text mt-3">Roster Lock workbooks are staged first. A reviewer must approve the import request before canonical Employees are created.</div></section>
+  <section class="surface table-responsive mb-4"><div class="p-3 border-bottom"><h2 class="h5 mb-0">Import batches</h2></div><table class="table table-hover align-middle mb-0"><thead><tr><th>File</th><th>Status</th><th>Rows</th><th>Created</th></tr></thead><tbody>{% for batch in batches %}<tr><td><strong>{{ batch.filename }}</strong><div class="small text-secondary">{{ batch.source_type }} · {{ batch.batch_id[:8] }}</div></td><td>{{ batch.status }}</td><td>{{ batch.valid_rows }} valid / {{ batch.quarantine_rows }} quarantined</td><td class="small text-secondary">{{ batch.created_at_utc }}</td></tr>{% else %}<tr><td colspan="4" class="empty-state">No imports processed.</td></tr>{% endfor %}</tbody></table></section>
+  <section class="surface table-responsive mb-4"><div class="p-3 border-bottom d-flex justify-content-between align-items-center gap-3 staged-candidates-toolbar"><div><h2 class="h5 mb-0">Staged worker candidates</h2><div class="small text-secondary">These records are waiting for a reviewer decision.</div></div><div class="d-flex align-items-center gap-3 flex-shrink-0"><a class="small" href="{{ url_for('employees.employee_directory') }}">View Employees</a>{% if staged_records|selectattr('status', 'equalto', 'STAGED')|list %}<form method="post" action="{{ url_for('admin.request_import_approval') }}"><button class="btn btn-sm btn-primary">Request import approval</button></form>{% endif %}</div></div><table class="table table-hover align-middle mb-0 staged-candidates-table"><thead><tr><th class="staged-key">Source key</th><th class="staged-worker">Worker candidate</th><th class="staged-file">File</th><th class="staged-status">Status</th><th class="staged-action text-end">Next step</th></tr></thead><tbody>{% for item in staged_records %}<tr><td class="staged-key"><code>{{ item.source_record_key }}</code></td><td class="staged-worker"><span class="d-block text-truncate" title="{{ item.payload.get('first_name', '') }} {{ item.payload.get('last_name', '') }}">{{ item.payload.get('first_name', '') }} {{ item.payload.get('last_name', '') }}</span><div class="small text-secondary text-truncate">{{ item.payload.get('email', '') }}</div></td><td class="staged-file"><span class="d-block text-truncate" title="{{ item.source_file }}">{{ item.source_file }}</span></td><td class="staged-status">{{ item.status }}</td><td class="staged-action text-end">{% if item.status == 'STAGED' %}<span class="small text-secondary">Awaiting import approval</span>{% else %}<span class="small text-success">Canonical employee created</span>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="empty-state">No staged worker candidates.</td></tr>{% endfor %}</tbody></table></section>
+  <section class="surface overflow-hidden"><div class="p-3 border-bottom"><h2 class="h5 mb-0">Open quarantine</h2></div>{% for item in quarantine %}<div class="p-3 border-bottom"><div class="d-flex justify-content-between"><strong>Row {{ item.row_number }}</strong><span class="badge text-bg-warning">OPEN</span></div><p class="small mb-2">{{ item.reason }}</p><code class="small d-block mb-2">{{ item.payload }}</code><form method="post" action="{{ url_for('admin.resolve_quarantine', quarantine_id=item.quarantine_id) }}"><button class="btn btn-sm btn-outline-success">Resolve after correction</button></form></div>{% else %}<p class="p-3 text-secondary mb-0">Quarantine is clear.</p>{% endfor %}</section>
 </div>
 {% endblock %}

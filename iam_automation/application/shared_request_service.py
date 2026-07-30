@@ -32,7 +32,7 @@ class SharedRequestService:
             user=user,
             application_version="local",
             operation_type=operation_type.strip().upper(),
-            entity_type="Employee",
+            entity_type="ImportBatch" if operation_type.strip().upper() == "IMPORT_ROSTER_LOCK" else "Employee",
             entity_id=entity_id.strip(),
             expected_record_version=0,
             payload=payload,
@@ -73,8 +73,8 @@ class SharedRequestService:
         if not note.strip():
             raise ValueError("A review note is required.")
         roles = {normalize_role(role) for role in reviewer.roles}
-        if not roles & {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}:
-            raise PermissionError("Reviewer role required.")
+        if not roles - {"REQUESTER"}:
+            raise PermissionError("A requester-only account cannot approve requests.")
         path, request = self._find(request_id)
         self_approval = request.created_by.lower() == reviewer.username.lower()
         if self_approval and ROLE_SUPER_OPERATOR not in roles:
