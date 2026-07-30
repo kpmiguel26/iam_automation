@@ -48,14 +48,27 @@ def webapp_pid_path() -> Path:
 
 
 def stop_local_webapp() -> str:
-    data = json.loads(webapp_pid_path().read_text(encoding="utf-8"))
+    pid_path = webapp_pid_path()
+    try:
+        data = json.loads(pid_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "The local webapp was already stopped."
     shutdown_request = Request(
         f"http://127.0.0.1:{int(data['port'])}/__internal/shutdown",
         method="POST",
         headers={"X-IAM-Shutdown-Token": str(data["token"])},
     )
-    with urlopen(shutdown_request, timeout=3) as response:
-        return response.read().decode("utf-8")
+    try:
+        with urlopen(shutdown_request, timeout=3) as response:
+            return response.read().decode("utf-8")
+    except OSError:
+        # A crashed or externally stopped child can leave the control panel
+        # with a stale URL. Remove only the local marker and let the UI restart.
+        try:
+            pid_path.unlink()
+        except FileNotFoundError:
+            pass
+        return "The local webapp was no longer reachable and was reset."
 
 
 def launch_local_webapp(preflight_result: PreflightResult, *, open_browser: bool = True) -> "LocalWebAppServer":
@@ -356,7 +369,15 @@ def _serve_webapp_process(preflight_result: PreflightResult, ready_queue) -> Non
     ready_queue.put(url)
     try:
         if server._thread:
-            server._thread.join()
+            # Keep the child alive while Waitress serves requests. The control
+            # panel stops it through the internal shutdown endpoint; SIGINT is
+            # handled below for terminal-based shutdown.
+            try:
+                server._thread.join()
+            except KeyboardInterrupt:
+                # SIGINT is delivered to the process group on macOS/Windows.
+                # Cleanup below closes Waitress and stops the watcher.
+                pass
     finally:
         if watcher:
             watcher.stop()

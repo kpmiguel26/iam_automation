@@ -32,7 +32,7 @@ class SharedRequestService:
             user=user,
             application_version="local",
             operation_type=operation_type.strip().upper(),
-            entity_type="ImportBatch" if operation_type.strip().upper() == "IMPORT_ROSTER_LOCK" else "Employee",
+            entity_type="ImportBatch" if operation_type.strip().upper() in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"} else "Employee",
             entity_id=entity_id.strip(),
             expected_record_version=0,
             payload=payload,
@@ -70,8 +70,10 @@ class SharedRequestService:
         decision = decision.strip().upper()
         if decision not in {"APPROVED", "REJECTED"}:
             raise ValueError("Decision must be Approved or Rejected.")
-        if not note.strip():
-            raise ValueError("A review note is required.")
+        if decision == "REJECTED" and not note.strip():
+            raise ValueError("A rejection reason is required.")
+        if decision == "APPROVED" and not note.strip():
+            raise ValueError("An approval note is required.")
         roles = {normalize_role(role) for role in reviewer.roles}
         if not roles - {"REQUESTER"}:
             raise PermissionError("A requester-only account cannot approve requests.")
@@ -180,4 +182,5 @@ class SharedRequestService:
             review_note=request.review_note,
             sla_due_at_utc=due.isoformat(),
             sla_status="OVERDUE" if due < now else "ON_TRACK",
+            expected_record_version=request.expected_record_version,
         )

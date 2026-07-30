@@ -10,8 +10,11 @@ from pathlib import Path
 from sqlalchemy import select
 
 from ..infrastructure.sqlite.orm import AppUserModel, FileObservationModel, NotificationModel, UserRoleModel, orm_session
+from ..change_request import load_request_file
+from .employee_service import EmployeeService
 from .notification_service import NotificationService
 from .roster_lock_ingestion_service import RosterLockIngestionService
+from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 
 
 LOGGER = logging.getLogger(__name__)
@@ -50,13 +53,19 @@ class FileWatchService:
         with _WRITE_LOCK:
             now = datetime.now(timezone.utc).isoformat()
             changed = self._changed_observations(observations)
+            changed.sort(key=self._observation_priority)
             successful_ingestions: set[str] = set()
             for observation in changed:
-                if observation.file_kind != "ROSTER_LOCK":
+                if observation.file_kind not in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS", "APPROVED_IMPORT"}:
                     successful_ingestions.add(observation.path)
                     continue
                 try:
-                    RosterLockIngestionService(self.database_path).ingest_file(Path(observation.path))
+                    if observation.file_kind == "ROSTER_LOCK":
+                        RosterLockIngestionService(self.database_path).ingest_file(Path(observation.path))
+                    elif observation.file_kind == "RSR_SUPPLIER_WORKER_DETAILS":
+                        RsrSupplierWorkerDetailsAdapter(self.database_path).ingest_file(Path(observation.path))
+                    else:
+                        self._sync_approved_import(Path(observation.path))
                     successful_ingestions.add(observation.path)
                 except Exception as exc:
                     LOGGER.exception("Roster Lock ingestion failed for %s", observation.path)
@@ -70,11 +79,12 @@ class FileWatchService:
                     if observation.path not in successful_ingestions:
                         continue
                     previous = session.get(FileObservationModel, observation.path)
+                    stored_kind = "APPROVED_IMPORT_SYNCED" if observation.file_kind == "APPROVED_IMPORT" else observation.file_kind
                     if previous is None:
-                        session.add(FileObservationModel(path=observation.path, file_kind=observation.file_kind, signature=observation.signature, first_seen_at_utc=now, last_seen_at_utc=now))
+                        session.add(FileObservationModel(path=observation.path, file_kind=stored_kind, signature=observation.signature, first_seen_at_utc=now, last_seen_at_utc=now))
                     else:
                         previous.signature = observation.signature
-                        previous.file_kind = observation.file_kind
+                        previous.file_kind = stored_kind
                         previous.last_seen_at_utc = now
                     for username in admins:
                         session.add(self._notification(username, observation))
@@ -87,6 +97,10 @@ class FileWatchService:
                 for observation in observations
                 if (previous := session.get(FileObservationModel, observation.path)) is None
                 or previous.signature != observation.signature
+                # Older builds recorded approved requests as generic file
+                # observations. Reconcile each of those once after upgrade so
+                # employees approved on another workstation appear locally.
+                or (observation.file_kind == "APPROVED_IMPORT" and previous.file_kind == "APPROVED_IMPORT")
             ]
 
     def _record_ingestion_failure(self, observation: FileObservation, error: Exception) -> None:
@@ -98,7 +112,7 @@ class FileWatchService:
                     recipient_username=username,
                     notification_type="INGESTION_ERROR",
                     severity="ERROR",
-                    title="Roster Lock ingestion failed",
+                    title=f"{observation.file_kind.replace('_', ' ').title()} ingestion failed",
                     message=f"The workbook could not be staged and will be retried: {type(error).__name__}: {error}",
                     entity_type="file",
                     entity_id=observation.path,
@@ -107,6 +121,33 @@ class FileWatchService:
                     created_at_utc=datetime.now(timezone.utc).isoformat(),
                 ))
 
+    def _sync_approved_import(self, path: Path) -> None:
+        """Apply a shared approved import to this workstation's local SQLite.
+
+        Approval is shared through JSON, while canonical workers remain local
+        until the next runtime publication. This reconciliation makes an
+        approval performed on another workstation visible here without making
+        every workstation publish its database automatically.
+        """
+        request = load_request_file(path)
+        if request.operation_type not in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}:
+            return
+        record_ids = request.payload.get("record_ids", [])
+        result = EmployeeService(self.database_path).apply_approved_import_records(record_ids, "shared-approval-sync", request_payload=request.payload)
+        if int(result.get("failed", 0)):
+            errors = "; ".join(f"{item.get('record_id', '')[:8]}: {item.get('error', 'unknown error')}" for item in result.get("errors", []))
+            raise RuntimeError(f"Approved import {request.request_id[:8]} could not be fully synchronized: {errors}")
+
+    @staticmethod
+    def _observation_priority(observation: FileObservation) -> int:
+        if observation.file_kind != "APPROVED_IMPORT":
+            return 0
+        try:
+            request = load_request_file(Path(observation.path))
+            return 1 if request.operation_type == "IMPORT_ROSTER_LOCK" else 2
+        except (OSError, ValueError):
+            return 3
+
     def _discover_files(self) -> list[FileObservation]:
         roots = (
             (self.sharepoint_root / "requests" / "pending", "PENDING_REQUEST"),
@@ -114,12 +155,14 @@ class FileWatchService:
             (self.sharepoint_root / "database" / "snapshots" / "identity_discoveries", "IDENTITY_DISCOVERY"),
             (self.sharepoint_root / "database" / "snapshots", "PUBLISHED_RUNTIME"),
             (self.sharepoint_root / "rosterlocks", "ROSTER_LOCK"),
+            (self.sharepoint_root / "rsrsuplierworkerdetails", "RSR_SUPPLIER_WORKER_DETAILS"),
+            (self.sharepoint_root / "requests" / "approved", "APPROVED_IMPORT"),
         )
         observations: list[FileObservation] = []
         for root, kind in roots:
             if not root.is_dir():
                 continue
-            patterns = ("*.json", "*.toml") if kind == "CONFIGURATION" else (("iam_runtime.sqlite",) if kind == "PUBLISHED_RUNTIME" else (("*.xlsx",) if kind == "ROSTER_LOCK" else ("*.json",)))
+            patterns = ("*.json", "*.toml") if kind == "CONFIGURATION" else (("iam_runtime.sqlite",) if kind == "PUBLISHED_RUNTIME" else (("*.xlsx",) if kind in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"} else ("*.json",)))
             for pattern in patterns:
                 for path in root.glob(pattern):
                     if path.is_file() and not path.name.startswith("."):
@@ -149,6 +192,8 @@ class FileWatchService:
             "IDENTITY_DISCOVERY": ("Identity discovery updated", "A workstation identity record is available for administrative review."),
             "PUBLISHED_RUNTIME": ("Workspace database updated", "A new published runtime database is available for local refresh."),
             "ROSTER_LOCK": ("Roster Lock ingested", "A vendor Roster Lock workbook was staged for validation and reconciliation."),
+            "RSR_SUPPLIER_WORKER_DETAILS": ("RSR worker details ingested", "Supplier worker details were staged for matching against canonical employees."),
+            "APPROVED_IMPORT": ("Approved import synchronized", "An approved import was applied to this workstation's local employee database."),
         }
         title, message = labels[observation.file_kind]
         now = datetime.now(timezone.utc).isoformat()
@@ -161,7 +206,7 @@ class FileWatchService:
             message=f"{message} File: {Path(observation.path).name}",
             entity_type="file",
             entity_id=observation.path,
-            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/admin/imports" if observation.file_kind == "ROSTER_LOCK" else "/admin"),
+            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/admin/imports" if observation.file_kind in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"} else "/admin"),
             status="UNREAD",
             created_at_utc=now,
         )

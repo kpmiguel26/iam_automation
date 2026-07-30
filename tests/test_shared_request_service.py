@@ -36,6 +36,20 @@ class SharedRequestServiceTests(unittest.TestCase):
             self.assertTrue(self_approval)
             self.assertEqual(item.status, "APPROVED")
 
+    def test_rejection_requires_a_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "sharepoint"
+            service = SharedRequestService(root)
+            requester = CurrentUser("requester.test", "VDI-01", (ROLE_REQUESTER,))
+            reviewer = CurrentUser("reviewer.test", "VDI-02", (ROLE_REVIEWER,))
+            request = service.create(requester, "UPDATE_EMPLOYEE", "E-102", {"vendor_name": "TTEC"}, "Vendor correction")
+            service.assign(request.request_id, reviewer.username, "admin", "Coverage")
+            with self.assertRaisesRegex(ValueError, "rejection reason"):
+                service.decide(request.request_id, reviewer, "REJECTED", "")
+            item, self_approval = service.decide(request.request_id, reviewer, "REJECTED", "Source does not support this change")
+            self.assertFalse(self_approval)
+            self.assertEqual(item.review_note, "Source does not support this change")
+
     def test_roster_lock_import_is_a_shared_request_for_reviewer_approval(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "sharepoint"

@@ -40,6 +40,7 @@ class RequestItem:
     review_note: str | None
     sla_due_at_utc: str
     sla_status: str
+    expected_record_version: int = 0
 
 
 class RequestService:
@@ -185,4 +186,4 @@ class RequestService:
     def _to_item(self, row: ChangeRequestModel) -> RequestItem:
         due = datetime.fromisoformat(row.created_at_utc) + timedelta(hours=self._sla_hours().get(row.operation_type, 24))
         sla_status = "OVERDUE" if due < datetime.now(timezone.utc) and row.status in {"PENDING", "UNDER_REVIEW"} else "ON_TRACK"
-        return RequestItem(row.request_id, row.created_at_utc, row.created_by, row.computer_name, row.operation_type, row.entity_type, row.entity_id, json.loads(row.payload_json), row.reason, row.status, row.assigned_to, row.reviewed_by, row.review_note, due.isoformat(), sla_status)
+        return RequestItem(row.request_id, row.created_at_utc, row.created_by, row.computer_name, row.operation_type, row.entity_type, row.entity_id, json.loads(row.payload_json), row.reason, row.status, row.assigned_to, row.reviewed_by, row.review_note, due.isoformat(), sla_status, row.expected_record_version)

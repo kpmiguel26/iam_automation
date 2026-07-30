@@ -38,6 +38,15 @@ class EmployeeDomainTests(unittest.TestCase):
             self.assertEqual(workers[0].display_name, "Ada Lovelace")
             self.assertEqual(workers[0].email, "ada@example.com")
             self.assertEqual(workers[0].vendor_name, "TTEC")
+            roster_workers, roster_total = EmployeeService(database).list_workers_page(source="ROSTER_LOCK", page=1, per_page=25)
+            self.assertEqual(roster_total, 1)
+            self.assertEqual([item.worker_id for item in roster_workers], [worker_id])
+            other_workers, other_total = EmployeeService(database).list_workers_page(source="RSR_SUPPLIER_WORKER_DETAILS", page=1, per_page=25)
+            self.assertEqual(other_total, 0)
+            self.assertEqual(other_workers, [])
+            engagement_workers, engagement_total = EmployeeService(database).list_workers_page(engagement="Analyst", page=1, per_page=25)
+            self.assertEqual(engagement_total, 1)
+            self.assertEqual([item.worker_id for item in engagement_workers], [worker_id])
 
     def test_same_vendor_identifier_reuses_worker_and_adds_engagement(self):
         with tempfile.TemporaryDirectory() as tmp:

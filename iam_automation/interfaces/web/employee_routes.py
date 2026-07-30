@@ -31,18 +31,20 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         search = request.args.get("q", "")
         status = request.args.get("status", "ALL")
         vendor = request.args.get("vendor", "ALL")
+        source = request.args.get("source", "ALL")
+        engagement = request.args.get("engagement", "")
         try:
             page = max(1, int(request.args.get("page", "1")))
         except ValueError:
             page = 1
         requested_page = page
-        statuses, vendors = service.filter_values()
-        workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, page=page, per_page=25)
+        statuses, vendors, sources = service.filter_values()
+        workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, page=page, per_page=25)
         page_count = max(1, (total_workers + 24) // 25)
         page = min(page, page_count)
         if page != requested_page:
-            workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, page=page, per_page=25)
-        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, filters={"q": search, "status": status, "vendor": vendor}, page=page, page_count=page_count, total_workers=total_workers)
+            workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, page=page, per_page=25)
+        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement}, page=page, page_count=page_count, total_workers=total_workers)
 
     @blueprint.get("/<worker_id>")
     @authenticated

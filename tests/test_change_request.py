@@ -35,6 +35,24 @@ class ChangeRequestTests(unittest.TestCase):
             self.assertEqual(loaded.request_id, request.request_id)
             self.assertEqual(loaded.status, "PENDING")
 
+    def test_large_import_request_with_portable_previews_is_readable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            user = CurrentUser("DOMAIN\\requester", "PC01", (ROLE_REQUESTER,))
+            previews = [{"record_id": str(index), "worker_name": "Worker " + str(index), "source_file": "fieldglass.xlsx", "match_status": "UNMATCHED", "statement_of_work": "TTEC Contact Center Agent Services SOW 11109 " + ("details " * 35)} for index in range(615)]
+            request = new_request(
+                user=user,
+                application_version="0.1.0",
+                operation_type="IMPORT_RSR_SUPPLIER_DETAILS",
+                entity_type="ImportBatch",
+                entity_id="batch-615",
+                expected_record_version=0,
+                payload={"record_ids": [str(index) for index in range(615)], "record_count": 615, "record_previews": previews},
+                reason="Review Fieldglass worker details",
+            )
+            path = submit_request(request, Path(tmp) / "pending")
+            self.assertGreater(path.stat().st_size, 256 * 1024)
+            self.assertEqual(load_request_file(path).request_id, request.request_id)
+
     def test_auditor_cannot_submit_request(self):
         user = CurrentUser("DOMAIN\\auditor", "PC01", (ROLE_AUDITOR,))
         with self.assertRaises(PermissionError):

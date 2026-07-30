@@ -1,0 +1,20 @@
+{
+  "application_version": "local",
+  "assigned_to": null,
+  "computer_name": "local-web",
+  "created_at_utc": "2026-07-30T21:02:41Z",
+  "created_by": "requester.test",
+  "entity_id": "084fb7bd-5a9b-4f6d-af27-2ce945496f74",
+  "entity_type": "Employee",
+  "expected_record_version": 0,
+  "operation_type": "UPDATE_EMPLOYEE",
+  "payload": {
+    "vendor_name": "TTEC"
+  },
+  "reason": "ttec vendor fix",
+  "request_id": "7ce9ede6-1010-42ac-8b2b-eabdb8b184b8",
+  "review_note": null,
+  "reviewed_by": null,
+  "status": "PENDING",
+  "updated_at_utc": null
+}

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from .startup import PreflightResult, StartupController, StartupState
-from .webapp import launch_local_webapp_process, stop_local_webapp
+from .webapp import launch_local_webapp_process, stop_local_webapp, webapp_pid_path
 
 try:  # Optional until the desktop/web UI dependencies are installed.
     from PySide6.QtCore import Qt, QThread, Signal
@@ -236,6 +236,10 @@ class StartupWindow:
 
     def _webapp_stop_failed(self, message: str) -> None:
         self._log(f"[WEBAPP] Stop request failed: {message}")
+        if not webapp_pid_path().exists():
+            self._webapp_stopped()
+            self._set_status("READY: Stale webapp session cleared. Start the webapp again.", ready=True)
+            return
         self.stop_button.setEnabled(True)
         self._set_status(f"STOP_ERROR: {message}", error=True)
 
@@ -259,6 +263,11 @@ class StartupWindow:
 
     def open_app(self) -> None:
         if not self.webapp_url:
+            return
+        if not webapp_pid_path().exists():
+            self._log("[WEBAPP] Stale webapp session detected; resetting control panel.")
+            self._webapp_stopped()
+            self._set_status("READY: Webapp session expired. Start the webapp again.", ready=True)
             return
         webbrowser.open(self.webapp_url)
         self._log(f"[BROWSER] Opened {self.webapp_url}")

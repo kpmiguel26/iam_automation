@@ -207,23 +207,43 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     def request_import_approval():
         if shared_requests is None:
             return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=None, error="A SharePoint workspace is required to create an import approval request."), 400
-        staged = [item for item in employees.list_staged_records() if item["status"] == "STAGED"]
+        staged = [item for item in employees.list_staged_records() if item["status"] == "STAGED" and (item["source_system"] != "RSR_SUPPLIER_WORKER_DETAILS" or item["match_status"] in {"MATCHED", "UNMATCHED"})]
         if not staged:
             return redirect(url_for("admin.import_center", notice="There are no staged records waiting for approval.", notice_type="info"))
         try:
             actor = str(session["iam_user"])
-            batch_ids = sorted({item["batch_id"] for item in staged})
-            request_item = shared_requests.create(
-                CurrentUser(actor, "local-web", tuple(session.get("iam_roles", ()))),
-                "IMPORT_ROSTER_LOCK",
-                batch_ids[0] if len(batch_ids) == 1 else "MULTIPLE_BATCHES",
-                {"batch_ids": batch_ids, "record_ids": [item["record_id"] for item in staged], "record_count": len(staged)},
-                "Review and approve the staged Roster Lock import before creating canonical employees.",
-            )
-            record_audit(audit_path, actor, "IMPORT_REQUEST_CREATED", "import_batch", request_item.entity_id, new_values={"request_id": request_item.request_id, "record_count": len(staged)})
-            return redirect(url_for("admin.import_center", notice=f"Import approval request {request_item.request_id[:8]} created for {len(staged)} record(s).", notice_type="success"))
+            groups = {
+                "IMPORT_RSR_SUPPLIER_DETAILS": [item for item in staged if item["source_system"] == "RSR_SUPPLIER_WORKER_DETAILS"],
+                "IMPORT_ROSTER_LOCK": [item for item in staged if item["source_system"] != "RSR_SUPPLIER_WORKER_DETAILS"],
+            }
+            created_requests = []
+            for operation_type, items in groups.items():
+                if not items:
+                    continue
+                batch_ids = sorted({item["batch_id"] for item in items})
+                request_item = shared_requests.create(
+                    CurrentUser(actor, "local-web", tuple(session.get("iam_roles", ()))),
+                    operation_type,
+                    batch_ids[0] if len(batch_ids) == 1 else "MULTIPLE_BATCHES",
+                    {"batch_ids": batch_ids, "record_ids": [item["record_id"] for item in items], "record_count": len(items), "source_system": items[0]["source_system"], "record_previews": employees.request_previews([item["record_id"] for item in items])},
+                    "Review and approve the staged source import before applying it to canonical employees." if operation_type == "IMPORT_ROSTER_LOCK" else "Review and approve Fieldglass details to enrich matched Employees or create approved new Employee records.",
+                )
+                created_requests.append(request_item)
+                record_audit(audit_path, actor, "IMPORT_REQUEST_CREATED", "import_batch", request_item.entity_id, new_values={"request_id": request_item.request_id, "record_count": len(items), "source_system": items[0]["source_system"]})
+            ids = ", ".join(item.request_id[:8] for item in created_requests)
+            return redirect(url_for("admin.import_center", notice=f"Import approval request(s) {ids} created for {len(staged)} record(s).", notice_type="success"))
         except (OSError, ValueError, PermissionError) as exc:
             return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=None, error=str(exc)), 400
+
+    @blueprint.post("/imports/refresh-rsr-matches")
+    @admin_required
+    def refresh_rsr_matches():
+        try:
+            result = employees.refresh_rsr_matches()
+            message = f"RSR matching refreshed: {result['matched']} matched, {result['unmatched']} unmatched, {result['ambiguous']} ambiguous, {result['conflicts']} conflict(s), {result.get('vendor_repaired', 0)} vendor label(s) repaired."
+            return redirect(url_for("admin.import_center", notice=message, notice_type="success"))
+        except (ValueError, RuntimeError) as exc:
+            return redirect(url_for("admin.import_center", notice=f"RSR matching could not be refreshed: {exc}", notice_type="danger"))
 
     @blueprint.post("/imports/quarantine/<quarantine_id>/resolve")
     @admin_required

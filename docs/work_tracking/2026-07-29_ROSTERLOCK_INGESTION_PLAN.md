@@ -93,4 +93,6 @@ Conflicting values must be retained as discrepancies with source lineage, not si
 - [ ] Fieldglass contract and reconciliation design.
 - [ ] Canonical worker entity and source lineage migration.
 - [ ] Integration and user acceptance tests with the official templates.
+# Follow-up: RSR enrichment
 
+The next source adapter is documented in `2026-07-30_RSR_WORKER_DETAILS_ACTION_PLAN.md` and follows the canonical model in `docs/architecture/WORKER_EMPLOYEE_CANONICAL_ARCHITECTURE.md`. Roster Lock remains the source that can create a staged worker candidate; RSR enriches only an existing canonical worker after matching and approval.

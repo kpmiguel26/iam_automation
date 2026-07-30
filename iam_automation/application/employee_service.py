@@ -38,14 +38,15 @@ class EmployeeService:
     def __init__(self, database_path: Path):
         self.database_path = database_path
 
-    def list_workers(self, search: str = "", status: str = "ALL", vendor: str = "ALL") -> list[EmployeeSummary]:
+    def list_workers(self, search: str = "", status: str = "ALL", vendor: str = "ALL", source: str = "ALL", engagement: str = "") -> list[EmployeeSummary]:
         """Return the full directory for internal callers and small datasets."""
-        workers, _ = self.list_workers_page(search=search, status=status, vendor=vendor, page=1, per_page=None)
+        workers, _ = self.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, page=1, per_page=None)
         return workers
 
-    def list_workers_page(self, *, search: str = "", status: str = "ALL", vendor: str = "ALL", page: int = 1, per_page: int | None = 25) -> tuple[list[EmployeeSummary], int]:
+    def list_workers_page(self, *, search: str = "", status: str = "ALL", vendor: str = "ALL", source: str = "ALL", engagement: str = "", page: int = 1, per_page: int | None = 25) -> tuple[list[EmployeeSummary], int]:
         """Query only one directory page; filtering stays in SQLite."""
         search = search.strip()
+        engagement = engagement.strip()
         page = max(1, int(page))
         if per_page is not None:
             per_page = max(1, min(int(per_page), 100))
@@ -55,6 +56,23 @@ class EmployeeService:
                 filters.append(WorkerModel.status == status)
             if vendor != "ALL":
                 filters.append(select(WorkerEngagementModel.worker_id).where(WorkerEngagementModel.worker_id == WorkerModel.worker_id, WorkerEngagementModel.vendor_name == vendor).exists())
+            if source != "ALL":
+                filters.append(select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.worker_id == WorkerModel.worker_id, WorkerIdentifierModel.source_system == source, WorkerIdentifierModel.active.is_(True)).exists())
+            if engagement:
+                engagement_pattern = f"%{engagement}%"
+                filters.append(select(WorkerEngagementModel.worker_id).where(
+                    WorkerEngagementModel.worker_id == WorkerModel.worker_id,
+                    or_(
+                        WorkerEngagementModel.vendor_name.ilike(engagement_pattern),
+                        WorkerEngagementModel.program.ilike(engagement_pattern),
+                        WorkerEngagementModel.project.ilike(engagement_pattern),
+                        WorkerEngagementModel.lob.ilike(engagement_pattern),
+                        WorkerEngagementModel.job_title.ilike(engagement_pattern),
+                        WorkerEngagementModel.country.ilike(engagement_pattern),
+                        WorkerEngagementModel.site_location.ilike(engagement_pattern),
+                        WorkerEngagementModel.statement_of_work.ilike(engagement_pattern),
+                    ),
+                ).exists())
             if search:
                 pattern = f"%{search}%"
                 filters.append(or_(
@@ -76,16 +94,107 @@ class EmployeeService:
                 result.append(EmployeeSummary(worker.worker_id, worker.display_name, worker.canonical_email, worker.status, identifier.identifier_value if identifier else "", engagement.vendor_name if engagement else "", engagement.job_title if engagement else "", identifier.source_system if identifier else "", int(discrepancy_count)))
             return result, total
 
-    def filter_values(self) -> tuple[list[str], list[str]]:
+    def filter_values(self) -> tuple[list[str], list[str], list[str]]:
         with orm_session(self.database_path) as session:
             statuses = sorted({value for value in session.scalars(select(WorkerModel.status)).all() if value})
             vendors = sorted({value for value in session.scalars(select(WorkerEngagementModel.vendor_name)).all() if value})
-            return statuses, vendors
+            sources = sorted({value for value in session.scalars(select(WorkerIdentifierModel.source_system).where(WorkerIdentifierModel.active.is_(True))).all() if value})
+            return statuses, vendors, sources
 
     def list_staged_records(self) -> list[dict[str, str]]:
         with orm_session(self.database_path) as session:
-            rows = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.status.in_(("STAGED", "MATCHED"))).order_by(IngestionRecordModel.created_at_utc.desc())).all()
-            return [{"record_id": row.record_id, "batch_id": row.batch_id, "source_record_key": row.source_record_key, "source_file": Path(row.source_file).name, "status": row.status, "payload": json.loads(row.normalized_json)} for row in rows]
+            rows = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.status.in_(("STAGED", "MATCHED", "CONFLICT", "UNMATCHED", "AMBIGUOUS"))).order_by(IngestionRecordModel.created_at_utc.desc())).all()
+            return [{"record_id": row.record_id, "batch_id": row.batch_id, "source_system": row.source_system, "source_record_key": row.source_record_key, "source_file": Path(row.source_file).name, "status": row.status, "match_status": row.match_status, "matched_worker_id": row.matched_worker_id or "", "match_reason": row.match_reason, "payload": json.loads(row.normalized_json)} for row in rows]
+
+    def request_previews(self, record_ids: list[str]) -> list[dict[str, object]]:
+        """Return portable review data for a shared JSON approval request."""
+        selected = {str(value) for value in record_ids if str(value).strip()}
+        if not selected:
+            return []
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(selected)).order_by(IngestionRecordModel.row_number)).all()
+            previews = []
+            for row in rows:
+                payload = json.loads(row.normalized_json)
+                previews.append({
+                    "record_id": row.record_id,
+                    "source_record_key": row.source_record_key,
+                    "source_system": row.source_system,
+                    "source_file": Path(row.source_file).name,
+                    "status": row.status,
+                    "match_status": row.match_status,
+                    "match_reason": row.match_reason,
+                    "worker_name": " ".join(part for part in (payload.get("first_name", ""), payload.get("last_name", "")) if part),
+                    "email": payload.get("email", ""),
+                    "vendor": payload.get("vendor_name", "") or payload.get("statement_of_work", "").split(maxsplit=1)[0],
+                    "identifier": payload.get("vendor_employee_id", "") or payload.get("supplier_reference", "") or payload.get("worker_id", ""),
+                    "statement_of_work": payload.get("statement_of_work", ""),
+                })
+            return previews
+
+    def resolve_import_record_ids(self, payload: dict[str, object]) -> list[str]:
+        """Resolve shared request records on this workstation.
+
+        UUIDs are local implementation identifiers and can differ when the
+        same source workbook is ingested on another workstation. Prefer the
+        UUID, then resolve portable previews by source system and source row
+        key so a shared approval can be applied locally.
+        """
+        requested = {str(value) for value in payload.get("record_ids", []) if str(value).strip()}
+        previews = payload.get("record_previews", [])
+        portable_keys = {
+            (str(item.get("source_system", "")), str(item.get("source_record_key", "")))
+            for item in previews if isinstance(item, dict) and item.get("source_system") and item.get("source_record_key")
+        }
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(requested))).all() if requested else []
+            resolved = {row.record_id for row in rows}
+            if portable_keys:
+                candidates = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.source_system.in_({key[0] for key in portable_keys}))).all()
+                resolved.update(row.record_id for row in candidates if (row.source_system, row.source_record_key) in portable_keys)
+        return sorted(resolved)
+
+    def apply_approved_import_records(self, record_ids: list[str], actor: str, *, request_payload: dict[str, object] | None = None) -> dict[str, object]:
+        """Apply approved source records through their source-specific adapter."""
+        from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter, SOURCE_SYSTEM
+
+        if request_payload is not None:
+            record_ids = self.resolve_import_record_ids(request_payload)
+        with orm_session(self.database_path) as session:
+            source_systems = set(session.scalars(select(IngestionRecordModel.source_system).where(IngestionRecordModel.record_id.in_(record_ids))).all())
+        result: dict[str, object] = {"processed": 0, "created": 0, "reused": 0, "failed": 0, "errors": []}
+        roster_ids = []
+        rsr_ids = []
+        for record_id in record_ids:
+            with orm_session(self.database_path) as session:
+                record = session.get(IngestionRecordModel, record_id)
+                if record is None:
+                    continue
+                if record.source_system == SOURCE_SYSTEM:
+                    rsr_ids.append(record_id)
+                else:
+                    roster_ids.append(record_id)
+        if rsr_ids:
+            rsr_result = RsrSupplierWorkerDetailsAdapter(self.database_path).apply_approved_records(rsr_ids, actor)
+            result["processed"] = int(result["processed"]) + int(rsr_result["processed"])
+            result["created"] = int(result["created"]) + int(rsr_result.get("created", 0))
+            result["reused"] = int(result["reused"]) + int(rsr_result.get("reused", 0))
+            result["failed"] = int(result["failed"]) + int(rsr_result["failed"])
+            result["errors"] = list(result["errors"]) + list(rsr_result["errors"])
+        if roster_ids:
+            roster_result = self.promote_staged_records(roster_ids, actor)
+            result["processed"] = int(result["processed"]) + int(roster_result["processed"])
+            result["created"] = int(result["created"]) + int(roster_result["created"])
+            result["reused"] = int(result["reused"]) + int(roster_result["reused"])
+            result["failed"] = int(result["failed"]) + int(roster_result["failed"])
+            result["errors"] = list(result["errors"]) + list(roster_result["errors"])
+        return result
+
+    def refresh_rsr_matches(self) -> dict[str, int]:
+        """Refresh enrichment-source matching after canonical workers change."""
+        from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
+
+        return RsrSupplierWorkerDetailsAdapter(self.database_path).refresh_matches()
 
     def get_worker(self, worker_id: str) -> dict[str, object] | None:
         with orm_session(self.database_path) as session:
@@ -169,6 +278,9 @@ class EmployeeService:
                 license_number=str(payload.get("resident_license_number") or ""),
                 taxonomy_code=str(payload.get("taxonomy_code") or ""),
                 key_billable_function=str(payload.get("key_billable_function") or ""),
+                statement_of_work=str(payload.get("statement_of_work") or ""),
+                work_order_id=str(payload.get("work_order_id") or ""),
+                primary_contact_name=str(payload.get("worker_primary_contact") or ""),
                 source_system=record.source_system,
                 created_at_utc=now,
                 updated_at_utc=now,

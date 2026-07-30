@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import uuid
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -86,13 +87,22 @@ class ImportService:
             from openpyxl import load_workbook
         except ModuleNotFoundError as exc:
             raise RuntimeError("XLSX imports require openpyxl.") from exc
-        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        sheet = workbook.active
-        values = list(sheet.values)
-        if not values:
-            return []
-        headers = [str(value or "").strip() for value in values[0]]
-        return [dict(zip(headers, row)) for row in values[1:]]
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Data Validation extension is not supported and will be removed",
+                category=UserWarning,
+            )
+            workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        try:
+            sheet = workbook.active
+            values = list(sheet.values)
+            if not values:
+                return []
+            headers = [str(value or "").strip() for value in values[0]]
+            return [dict(zip(headers, row)) for row in values[1:]]
+        finally:
+            workbook.close()
 
     @staticmethod
     def _to_batch(row: ImportBatchModel) -> ImportBatch:

@@ -15,9 +15,17 @@
       </div>
       <div><label class="form-label small text-secondary" for="employeeStatus">Profile status</label><select id="employeeStatus" class="form-select" name="status"><option value="ALL">All statuses</option>{% for item in statuses %}<option value="{{ item }}"{% if filters.status == item %} selected{% endif %}>{{ item.replace('_', ' ').title() }}</option>{% endfor %}</select></div>
       <div><label class="form-label small text-secondary" for="employeeVendor">Vendor group</label><select id="employeeVendor" class="form-select" name="vendor"><option value="ALL">All vendors</option>{% for item in vendors %}<option value="{{ item }}"{% if filters.vendor == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+      <div><label class="form-label small text-secondary" for="employeeSource">Source</label><select id="employeeSource" class="form-select" name="source"><option value="ALL">All sources</option>{% for item in sources %}<option value="{{ item }}"{% if filters.source == item %} selected{% endif %}>{{ item.replace('_', ' ').title() }}</option>{% endfor %}</select></div>
       <div class="d-flex gap-2"><button class="btn btn-primary" type="submit">Apply</button><a class="btn btn-light employee-reset" href="{{ url_for('employees.employee_directory') }}">Clear</a></div>
+      <details class="employee-advanced-filter"{% if filters.engagement %} open{% endif %}>
+        <summary>Advanced filters</summary>
+        <div class="employee-advanced-grid mt-3">
+          <div><label class="form-label small text-secondary" for="employeeEngagement">Vendor engagement</label><input id="employeeEngagement" class="form-control" name="engagement" value="{{ filters.engagement }}" placeholder="Vendor, program, project, LOB or role"></div>
+          <div class="small text-secondary employee-advanced-help">Searches engagement data stored in SQLite, including statement of work and work location.</div>
+        </div>
+      </details>
     </form>
-    <div class="employee-filter-summary"><span>{% if filters.vendor != 'ALL' %}Showing {{ filters.vendor }} employees{% elif filters.q %}Showing matches for “{{ filters.q }}”{% else %}Showing all canonical employees{% endif %}</span><span class="small text-secondary">Page {{ page }} of {{ page_count }} · 25 records per page</span></div>
+    <div class="employee-filter-summary"><span>{% if filters.engagement %}Showing engagement matches for “{{ filters.engagement }}”{% elif filters.source != 'ALL' %}Showing {{ filters.source.replace('_', ' ').title() }} employees{% elif filters.vendor != 'ALL' %}Showing {{ filters.vendor }} employees{% elif filters.q %}Showing matches for “{{ filters.q }}”{% else %}Showing all canonical employees{% endif %}</span><span class="small text-secondary">Page {{ page }} of {{ page_count }} · 25 records per page</span></div>
   </section>
 
   <section class="surface table-responsive mt-4 employee-table-surface">
@@ -42,9 +50,9 @@
   <nav class="d-flex justify-content-between align-items-center mt-3" aria-label="Employee directory pages">
     <span class="small text-secondary">Showing {{ ((page - 1) * 25) + 1 if total_workers else 0 }}–{{ [page * 25, total_workers]|min }} of {{ total_workers }}</span>
     <div class="btn-group" role="group">
-      {% if page > 1 %}<a class="btn btn-light" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, page=page - 1) }}">Previous</a>{% endif %}
+      {% if page > 1 %}<a class="btn btn-light" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, source=filters.source, engagement=filters.engagement, page=page - 1) }}">Previous</a>{% endif %}
       <span class="btn btn-light disabled">{{ page }} / {{ page_count }}</span>
-      {% if page < page_count %}<a class="btn btn-light" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, page=page + 1) }}">Next</a>{% endif %}
+      {% if page < page_count %}<a class="btn btn-light" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, source=filters.source, engagement=filters.engagement, page=page + 1) }}">Next</a>{% endif %}
     </div>
   </nav>
   {% endif %}

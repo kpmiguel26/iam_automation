@@ -180,6 +180,9 @@ class IngestionRecordModel(Base):
     normalized_json: Mapped[str] = mapped_column(Text)
     payload_json: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String, default="STAGED")
+    match_status: Mapped[str] = mapped_column(String, default="NOT_EVALUATED")
+    matched_worker_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    match_reason: Mapped[str] = mapped_column(Text, default="")
     created_at_utc: Mapped[str] = mapped_column(String, default="")
 
 
@@ -235,6 +238,9 @@ class WorkerEngagementModel(Base):
     license_number: Mapped[str] = mapped_column(String, default="")
     taxonomy_code: Mapped[str] = mapped_column(String, default="")
     key_billable_function: Mapped[str] = mapped_column(String, default="")
+    statement_of_work: Mapped[str] = mapped_column(String, default="")
+    work_order_id: Mapped[str] = mapped_column(String, default="")
+    primary_contact_name: Mapped[str] = mapped_column(String, default="")
     source_system: Mapped[str] = mapped_column(String, default="")
     created_at_utc: Mapped[str] = mapped_column(String, default="")
     updated_at_utc: Mapped[str] = mapped_column(String, default="")

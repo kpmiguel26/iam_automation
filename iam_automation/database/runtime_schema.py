@@ -144,6 +144,9 @@ def initialize_runtime_database(path: Path) -> Path:
                 normalized_json TEXT NOT NULL,
                 payload_json TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'STAGED',
+                match_status TEXT NOT NULL DEFAULT 'NOT_EVALUATED',
+                matched_worker_id TEXT,
+                match_reason TEXT NOT NULL DEFAULT '',
                 created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
                 UNIQUE (source_file, source_checksum, row_number)
             );
@@ -194,6 +197,9 @@ def initialize_runtime_database(path: Path) -> Path:
                 license_number TEXT NOT NULL DEFAULT '',
                 taxonomy_code TEXT NOT NULL DEFAULT '',
                 key_billable_function TEXT NOT NULL DEFAULT '',
+                statement_of_work TEXT NOT NULL DEFAULT '',
+                work_order_id TEXT NOT NULL DEFAULT '',
+                primary_contact_name TEXT NOT NULL DEFAULT '',
                 source_system TEXT NOT NULL DEFAULT '',
                 created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at_utc TEXT NOT NULL DEFAULT (datetime('now'))
@@ -291,6 +297,14 @@ def initialize_runtime_database(path: Path) -> Path:
         if "status" not in app_user_columns:
             connection.execute("ALTER TABLE app_users ADD COLUMN status TEXT NOT NULL DEFAULT 'ACTIVE'")
         connection.execute("UPDATE app_users SET status = CASE WHEN active = 1 THEN 'ACTIVE' ELSE 'INACTIVE' END WHERE status IS NULL OR status = ''")
+        ingestion_columns = {row[1] for row in connection.execute("PRAGMA table_info(ingestion_records)")}
+        for column, definition in (("match_status", "TEXT NOT NULL DEFAULT 'NOT_EVALUATED'"), ("matched_worker_id", "TEXT"), ("match_reason", "TEXT NOT NULL DEFAULT ''")):
+            if column not in ingestion_columns:
+                connection.execute(f"ALTER TABLE ingestion_records ADD COLUMN {column} {definition}")
+        engagement_columns = {row[1] for row in connection.execute("PRAGMA table_info(worker_engagements)")}
+        for column, definition in (("statement_of_work", "TEXT NOT NULL DEFAULT ''"), ("work_order_id", "TEXT NOT NULL DEFAULT ''"), ("primary_contact_name", "TEXT NOT NULL DEFAULT ''")):
+            if column not in engagement_columns:
+                connection.execute(f"ALTER TABLE worker_engagements ADD COLUMN {column} {definition}")
         connection.commit()
     finally:
         connection.close()

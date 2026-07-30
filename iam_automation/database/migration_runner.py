@@ -13,6 +13,7 @@ _REVISION_TO_LEGACY_VERSION = {
     "0002_notification_indexes": "v002_notification_indexes",
     "0003_ingestion_records": "v003_ingestion_records",
     "0004_worker_domain": "v004_worker_domain",
+    "0005_rsr_worker_details": "v005_rsr_worker_details",
 }
 _LEGACY_TO_REVISION = {value: key for key, value in _REVISION_TO_LEGACY_VERSION.items()}
 
@@ -55,6 +56,8 @@ def _legacy_version_for_revision(revision: str | None) -> tuple[str, ...]:
         return ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records")
     if revision == "0004_worker_domain":
         return ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain")
+    if revision == "0005_rsr_worker_details":
+        return ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details")
     if revision == "0001_baseline":
         return ("v001_initial_schema",)
     return ()

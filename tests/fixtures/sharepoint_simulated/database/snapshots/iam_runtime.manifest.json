@@ -1,7 +1,7 @@
 {
   "file": "iam_runtime.sqlite",
-  "published_at_utc": "2026-07-28T17:51:16.386254+00:00",
-  "published_by": "requester.test",
+  "published_at_utc": "2026-07-30T20:55:02.981540+00:00",
+  "published_by": "migue",
   "schema_version": "1.0.0",
-  "sha256": "a0dcf7a959ab50809f8ff34cb1261b6770502b3bf179f7e359ef6285ea86354e"
+  "sha256": "74c98e3e950643250dfed06973cc1dd346faf1803554d10f7862993395265776"
 }
