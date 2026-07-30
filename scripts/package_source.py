@@ -109,9 +109,11 @@ def build_manifest(root: Path, version: str, created_at_utc: str) -> dict[str, o
 
 def create_archive(root: Path, output_dir: Path, version: str, include_git: bool = True) -> Path:
     created_at = datetime.now(timezone.utc).replace(microsecond=0)
-    stamp = created_at.strftime("%Y%m%dT%H%M%SZ")
+    stamp = created_at.strftime("%Y%m%d")
     commit = git_value(root, "rev-parse", "--short", "HEAD", fallback="nogit")
-    archive_name = f"iam-automation-source-v{version}-{stamp}-{commit}.zip"
+    # Keep the distributable filename short because Windows includes the
+    # extraction directory in every nested PySide6 path.
+    archive_name = f"iam-v{version}-{stamp}-{commit}.zip"
     output_dir.mkdir(parents=True, exist_ok=True)
     archive_path = output_dir / archive_name
     # Keep the extracted tree short on Windows. The archive filename carries
