@@ -8,6 +8,12 @@ from iam_automation import config
 
 
 class ConfigTests(unittest.TestCase):
+    def test_sample_config_has_no_machine_specific_absolute_paths(self):
+        defaults = config._config_defaults(config.DEFAULT_CONFIG_PATH)
+        self.assertEqual(defaults["sharepoint_root_path"], "")
+        self.assertEqual(defaults["workspace_path"], "")
+        self.assertEqual(defaults["backup_folder_path"], "")
+
     def test_rejects_sharepoint_web_links(self):
         payload = config.validation_payload(
             {

@@ -22,6 +22,7 @@ class BugReportServiceTests(unittest.TestCase):
             )
             files = list((Path(directory) / "bug_reports" / "open").glob("*.json"))
             self.assertEqual(len(files), 1)
+            self.assertLessEqual(len(files[0].name), 24)
             self.assertIn(bug.bug_id, files[0].read_text(encoding="utf-8"))
             self.assertEqual(len(service.list_for_user("tester.one", is_admin=False)), 1)
             self.assertEqual(service.list_for_user("tester.two", is_admin=False), [])

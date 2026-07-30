@@ -118,9 +118,17 @@ class BugReportService:
         return bugs
 
     def _find(self, bug_id: str) -> tuple[Path, BugReport]:
-        for bug in self._load_all():
-            if bug.bug_id == bug_id:
-                return self._path_for(bug), bug
+        # Return the actual path so legacy long filenames remain editable after
+        # upgrading to the shorter portable filename format.
+        for folder in STATUS_FOLDERS.values():
+            root = self.root / folder
+            for path in root.glob("*.json") if root.is_dir() else ():
+                try:
+                    bug = BugReport(**json.loads(path.read_text(encoding="utf-8")))
+                except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if bug.bug_id == bug_id:
+                    return path, bug
         raise ValueError("Bug report was not found.")
 
     def _path_for(self, bug: BugReport) -> Path:
@@ -133,8 +141,9 @@ class BugReportService:
 
     @staticmethod
     def _filename(bug: BugReport) -> str:
-        timestamp = bug.created_at_utc.replace("-", "").replace(":", "").replace("+00:00", "Z")
-        return f"{timestamp}_{bug.bug_id}.json"
+        # The full timestamp and UUID made SharePoint/OneDrive paths exceed
+        # Windows MAX_PATH when the package was extracted in a nested folder.
+        return f"bug_{bug.bug_id.replace('-', '')[:12]}.json"
 
     @staticmethod
     def _write(path: Path, bug: BugReport) -> None:

@@ -40,6 +40,8 @@ package_source.bat
 
 The archive is written to `dist/` with the project version, UTC build timestamp, and Git commit in its filename. It contains `PACKAGE_MANIFEST.json` with the build metadata. Local databases, Access files, credentials, virtual environments, logs, and generated SharePoint fixture data are intentionally excluded. Extract the ZIP and run the included `run.sh` or `run_windows.bat` from the extracted project folder.
 
+On Windows, extract the package to a short local path such as `C:\IAMAutomation` instead of a deeply nested Desktop or Downloads folder. The ZIP uses the short top-level folder `iam_automation` to avoid Windows path-length failures while creating the virtual environment and installing PySide6.
+
 The desktop launcher first discovers and validates the local OneDrive-synchronized SharePoint path. It opens the local Flask webapp only after the environment and current user have passed validation. Flask is served by Waitress on `127.0.0.1` with an ephemeral port. The local control panel uses PySide6 and is not a centralized API or service.
 
 Convenience launchers are available for both platforms:
@@ -92,7 +94,7 @@ On Windows with the Access ODBC driver installed:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/Validate-IAMEnvironment.ps1
-python scripts/experiment_01_access_connectivity.py "C:\Users\E385201\OneDrive - Kaiser Permanente\IAMAutomation\iam_automation.accdb"
+python scripts/experiment_01_access_connectivity.py "C:\path\to\OneDrive - Organization\IAMAutomation\iam_automation.accdb"
 ```
 
 The working SQLite copy is `runtime.sqlite` in the project root and is ignored by Git. It is refreshed from the published SharePoint snapshot at startup. An administrative publish requires an explicit `--publish` action and may include `--expected-checksum` to prevent overwriting a newer shared copy.

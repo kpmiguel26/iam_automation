@@ -100,7 +100,11 @@ class StartupTests(unittest.TestCase):
             root = make_sharepoint_root(base)
             (root / "audit").rmdir()
             controller = StartupController(settings_path=base / "settings.toml")
-            with patch.dict("os.environ", {"IAM_SHAREPOINT_ROOT_PATH": str(root)}, clear=False), patch(
+            with patch.dict(
+                "os.environ",
+                {"IAM_SHAREPOINT_ROOT_PATH": str(root), "IAM_WORKSPACE_PATH": str(base / "workspace")},
+                clear=False,
+            ), patch(
                 "iam_automation.startup.project_runtime_path", return_value=base / "runtime.sqlite"
             ):
                 controller.discover_sharepoint()

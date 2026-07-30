@@ -1,24 +1,25 @@
 [paths]
-# Must be the local synchronized OneDrive path that mirrors the SharePoint document library.
-published_access_db_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/iam_automation.accdb"
-published_runtime_db_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/database/snapshots/iam_runtime.sqlite"
-sharepoint_root_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation"
+# Keep this sample file portable. Set IAM_SHAREPOINT_ROOT_PATH or select the
+# synchronized folder in the preflight panel. Paths are derived from that root.
+published_access_db_path = ""
+published_runtime_db_path = ""
+sharepoint_root_path = ""
 
 # Must stay outside OneDrive so database work happens on a local copy first.
-workspace_path = "C:/Users/E385201/AppData/Local/IAMAutomation/workspace"
+workspace_path = ""
 
-backup_folder_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/backups"
-audit_folder_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/audit"
-generated_templates_path = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/generated_templates"
+backup_folder_path = ""
+audit_folder_path = ""
+generated_templates_path = ""
 
 [requests]
-pending_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/pending"
-imported_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/imported"
-approved_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/approved"
-rejected_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/rejected"
-applied_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/applied"
-failed_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/failed"
-quarantine_folder = "C:/Users/E385201/OneDrive - Kaiser Permanente/IAMAutomation/requests/quarantine"
+pending_folder = ""
+imported_folder = ""
+approved_folder = ""
+rejected_folder = ""
+applied_folder = ""
+failed_folder = ""
+quarantine_folder = ""
 
 [security]
 approved_users_path = "config/approved_users.sample.csv"

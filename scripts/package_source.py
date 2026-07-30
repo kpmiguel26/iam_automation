@@ -114,7 +114,9 @@ def create_archive(root: Path, output_dir: Path, version: str, include_git: bool
     archive_name = f"iam-automation-source-v{version}-{stamp}-{commit}.zip"
     output_dir.mkdir(parents=True, exist_ok=True)
     archive_path = output_dir / archive_name
-    package_root = archive_path.stem
+    # Keep the extracted tree short on Windows. The archive filename carries
+    # the version metadata; it does not need to become part of every path.
+    package_root = "iam_automation"
 
     manifest = build_manifest(root, version, created_at.isoformat())
     manifest["git_metadata_included"] = include_git
