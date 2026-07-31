@@ -11,9 +11,11 @@ from sqlalchemy import select
 
 from ..infrastructure.sqlite.orm import AppUserModel, FileObservationModel, NotificationModel, UserRoleModel, orm_session
 from ..change_request import load_request_file
+from ..identity import CurrentUser, ROLE_REQUESTER, computer_name
 from .employee_service import EmployeeService
 from .notification_service import NotificationService
 from .roster_lock_ingestion_service import RosterLockIngestionService
+from .shared_request_service import SharedRequestService
 from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 
 
@@ -55,20 +57,25 @@ class FileWatchService:
             changed = self._changed_observations(observations)
             changed.sort(key=self._observation_priority)
             successful_ingestions: set[str] = set()
+            review_requests: set[str] = set()
             for observation in changed:
                 if observation.file_kind not in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS", "APPROVED_IMPORT"}:
                     successful_ingestions.add(observation.path)
                     continue
                 try:
                     if observation.file_kind == "ROSTER_LOCK":
-                        RosterLockIngestionService(self.database_path).ingest_file(Path(observation.path))
+                        result = RosterLockIngestionService(self.database_path).ingest_file(Path(observation.path))
+                        self._ensure_import_review_request(observation, result)
+                        review_requests.add(observation.path)
                     elif observation.file_kind == "RSR_SUPPLIER_WORKER_DETAILS":
-                        RsrSupplierWorkerDetailsAdapter(self.database_path).ingest_file(Path(observation.path))
+                        result = RsrSupplierWorkerDetailsAdapter(self.database_path).ingest_file(Path(observation.path))
+                        self._ensure_import_review_request(observation, result)
+                        review_requests.add(observation.path)
                     else:
                         self._sync_approved_import(Path(observation.path))
                     successful_ingestions.add(observation.path)
                 except Exception as exc:
-                    LOGGER.exception("Roster Lock ingestion failed for %s", observation.path)
+                    LOGGER.exception("File processing failed for %s", observation.path)
                     self._record_ingestion_failure(observation, exc)
 
             # The observation is committed only after ingestion succeeds. A transient
@@ -86,9 +93,62 @@ class FileWatchService:
                         previous.signature = observation.signature
                         previous.file_kind = stored_kind
                         previous.last_seen_at_utc = now
-                    for username in admins:
-                        session.add(self._notification(username, observation))
+                    if observation.path not in review_requests:
+                        for username in admins:
+                            session.add(self._notification(username, observation))
             return len(successful_ingestions)
+
+    def _ensure_import_review_request(self, observation: FileObservation, result) -> None:
+        """Create the shared approval request for a newly staged workbook.
+
+        Staging is safe to repeat, so this method also runs when an observation
+        is retried after a temporary SQLite or OneDrive failure.  Batch ID and
+        content checksum make the shared request idempotent across workstations.
+        """
+        batch_id = str(result.batch_id)
+        source_path = Path(observation.path)
+        source_checksum = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        shared = SharedRequestService(self.sharepoint_root)
+        existing = shared.find_import_request(batch_id=batch_id, source_checksum=source_checksum)
+        if existing is not None:
+            return
+
+        source_system = observation.file_kind
+        staged = [
+            item for item in EmployeeService(self.database_path).list_staged_records()
+            if str(item.get("batch_id", "")) == batch_id
+            and str(item.get("source_system", "")) == source_system
+        ]
+        record_ids = [str(item["record_id"]) for item in staged]
+        operation_type = (
+            "IMPORT_RSR_SUPPLIER_DETAILS"
+            if source_system == "RSR_SUPPLIER_WORKER_DETAILS"
+            else "IMPORT_ROSTER_LOCK"
+        )
+        payload = {
+            "batch_ids": [batch_id],
+            "record_ids": record_ids,
+            "record_count": len(record_ids),
+            "source_system": source_system,
+            "source_file": source_path.name,
+            "source_checksum": source_checksum,
+            "total_rows": int(result.total_rows),
+            "staged_rows": int(result.staged_rows),
+            "quarantine_rows": int(getattr(result, "quarantine_rows", getattr(result, "quarantined_rows", 0))),
+            "record_previews": EmployeeService(self.database_path).request_previews(record_ids),
+        }
+        actor = CurrentUser("workspace-watcher", computer_name(), (ROLE_REQUESTER,))
+        reason = (
+            f"Review newly discovered {source_system.replace('_', ' ').title()} file "
+            f"before applying {len(record_ids)} staged record(s) to canonical employees."
+        )
+        request = shared.create(actor, operation_type, batch_id, payload, reason)
+        self.notifications.notify_request_reviewers(
+            request.request_id,
+            operation_type,
+            actor.username,
+            record_count=len(record_ids),
+        )
 
     def _changed_observations(self, observations: list[FileObservation]) -> list[FileObservation]:
         with orm_session(self.database_path) as session:

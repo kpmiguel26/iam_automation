@@ -24,6 +24,7 @@ ROLE_SUPER_OPERATOR = "SUPER_OPERATOR"
 
 ROLE_ALIASES = {ROLE_ADMINISTRATOR: ROLE_APPLICATION_ADMIN}
 ADMIN_ROLES = {ROLE_MASTER_ADMIN, ROLE_APPLICATION_ADMIN, ROLE_ADMINISTRATOR}
+REQUEST_DECISION_ROLES = {ROLE_MASTER_ADMIN, ROLE_APPLICATION_ADMIN, ROLE_ADMINISTRATOR, ROLE_SUPER_OPERATOR}
 WRITER_ROLES = {ROLE_APPLICATION_ADMIN, ROLE_ADMINISTRATOR, ROLE_WRITER, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}
 
 
@@ -60,7 +61,12 @@ class CurrentUser:
 
     @property
     def can_review_requests(self) -> bool:
-        return bool(set(self.normalized_roles) - {ROLE_REQUESTER})
+        return bool(set(self.normalized_roles) & ({ROLE_REVIEWER} | REQUEST_DECISION_ROLES))
+
+    @property
+    def can_decide_requests(self) -> bool:
+        """Only administrators can approve or reject; reviewers receive the work."""
+        return bool(set(self.normalized_roles) & REQUEST_DECISION_ROLES)
 
 
 def windows_username() -> str:

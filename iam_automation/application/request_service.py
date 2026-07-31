@@ -8,7 +8,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from ..identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, normalize_role
+from ..identity import CurrentUser
 from ..change_request import ChangeRequest, submit_request
 from ..infrastructure.sqlite.orm import ApprovalAssignmentModel, ChangeRequestModel, NotificationModel, SystemProfileModel, orm_session
 from .publication_service import PublicationService
@@ -119,13 +119,10 @@ class RequestService:
             raise ValueError("Decision must be Approved or Rejected.")
         if not note.strip():
             raise ValueError("A review note is required.")
-        roles = {normalize_role(role) for role in reviewer.roles}
-        if not roles - {"REQUESTER"}:
-            raise PermissionError("A requester-only account cannot approve requests.")
+        if not reviewer.can_decide_requests:
+            raise PermissionError("Administrator approval is required to decide requests.")
         with orm_session(self.database_path) as session:
             row = self._get(session, request_id)
-            if row.created_by.lower() == reviewer.username.lower():
-                raise PermissionError("A requester cannot approve or reject their own request.")
             if row.status not in {"PENDING", "UNDER_REVIEW"}:
                 raise ValueError("Only pending requests can be decided.")
             row.status = decision

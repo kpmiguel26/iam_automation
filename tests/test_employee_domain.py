@@ -96,6 +96,47 @@ class EmployeeDomainTests(unittest.TestCase):
             with orm_session(database) as session:
                 self.assertEqual(session.query(IngestionRecordModel).filter_by(status="MATCHED").count(), 3)
 
+    def test_source_update_preview_returns_only_real_changes_for_existing_worker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            database = initialize_runtime_database(root / "runtime.sqlite")
+            service = EmployeeService(database)
+
+            original = root / "original.xlsx"
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.append(["Vendor Name", "Vendor employee ID", "Employee first name", "Employee last name", "Job Title"])
+            sheet.append(["TTEC", "E100", "Ada", "Lovelace", "Analyst"])
+            workbook.save(original)
+            RosterLockIngestionService(database).ingest_file(original)
+            with orm_session(database) as session:
+                record_id = session.query(IngestionRecordModel).one().record_id
+            worker_id = service.promote_ingestion_record(record_id, "admin")
+
+            changed = root / "changed.xlsx"
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.append(["Vendor Name", "Vendor employee ID", "Employee first name", "Employee last name", "Job Title"])
+            sheet.append(["TTEC", "E100", "Ada", "Lovelace", "Senior Analyst"])
+            workbook.save(changed)
+            RosterLockIngestionService(database).ingest_file(changed)
+            with orm_session(database) as session:
+                staged = session.query(IngestionRecordModel).filter_by(status="STAGED").one()
+                staged.matched_worker_id = worker_id
+                staged.match_status = "MATCHED"
+                staged.match_reason = "Exact identifier match"
+
+            preview = service.source_update_preview(worker_id)
+            self.assertIsNotNone(preview)
+            self.assertEqual(len(preview["updates"]), 1)
+            changes = preview["updates"][0]["changes"]
+            self.assertEqual([(item["field"], item["current_value"], item["incoming_value"]) for item in changes], [("job_title", "Analyst", "Senior Analyst")])
+            fields = {item["field"]: item for item in preview["fields"]}
+            self.assertTrue(fields["job_title"]["changed"])
+            self.assertEqual(fields["job_title"]["current_value"], "Analyst")
+            self.assertEqual(fields["job_title"]["incoming_value"], "Senior Analyst")
+            self.assertFalse(fields["vendor_name"]["changed"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from iam_automation.application.shared_request_service import SharedRequestService
-from iam_automation.identity import CurrentUser, ROLE_REQUESTER, ROLE_REVIEWER, ROLE_SUPER_OPERATOR
+from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_REQUESTER, ROLE_REVIEWER, ROLE_SUPER_OPERATOR
 
 
 class SharedRequestServiceTests(unittest.TestCase):
@@ -14,7 +14,7 @@ class SharedRequestServiceTests(unittest.TestCase):
             root = Path(tmp) / "sharepoint"
             service = SharedRequestService(root)
             requester = CurrentUser("requester.test", "VDI-01", (ROLE_REQUESTER,))
-            reviewer = CurrentUser("reviewer.test", "VDI-02", (ROLE_REVIEWER,))
+            reviewer = CurrentUser("reviewer.test", "VDI-02", (ROLE_APPLICATION_ADMIN,))
             request = service.create(requester, "CREATE_EMPLOYEE", "E-100", {"first_name": "Ana"}, "Onboarding")
             self.assertEqual(len(tuple((root / "requests" / "pending").glob("*.json"))), 1)
             with self.assertRaises(PermissionError):
@@ -41,7 +41,7 @@ class SharedRequestServiceTests(unittest.TestCase):
             root = Path(tmp) / "sharepoint"
             service = SharedRequestService(root)
             requester = CurrentUser("requester.test", "VDI-01", (ROLE_REQUESTER,))
-            reviewer = CurrentUser("reviewer.test", "VDI-02", (ROLE_REVIEWER,))
+            reviewer = CurrentUser("reviewer.test", "VDI-02", (ROLE_APPLICATION_ADMIN,))
             request = service.create(requester, "UPDATE_EMPLOYEE", "E-102", {"vendor_name": "TTEC"}, "Vendor correction")
             service.assign(request.request_id, reviewer.username, "admin", "Coverage")
             with self.assertRaisesRegex(ValueError, "rejection reason"):
@@ -55,7 +55,7 @@ class SharedRequestServiceTests(unittest.TestCase):
             root = Path(tmp) / "sharepoint"
             service = SharedRequestService(root)
             requester = CurrentUser("admin", "VDI-01", (ROLE_REQUESTER,))
-            reviewer = CurrentUser("reviewer", "VDI-02", (ROLE_REVIEWER,))
+            reviewer = CurrentUser("reviewer", "VDI-02", (ROLE_APPLICATION_ADMIN,))
             request = service.create(
                 requester,
                 "IMPORT_ROSTER_LOCK",

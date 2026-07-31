@@ -4,7 +4,7 @@
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell employee-directory-page">
   <div class="page-heading">
     <div><p class="eyebrow">Operations</p><h1>Employee directory</h1><p class="text-secondary mb-0">Browse canonical worker profiles by page or vendor group.</p></div>
-    <span class="status-pill status-active"><span></span>{{ total_workers }} shown</span>
+    <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end"><a class="btn btn-outline-primary d-inline-flex align-items-center gap-2" href="{{ url_for('employees.source_updates_overview') }}"><span class="shield-mark" aria-hidden="true">&#10003;</span>Update</a><span class="status-pill status-active"><span></span>{% if has_query %}{{ total_workers }} shown{% else %}Search to load{% endif %}</span></div>
   </div>
 
   <section class="surface employee-search-panel mt-4" aria-label="Employee directory filters">
@@ -25,7 +25,7 @@
         </div>
       </details>
     </form>
-    <div class="employee-filter-summary"><span>{% if filters.engagement %}Showing engagement matches for “{{ filters.engagement }}”{% elif filters.source != 'ALL' %}Showing {{ filters.source.replace('_', ' ').title() }} employees{% elif filters.vendor != 'ALL' %}Showing {{ filters.vendor }} employees{% elif filters.q %}Showing matches for “{{ filters.q }}”{% else %}Showing all canonical employees{% endif %}</span><span class="small text-secondary">Page {{ page }} of {{ page_count }} · 25 records per page</span></div>
+    <div class="employee-filter-summary"><span>{% if filters.engagement %}Showing engagement matches for “{{ filters.engagement }}”{% elif filters.source != 'ALL' %}Showing {{ filters.source.replace('_', ' ').title() }} employees{% elif filters.vendor != 'ALL' %}Showing {{ filters.vendor }} employees{% elif filters.q %}Showing matches for “{{ filters.q }}”{% else %}Enter a search or choose a filter to load employees{% endif %}</span>{% if has_query %}<span class="small text-secondary">Page {{ page }} of {{ page_count }} · 25 records per page</span>{% else %}<span class="small text-secondary">On-demand directory</span>{% endif %}</div>
   </section>
 
   <section class="surface table-responsive mt-4 employee-table-surface">
@@ -41,7 +41,7 @@
           <td class="small text-secondary">{{ worker.source_system or 'Pending' }}</td>
           <td>{% if worker.discrepancy_count %}<span class="badge text-bg-warning">{{ worker.discrepancy_count }} open</span>{% else %}<span class="small text-success">Clear</span>{% endif %}</td>
         </tr>
-      {% else %}<tr><td colspan="6" class="empty-state"><div class="empty-state-icon">◎</div><strong>No employees match these filters.</strong><div class="small text-secondary mt-2">Try another search or vendor group.</div></td></tr>{% endfor %}
+      {% else %}<tr><td colspan="6" class="empty-state"><div class="empty-state-icon">{% if has_query %}&#8987;{% else %}&#128269;{% endif %}</div><strong>{% if has_query %}No employees match these filters.{% else %}Search to view employees{% endif %}</strong><div class="small text-secondary mt-2">{% if has_query %}Try another search, vendor, source, or engagement filter.{% else %}The directory stays empty until a query or filter is submitted.{% endif %}</div></td></tr>{% endfor %}
       </tbody>
     </table>
   </section>

@@ -36,9 +36,8 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
     def reviewer_required(view):
         @wraps(view)
         def wrapped(*args, **kwargs):
-            roles = {normalize_role(str(role)) for role in session.get("iam_roles", ())}
-            if not roles - {"REQUESTER"}:
-                return "A requester-only account cannot approve requests.", 403
+            if not _current_user().can_review_requests:
+                return "Reviewer or administrator access required.", 403
             return view(*args, **kwargs)
         return wrapped
 
@@ -52,7 +51,11 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
         return wrapped
 
     def reviewer_accounts():
-        return [user for user in users.list_users() if user.active and set(user.roles) - {"REQUESTER"}]
+        eligible = {ROLE_REVIEWER, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR}
+        return [
+            user for user in users.list_users()
+            if user.active and {normalize_role(role) for role in user.roles} & eligible
+        ]
 
     def queue_context():
         """Build the approval view consistently after every queue action."""
@@ -76,7 +79,13 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
         if request.method == "POST":
             try:
                 payload = {key: value.strip() for key, value in {"first_name": request.form.get("first_name", ""), "last_name": request.form.get("last_name", ""), "job_title": request.form.get("job_title", ""), "lob": request.form.get("lob", "")}.items() if value.strip()}
-                service.create(_current_user(), request.form.get("operation_type", ""), request.form.get("entity_id", ""), payload, request.form.get("reason", ""))
+                created = service.create(_current_user(), request.form.get("operation_type", ""), request.form.get("entity_id", ""), payload, request.form.get("reason", ""))
+                notifications.notify_request_reviewers(
+                    created.request_id,
+                    created.operation_type,
+                    created.created_by,
+                    record_count=1,
+                )
                 record_audit(audit_path, str(session["iam_user"]), "REQUEST_CREATED", "change_request", request.form.get("entity_id", ""), new_values={"operation_type": request.form.get("operation_type", "")})
                 return render_template("requests/list.html", requests=service.list_requests(creator=str(session["iam_user"])), operation_options=OPERATION_OPTIONS, message="Request submitted and shared connector JSON created in SharePoint.", error=None)
             except (OSError, ValueError, PermissionError) as exc:
@@ -103,7 +112,7 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
 
     @blueprint.post("/admin/approvals/<request_id>/decision")
     @authenticated
-    @reviewer_required
+    @admin_required
     def decide_request(request_id: str):
         try:
             result = service.decide(request_id, _current_user(), request.form.get("decision", ""), request.form.get("note", ""))
@@ -112,12 +121,28 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
             partial_notice = ""
             decision = request.form.get("decision", "").strip().upper()
             review_note = request.form.get("note", "").strip()
-            record_audit(audit_path, str(session["iam_user"]), "REQUEST_SELF_APPROVED_BREAK_GLASS" if self_approval else "REQUEST_DECIDED", "change_request", request_id, new_values={"decision": decision, "review_note": review_note, "break_glass": self_approval})
+            record_audit(
+                audit_path,
+                str(session["iam_user"]),
+                "REQUEST_SELF_APPROVED_BREAK_GLASS" if self_approval else "REQUEST_DECIDED",
+                "change_request",
+                request_id,
+                new_values={
+                    "decision": decision,
+                    "review_note": review_note,
+                    "break_glass": self_approval,
+                    "authorization_mode": "ADMIN_SELF_APPROVAL" if self_approval else "ADMIN_DECISION",
+                },
+            )
             if decided_item.status == "REJECTED":
                 notifications.create(decided_item.created_by, "REQUEST_REJECTED", "Request rejected", f"Request {request_id[:8]} was rejected by {session['iam_user']}: {review_note}", severity="WARNING", target_route="/requests", entity_type="change_request", entity_id=request_id)
             if decided_item.status == "APPROVED":
                 if decided_item.operation_type in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}:
-                    result = employees.apply_approved_import_records(decided_item.payload.get("record_ids", []), str(session["iam_user"]), request_payload=decided_item.payload)
+                    result = employees.apply_approved_import_records(
+                        decided_item.payload.get("record_ids", []),
+                        str(session["iam_user"]),
+                        request_payload=decided_item.payload,
+                    )
                     if result["failed"]:
                         failure_text = "; ".join(f"{item['record_id'][:8]}: {item['error']}" for item in result.get("errors", []))
                         record_audit(audit_path, str(session["iam_user"]), "IMPORT_PARTIAL_FAILURE", "change_request", request_id, new_values={"failed": result["failed"], "errors": result.get("errors", [])})

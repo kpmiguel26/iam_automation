@@ -12,7 +12,10 @@
       <h1>{{ worker.display_name or 'Unnamed worker' }}</h1>
       <p class="text-secondary mb-0">{{ worker.worker_id }} · {{ worker.canonical_email or 'No canonical email' }}</p>
     </div>
-    <span class="status-pill status-{{ worker.status|lower }}"><span></span>{{ worker.status.replace('_', ' ').title() }}</span>
+    <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+      <a class="btn btn-outline-primary d-inline-flex align-items-center gap-2" href="{{ url_for('employees.source_updates', worker_id=worker.worker_id) }}"><span class="shield-mark" aria-hidden="true">&#10003;</span>Update</a>
+      <span class="status-pill status-{{ worker.status|lower }}"><span></span>{{ worker.status.replace('_', ' ').title() }}</span>
+    </div>
   </div>
 
   <form method="post" action="{{ url_for('employees.request_employee_change', worker_id=worker.worker_id) }}">

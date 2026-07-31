@@ -10,6 +10,7 @@ from sqlalchemy import select
 from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.roster_lock_ingestion_service import RosterLockIngestionService
 from iam_automation.application.file_watch_service import FileWatchService
+from iam_automation.application.shared_request_service import SharedRequestService
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, WorkerIdentifierModel, WorkerModel, orm_session
 from iam_automation.source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
@@ -145,6 +146,12 @@ class RsrSupplierWorkerDetailsTests(unittest.TestCase):
             with orm_session(database) as session:
                 self.assertEqual(session.scalar(select(IngestionRecordModel.source_system).limit(1)), "RSR_SUPPLIER_WORKER_DETAILS")
                 self.assertEqual(session.scalar(select(WorkerModel.worker_id).limit(1)), None)
+            requests = SharedRequestService(root).list_requests(queue=True)
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(requests[0].operation_type, "IMPORT_RSR_SUPPLIER_DETAILS")
+            self.assertEqual(requests[0].payload["record_count"], 1)
+            watcher.scan_once()
+            self.assertEqual(len(SharedRequestService(root).list_requests(queue=True)), 1)
 
 
 if __name__ == "__main__":

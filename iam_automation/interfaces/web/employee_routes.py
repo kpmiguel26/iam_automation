@@ -7,6 +7,7 @@ from flask import Blueprint, redirect, render_template, request, session, url_fo
 
 from ...application.audit_service import record_audit
 from ...application.employee_service import EmployeeService
+from ...application.notification_service import NotificationService
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.shared_request_service import SharedRequestService
 from ...identity import CurrentUser
@@ -39,12 +40,35 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             page = 1
         requested_page = page
         statuses, vendors, sources = service.filter_values()
-        workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, page=page, per_page=25)
+        has_query = bool(search.strip() or engagement.strip() or status != "ALL" or vendor != "ALL" or source != "ALL")
+        workers, total_workers = (service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, page=page, per_page=25) if has_query else ([], 0))
         page_count = max(1, (total_workers + 24) // 25)
         page = min(page, page_count)
-        if page != requested_page:
+        if has_query and page != requested_page:
             workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, page=page, per_page=25)
-        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement}, page=page, page_count=page_count, total_workers=total_workers)
+        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query)
+
+    @blueprint.get("/source-updates")
+    @authenticated
+    def source_updates_overview():
+        return render_template("employees/source_updates_overview.html", overview=service.source_update_overview())
+
+    @blueprint.get("/source-updates/candidate/<record_id>")
+    @authenticated
+    def source_candidate(record_id: str):
+        preview = service.source_candidate_preview(record_id)
+        if preview is None:
+            return render_template("errors/404.html"), 404
+        current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
+        return render_template("employees/source_candidate.html", preview=preview, can_apply=current_user.can_decide_requests, message=request.args.get("notice"), error=request.args.get("error"))
+
+    def _request_source_change(*, operation_type: str, entity_id: str, payload: dict[str, object], reason: str, actor: str) -> str:
+        current_user = CurrentUser(actor, "local-web", tuple(session.get("iam_roles", ())))
+        item = requests.create(current_user, operation_type, entity_id, payload, reason)
+        request_id = item.request_id
+        NotificationService(database_path).notify_request_reviewers(request_id, operation_type, actor, record_count=len(payload.get("record_ids", [])))
+        record_audit(audit_path, actor, "SOURCE_CHANGE_REQUEST_CREATED", "change_request", request_id, new_values={"operation_type": operation_type, "record_count": len(payload.get("record_ids", []))})
+        return request_id
 
     @blueprint.get("/<worker_id>")
     @authenticated
@@ -53,6 +77,83 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         if detail is None:
             return render_template("errors/404.html"), 404
         return render_template("employees/detail.html", operation_options=OPERATION_OPTIONS, message=request.args.get("notice"), error=request.args.get("error"), **detail)
+
+    @blueprint.get("/<worker_id>/source-updates")
+    @authenticated
+    def source_updates(worker_id: str):
+        preview = service.source_update_preview(worker_id)
+        if preview is None:
+            return render_template("errors/404.html"), 404
+        current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
+        return render_template("employees/source_updates.html", preview=preview, can_apply=current_user.can_decide_requests, message=request.args.get("notice"), error=request.args.get("error"))
+
+    @blueprint.post("/source-updates/<worker_id>/apply")
+    @authenticated
+    def apply_source_updates(worker_id: str):
+        current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
+        if not current_user.can_decide_requests:
+            return redirect(url_for("employees.source_updates", worker_id=worker_id, error="Only an administrator can apply source changes directly.", notice_type="danger"))
+        preview = service.source_update_preview(worker_id)
+        if preview is None:
+            return render_template("errors/404.html"), 404
+        record_ids = sorted({str(update["record_id"]) for update in preview["updates"]})
+        if not record_ids:
+            return redirect(url_for("employees.source_updates", worker_id=worker_id, error="No pending source changes are available.", notice_type="warning"))
+        try:
+            result = service.apply_approved_import_records(record_ids, current_user.username)
+            record_audit(audit_path, current_user.username, "EMPLOYEE_SOURCE_CHANGE_APPLIED", "worker", worker_id, new_values={"record_ids": record_ids, "result": result})
+            return redirect(url_for("employees.source_updates", worker_id=worker_id, notice=f"Applied {result.get('processed', 0)} source record(s).", notice_type="success"))
+        except (OSError, ValueError, PermissionError) as exc:
+            return redirect(url_for("employees.source_updates", worker_id=worker_id, error=str(exc), notice_type="danger"))
+
+    @blueprint.post("/source-updates/<worker_id>/request")
+    @authenticated
+    def request_source_updates(worker_id: str):
+        preview = service.source_update_preview(worker_id)
+        if preview is None:
+            return render_template("errors/404.html"), 404
+        record_ids = sorted({str(update["record_id"]) for update in preview["updates"]})
+        if not record_ids:
+            return redirect(url_for("employees.source_updates", worker_id=worker_id, error="No pending source changes are available.", notice_type="warning"))
+        try:
+            actor = str(session["iam_user"])
+            request_id = _request_source_change(
+                operation_type="UPDATE_EMPLOYEE",
+                entity_id=worker_id,
+                payload={"source_delta": True, "worker_id": worker_id, "record_ids": record_ids, "source_updates": preview["updates"], "fields": preview.get("fields", [])},
+                reason=request.form.get("reason", "Source update review"),
+                actor=actor,
+            )
+            return redirect(url_for("employees.source_updates", worker_id=worker_id, notice=f"Request {request_id[:8]} submitted for administrator approval.", notice_type="success"))
+        except (OSError, ValueError, PermissionError) as exc:
+            return redirect(url_for("employees.source_updates", worker_id=worker_id, error=str(exc), notice_type="danger"))
+
+    @blueprint.post("/source-updates/candidate/<record_id>/apply")
+    @authenticated
+    def apply_source_candidate(record_id: str):
+        current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
+        if not current_user.can_decide_requests:
+            return redirect(url_for("employees.source_candidate", record_id=record_id, error="Only an administrator can apply source changes directly.", notice_type="danger"))
+        try:
+            result = service.apply_approved_import_records([record_id], current_user.username)
+            record_audit(audit_path, current_user.username, "NEW_EMPLOYEE_SOURCE_APPLIED", "ingestion_record", record_id, new_values={"result": result})
+            return redirect(url_for("employees.source_candidate", record_id=record_id, notice=f"Applied source record. {result.get('created', 0)} employee created.", notice_type="success"))
+        except (OSError, ValueError, PermissionError) as exc:
+            return redirect(url_for("employees.source_candidate", record_id=record_id, error=str(exc), notice_type="danger"))
+
+    @blueprint.post("/source-updates/candidate/<record_id>/request")
+    @authenticated
+    def request_source_candidate(record_id: str):
+        preview = service.source_candidate_preview(record_id)
+        if preview is None:
+            return render_template("errors/404.html"), 404
+        try:
+            actor = str(session["iam_user"])
+            operation_type = "IMPORT_RSR_SUPPLIER_DETAILS" if preview["source_system"] == "RSR_SUPPLIER_WORKER_DETAILS" else "IMPORT_ROSTER_LOCK"
+            request_id = _request_source_change(operation_type=operation_type, entity_id=str(preview["batch_id"]), payload={"record_ids": [record_id], "record_previews": [preview]}, reason=request.form.get("reason", "New source employee review"), actor=actor)
+            return redirect(url_for("employees.source_candidate", record_id=record_id, notice=f"Request {request_id[:8]} submitted for administrator approval.", notice_type="success"))
+        except (OSError, ValueError, PermissionError) as exc:
+            return redirect(url_for("employees.source_candidate", record_id=record_id, error=str(exc), notice_type="danger"))
 
     @blueprint.post("/<worker_id>/request")
     @authenticated

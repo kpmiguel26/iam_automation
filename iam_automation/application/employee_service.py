@@ -207,6 +207,222 @@ class EmployeeService:
             discrepancies = session.scalars(select(WorkerDiscrepancyModel).where(WorkerDiscrepancyModel.worker_id == worker_id).order_by(WorkerDiscrepancyModel.created_at_utc.desc())).all()
             return {"worker": worker, "identifiers": identifiers, "engagements": engagements, "lineage": lineage, "discrepancies": discrepancies}
 
+    def source_update_preview(self, worker_id: str) -> dict[str, object] | None:
+        """Return only pending source rows that affect one canonical worker.
+
+        Source workbooks remain immutable evidence. This preview compares staged
+        rows against the canonical worker and current engagement without
+        promoting or mutating either record.
+        """
+        source_fields = {
+            "first_name": "first_name",
+            "last_name": "last_name",
+            "email": "canonical_email",
+            "vendor_email": "canonical_email",
+            "vendor_name": "vendor_name",
+            "job_title": "job_title",
+            "lob": "lob",
+            "program": "program",
+            "project": "project",
+            "country": "country",
+            "site_location": "site_location",
+            "supervisor_name": "supervisor_name",
+            "worker_start_date": "onboarding_date",
+            "worker_end_date": "production_start_date",
+            "worker_status": "engagement_status",
+            "npn": "npn",
+            "resident_license_state": "license_state",
+            "resident_license_number": "license_number",
+            "taxonomy": "taxonomy_code",
+            "key_billable_function": "key_billable_function",
+            "vendor_employee_id": "identifier_vendor_employee_id",
+            "supplier_reference": "identifier_supplier_reference",
+            "fieldglass_id": "identifier_fieldglass_id",
+            "nuid": "identifier_nuid",
+            "salesforce_id": "identifier_salesforce_id",
+        }
+        with orm_session(self.database_path) as session:
+            worker = session.get(WorkerModel, worker_id)
+            if worker is None:
+                return None
+            engagement = session.scalar(
+                select(WorkerEngagementModel)
+                .where(WorkerEngagementModel.worker_id == worker_id)
+                .order_by(WorkerEngagementModel.updated_at_utc.desc())
+            )
+            identifiers = session.scalars(
+                select(WorkerIdentifierModel)
+                .where(WorkerIdentifierModel.worker_id == worker_id)
+                .order_by(WorkerIdentifierModel.identifier_type)
+            ).all()
+            current = {
+                "first_name": worker.first_name or "",
+                "last_name": worker.last_name or "",
+                "canonical_email": worker.canonical_email or "",
+                **{
+                    f"identifier_{item.identifier_type.lower()}": item.identifier_value or ""
+                    for item in identifiers
+                },
+                **({
+                    "vendor_name": engagement.vendor_name or "",
+                    "job_title": engagement.job_title or "",
+                    "lob": engagement.lob or "",
+                    "program": engagement.program or "",
+                    "project": engagement.project or "",
+                    "country": engagement.country or "",
+                    "site_location": engagement.site_location or "",
+                    "supervisor_name": engagement.supervisor_name or "",
+                    "onboarding_date": engagement.onboarding_date or "",
+                    "production_start_date": engagement.production_start_date or "",
+                    "engagement_status": engagement.status or "",
+                    "npn": engagement.npn or "",
+                    "license_state": engagement.license_state or "",
+                    "license_number": engagement.license_number or "",
+                    "taxonomy_code": engagement.taxonomy_code or "",
+                    "key_billable_function": engagement.key_billable_function or "",
+                } if engagement else {}),
+            }
+            rows = session.scalars(
+                select(IngestionRecordModel)
+                .where(
+                    IngestionRecordModel.matched_worker_id == worker_id,
+                    IngestionRecordModel.status.in_(("STAGED", "MATCHED", "CONFLICT")),
+                )
+                .order_by(IngestionRecordModel.created_at_utc.desc(), IngestionRecordModel.row_number.desc())
+            ).all()
+            updates: list[dict[str, object]] = []
+            seen: set[tuple[str, str, str]] = set()
+            incoming_by_field: dict[str, dict[str, str]] = {}
+            for row in rows:
+                payload = json.loads(row.normalized_json)
+                changes: list[dict[str, str]] = []
+                for source_field, canonical_field in source_fields.items():
+                    incoming = str(payload.get(source_field) or "").strip()
+                    if not incoming:
+                        continue
+                    current_value = str(current.get(canonical_field) or "").strip()
+                    incoming_by_field.setdefault(canonical_field, {
+                        "incoming_value": incoming,
+                        "source_field": source_field,
+                        "source_system": row.source_system,
+                        "source_file": Path(row.source_file).name,
+                        "record_id": row.record_id,
+                    })
+                    if incoming.casefold() == current_value.casefold():
+                        continue
+                    key = (canonical_field, current_value.casefold(), incoming.casefold())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    changes.append({
+                        "field": canonical_field,
+                        "source_field": source_field,
+                        "current_value": current_value,
+                        "incoming_value": incoming,
+                    })
+                if changes:
+                    updates.append({
+                        "record_id": row.record_id,
+                        "source_system": row.source_system,
+                        "source_file": Path(row.source_file).name,
+                        "source_record_key": row.source_record_key,
+                        "source_checksum": row.source_checksum,
+                        "row_number": row.row_number,
+                        "match_status": row.match_status,
+                        "changes": changes,
+                    })
+            fields: list[dict[str, object]] = []
+            for field_name, current_value in current.items():
+                incoming = incoming_by_field.get(field_name, {})
+                incoming_value = str(incoming.get("incoming_value", ""))
+                changed = bool(incoming_value) and incoming_value.casefold() != str(current_value).casefold()
+                fields.append({
+                    "field": field_name,
+                    "current_value": str(current_value),
+                    "incoming_value": incoming_value,
+                    "changed": changed,
+                    "source_field": incoming.get("source_field", ""),
+                    "source_system": incoming.get("source_system", ""),
+                    "source_file": incoming.get("source_file", ""),
+                    "record_id": incoming.get("record_id", ""),
+                })
+            return {
+                "worker_id": worker_id,
+                "worker_name": worker.display_name,
+                "updates": updates,
+                "fields": fields,
+                "new_employee_records": [],
+            }
+
+    def new_employee_source_preview(self) -> list[dict[str, object]]:
+        """Return staged source rows that have no canonical worker match."""
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(
+                select(IngestionRecordModel)
+                .where(
+                    IngestionRecordModel.status.in_(("STAGED", "MATCHED", "UNMATCHED", "AMBIGUOUS", "CONFLICT")),
+                    IngestionRecordModel.match_status.in_(("UNMATCHED", "AMBIGUOUS", "NOT_EVALUATED")),
+                )
+                .order_by(IngestionRecordModel.created_at_utc.desc(), IngestionRecordModel.row_number)
+            ).all()
+            result = []
+            for row in rows:
+                payload = json.loads(row.normalized_json)
+                result.append({
+                    "record_id": row.record_id,
+                    "source_system": row.source_system,
+                    "source_file": Path(row.source_file).name,
+                    "source_record_key": row.source_record_key,
+                    "match_status": row.match_status,
+                    "match_reason": row.match_reason,
+                    "worker_name": " ".join(part for part in (payload.get("first_name", ""), payload.get("last_name", "")) if part),
+                    "email": payload.get("email", ""),
+                    "identifier": payload.get("vendor_employee_id", "") or payload.get("supplier_reference", "") or payload.get("worker_id", ""),
+                    "payload": payload,
+                    "batch_id": row.batch_id,
+                    "source_checksum": row.source_checksum,
+                })
+            return result
+
+    def source_candidate_preview(self, record_id: str) -> dict[str, object] | None:
+        """Return one unmatched source record for selective review."""
+        with orm_session(self.database_path) as session:
+            row = session.get(IngestionRecordModel, record_id)
+            if row is None:
+                return None
+            payload = json.loads(row.normalized_json)
+            return {
+                "record_id": row.record_id,
+                "batch_id": row.batch_id,
+                "source_system": row.source_system,
+                "source_file": Path(row.source_file).name,
+                "source_record_key": row.source_record_key,
+                "source_checksum": row.source_checksum,
+                "status": row.status,
+                "match_status": row.match_status,
+                "match_reason": row.match_reason,
+                "worker_name": " ".join(part for part in (payload.get("first_name", ""), payload.get("last_name", "")) if part),
+                "payload": payload,
+            }
+
+    def source_update_overview(self) -> dict[str, object]:
+        """Build the compact review worklist for the Employees area."""
+        with orm_session(self.database_path) as session:
+            worker_ids = session.scalars(
+                select(IngestionRecordModel.matched_worker_id)
+                .where(
+                    IngestionRecordModel.matched_worker_id.is_not(None),
+                    IngestionRecordModel.status.in_(("STAGED", "MATCHED", "CONFLICT")),
+                )
+                .distinct()
+            ).all()
+        existing = []
+        for worker_id in worker_ids:
+            preview = self.source_update_preview(str(worker_id))
+            if preview and preview["updates"]:
+                existing.append(preview)
+        return {"existing_updates": existing, "new_employee_records": self.new_employee_source_preview()}
+
     def _promote_record_in_session(self, session, record: IngestionRecordModel, now: str) -> tuple[str, bool]:
         """Promote one record while the caller owns the transaction."""
         payload = json.loads(record.normalized_json)

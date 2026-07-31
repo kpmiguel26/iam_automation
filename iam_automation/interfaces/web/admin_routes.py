@@ -229,6 +229,12 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                     "Review and approve the staged source import before applying it to canonical employees." if operation_type == "IMPORT_ROSTER_LOCK" else "Review and approve Fieldglass details to enrich matched Employees or create approved new Employee records.",
                 )
                 created_requests.append(request_item)
+                notifications.notify_request_reviewers(
+                    request_item.request_id,
+                    request_item.operation_type,
+                    request_item.created_by,
+                    record_count=len(items),
+                )
                 record_audit(audit_path, actor, "IMPORT_REQUEST_CREATED", "import_batch", request_item.entity_id, new_values={"request_id": request_item.request_id, "record_count": len(items), "source_system": items[0]["source_system"]})
             ids = ", ".join(item.request_id[:8] for item in created_requests)
             return redirect(url_for("admin.import_center", notice=f"Import approval request(s) {ids} created for {len(staged)} record(s).", notice_type="success"))

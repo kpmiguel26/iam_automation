@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -7,7 +8,7 @@ from pathlib import Path
 
 from sqlalchemy import func, select
 
-from ..infrastructure.sqlite.orm import NotificationModel, orm_session
+from ..infrastructure.sqlite.orm import AppUserModel, NotificationModel, UserRoleModel, orm_session
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,57 @@ class NotificationService:
                 expires_at_utc=expires_at_utc,
             ))
         return notification_id
+
+    def notify_request_reviewers(
+        self,
+        request_id: str,
+        operation_type: str,
+        created_by: str,
+        *,
+        record_count: int = 0,
+    ) -> int:
+        """Publish one idempotent review notification to every eligible user.
+
+        Reviewers are allowed to inspect the request, while administrators are
+        the decision makers.  The notification is intentionally local because
+        the request itself is the shared SharePoint JSON connector.
+        """
+        role_names = ("REVIEWER", "APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR", "ADMINISTRATOR")
+        now = datetime.now(timezone.utc).isoformat()
+        message = (
+            f"{operation_type.replace('_', ' ').title()} request {request_id[:8]} "
+            f"is ready for review ({record_count} record(s)). Submitted by {created_by}."
+        )
+        recipients: set[str] = set()
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(
+                select(AppUserModel)
+                .join(UserRoleModel)
+                .where(
+                    AppUserModel.active.is_(True),
+                    AppUserModel.status == "ACTIVE",
+                    UserRoleModel.role_name.in_(role_names),
+                )
+            ).all()
+            recipients = {row.username for row in rows}
+            for username in recipients:
+                notification_id = hashlib.sha256(
+                    f"request-review:{username.lower()}:{request_id}".encode("utf-8")
+                ).hexdigest()
+                session.merge(NotificationModel(
+                    notification_id=notification_id,
+                    recipient_username=username,
+                    notification_type="REQUEST_REVIEW_REQUIRED",
+                    severity="WARNING",
+                    title="Request ready for review",
+                    message=message,
+                    entity_type="change_request",
+                    entity_id=request_id,
+                    target_route="/admin/approvals",
+                    status="UNREAD",
+                    created_at_utc=now,
+                ))
+        return len(recipients)
 
     def mark_read(self, username: str, notification_id: str) -> None:
         with orm_session(self.database_path) as session:

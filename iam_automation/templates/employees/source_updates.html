@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Source updates{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <a class="back-link" href="{{ url_for('employees.employee_detail', worker_id=preview.worker_id) }}">Back to employee profile</a>
+  <div class="page-heading mt-3">
+    <div><p class="eyebrow">Selective source update</p><h1>{{ preview.worker_name or 'Employee' }}</h1><p class="text-secondary mb-0">Compare the incoming source values with the canonical employee before deciding what to do.</p></div>
+    <span class="status-pill status-{{ 'active' if preview.updates else 'pending' }}"><span></span>{{ preview.updates|length }} source record(s)</span>
+  </div>
+  {% if message %}<div class="alert alert-success mt-3">{{ message }}</div>{% endif %}
+  {% if error %}<div class="alert alert-danger mt-3">{{ error }}</div>{% endif %}
+  {% if preview.updates %}
+    <div class="alert alert-warning mt-4">Red values are different from the canonical profile. Applying a change updates the selected source record; submitting for approval sends the comparison to an administrator.</div>
+    <section class="surface p-4 mt-3">
+      <div class="section-heading"><div><p class="eyebrow mb-1">Complete comparison</p><h2 class="h5 mb-0">Employee fields</h2></div><span class="small text-secondary">{{ preview.fields|selectattr('changed')|list|length }} changed field(s)</span></div>
+      <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0 source-comparison-table"><thead><tr><th>Field</th><th>Current canonical value</th><th>Incoming value</th><th>Source</th><th>Status</th></tr></thead><tbody>
+      {% for field in preview.fields %}<tr class="{% if field.changed %}source-field-changed{% endif %}"><td><strong>{{ field.field|replace('_', ' ')|title }}</strong>{% if field.source_field %}<div class="small text-secondary">Source field: {{ field.source_field }}</div>{% endif %}</td><td>{{ field.current_value or 'Not set' }}</td><td class="{% if field.changed %}text-danger fw-semibold{% endif %}">{{ field.incoming_value or 'No incoming value' }}</td><td class="small text-secondary">{% if field.source_system %}{{ field.source_system|replace('_', ' ')|title }}{% else %}—{% endif %}</td><td>{% if field.changed %}<span class="badge text-bg-danger">Changed</span>{% else %}<span class="small text-success">No change</span>{% endif %}</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+    {% for update in preview.updates %}
+      <section class="surface p-4 mt-3">
+        <div class="d-flex justify-content-between gap-3 flex-wrap">
+          <div><p class="eyebrow mb-1">{{ update.source_system|replace('_', ' ')|title }}</p><h2 class="h5 mb-1">{{ update.source_file }}</h2><p class="small text-secondary mb-0">Row {{ update.row_number }} · {{ update.match_status|replace('_', ' ')|title }}</p></div>
+          <span class="badge text-bg-light align-self-start">{{ update.source_record_key }}</span>
+        </div>
+        <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>Changed field</th><th>Current canonical value</th><th>Incoming source value</th></tr></thead><tbody>
+          {% for change in update.changes %}<tr><td><strong>{{ change.field|replace('_', ' ')|title }}</strong><div class="small text-secondary">Source field: {{ change.source_field }}</div></td><td>{{ change.current_value or 'Not set' }}</td><td class="text-primary fw-semibold">{{ change.incoming_value }}</td></tr>{% endfor %}
+        </tbody></table></div>
+      </section>
+    {% endfor %}
+    <section class="surface p-4 mt-3"><form method="post" action="{{ url_for('employees.request_source_updates', worker_id=preview.worker_id) }}"><label class="form-label" for="sourceUpdateReason">Business reason</label><textarea id="sourceUpdateReason" class="form-control" name="reason" rows="3" required placeholder="Explain why these source changes should be applied"></textarea><div class="d-flex justify-content-end gap-2 flex-wrap mt-3"><button class="btn btn-outline-primary" type="submit">Submit for approval</button>{% if can_apply %}<button class="btn btn-primary" type="submit" formaction="{{ url_for('employees.apply_source_updates', worker_id=preview.worker_id) }}">Apply update now</button>{% endif %}</div></form></section>
+  {% else %}
+    <section class="surface p-5 mt-4 text-center"><h2 class="h5">No new source changes found</h2><p class="text-secondary mb-0">The staged source records currently match this canonical employee.</p></section>
+  {% endif %}
+</div>
+{% endblock %}

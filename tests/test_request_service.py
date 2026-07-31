@@ -7,7 +7,7 @@ from pathlib import Path
 from iam_automation.application.request_service import RequestService
 from iam_automation.application.publication_service import PublicationService
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.identity import CurrentUser, ROLE_REQUESTER, ROLE_REVIEWER, ROLE_WRITER
+from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_REQUESTER, ROLE_REVIEWER, ROLE_WRITER
 
 
 class RequestServiceTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class RequestServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             service = RequestService(initialize_runtime_database(Path(tmp) / "runtime.sqlite"))
             requester = CurrentUser("requester", "VDI-01", (ROLE_REQUESTER,))
-            reviewer = CurrentUser("reviewer", "VDI-02", (ROLE_REVIEWER,))
+            reviewer = CurrentUser("reviewer", "VDI-02", (ROLE_APPLICATION_ADMIN,))
             item = service.create(requester, "CREATE_EMPLOYEE", "W-100", {"first_name": "Ana"}, "New onboarding")
             self.assertEqual(item.status, "PENDING")
             service.assign(item.request_id, reviewer.username, "admin", "Reviewer coverage")
@@ -31,15 +31,17 @@ class RequestServiceTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 service.decide(item.request_id, requester, "APPROVED", "Self approval")
 
-    def test_any_non_requester_role_can_decide_another_users_request(self):
+    def test_only_administrator_can_decide_another_users_request(self):
         with tempfile.TemporaryDirectory() as tmp:
             service = RequestService(initialize_runtime_database(Path(tmp) / "runtime.sqlite"))
             requester = CurrentUser("requester", "VDI-01", (ROLE_REQUESTER,))
             writer = CurrentUser("writer", "VDI-02", (ROLE_WRITER,))
             item = service.create(requester, "UPDATE_EMPLOYEE", "W-104", {"lob": "IT"}, "Update assignment")
-            decided = service.decide(item.request_id, writer, "APPROVED", "Validated")
+            with self.assertRaises(PermissionError):
+                service.decide(item.request_id, writer, "APPROVED", "Validated")
+            decided = service.decide(item.request_id, CurrentUser("admin", "VDI-03", (ROLE_APPLICATION_ADMIN,)), "APPROVED", "Validated")
             self.assertEqual(decided.status, "APPROVED")
-            self.assertEqual(decided.reviewed_by, "writer")
+            self.assertEqual(decided.reviewed_by, "admin")
 
     def test_pending_request_is_exported_to_sharepoint_connector_folder(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -57,7 +59,7 @@ class RequestServiceTests(unittest.TestCase):
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
             service = RequestService(database)
             requester = CurrentUser("requester", "VDI-01", (ROLE_REQUESTER,))
-            reviewer = CurrentUser("reviewer", "VDI-02", (ROLE_REVIEWER,))
+            reviewer = CurrentUser("reviewer", "VDI-02", (ROLE_APPLICATION_ADMIN,))
             item = service.create(requester, "CREATE_EMPLOYEE", "W-102", {"first_name": "Luis"}, "Onboarding")
             self.assertEqual(service.reassign_for_delegation("reviewer", "backup.reviewer", "admin", "Absence coverage"), 1)
             queued = service.list_requests(queue=True)[0]

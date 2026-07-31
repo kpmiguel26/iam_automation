@@ -89,6 +89,12 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .employee-name-cell { align-items: center; display: flex; gap: .7rem; min-width: 220px; }
 .employee-name-cell a { color: #1769e8; }
 .employee-name-cell a:hover { color: var(--kp-teal); text-decoration: underline !important; }
+.shield-mark { align-items: center; background: var(--kp-navy); border-radius: .35rem .35rem .45rem .45rem; color: #fff; display: inline-flex; font-size: .7rem; font-weight: 800; height: 1.25rem; justify-content: center; line-height: 1; position: relative; width: 1.1rem; }
+.shield-mark::after { border: .08rem solid currentColor; border-top: 0; border-radius: 0 0 .55rem .55rem; bottom: -.18rem; content: ''; height: .4rem; left: .15rem; position: absolute; transform: scaleX(.82); width: .8rem; }
+.source-comparison-table { min-width: 820px; }
+.source-field-changed { background: #fff4f3; }
+.source-field-changed td:first-child { border-left: .25rem solid #d94235; }
+.source-field-changed td:nth-child(3) { background: #fff0ef; }
 @keyframes employee-row-in { from { opacity: .65; } to { opacity: 1; } }
 .profile-wide { grid-column: 1 / -1; }
 .notification-list { display: grid; gap: .85rem; max-width: 980px; }

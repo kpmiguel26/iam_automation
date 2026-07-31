@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ..change_request import ChangeRequest, load_request_file, new_request, submit_request
-from ..identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, ROLE_SUPER_OPERATOR, normalize_role
+from ..identity import CurrentUser
 from .request_service import RequestItem, SLA_HOURS
 
 
@@ -54,6 +54,18 @@ class SharedRequestService:
     def list_approved(self) -> list[RequestItem]:
         return [item for item in self.list_requests() if item.status == "APPROVED"]
 
+    def find_import_request(self, *, batch_id: str, source_checksum: str = ""):
+        """Find an existing shared review request so watcher scans stay idempotent."""
+        for request in self._load_all():
+            if request.operation_type not in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}:
+                continue
+            payload = request.payload or {}
+            if str(batch_id) in {str(value) for value in payload.get("batch_ids", [])}:
+                return request
+            if source_checksum and str(payload.get("source_checksum", "")) == source_checksum:
+                return request
+        return None
+
     def assign(self, request_id: str, reviewer: str, assigned_by: str, reason: str) -> RequestItem:
         if not reviewer.strip():
             raise ValueError("A reviewer is required.")
@@ -74,13 +86,10 @@ class SharedRequestService:
             raise ValueError("A rejection reason is required.")
         if decision == "APPROVED" and not note.strip():
             raise ValueError("An approval note is required.")
-        roles = {normalize_role(role) for role in reviewer.roles}
-        if not roles - {"REQUESTER"}:
-            raise PermissionError("A requester-only account cannot approve requests.")
+        if not reviewer.can_decide_requests:
+            raise PermissionError("Administrator approval is required to decide requests.")
         path, request = self._find(request_id)
         self_approval = request.created_by.lower() == reviewer.username.lower()
-        if self_approval and ROLE_SUPER_OPERATOR not in roles:
-            raise PermissionError("A requester cannot approve or reject their own request.")
         updated = self._updated(
             request,
             status=decision,
