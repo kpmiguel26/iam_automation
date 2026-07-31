@@ -86,15 +86,23 @@ if errorlevel 1 goto :setup_failed
 echo [IAM] Verifying installed packages and project tests...
 "%VENV_PYTHON%" -m pip check
 if errorlevel 1 goto :setup_failed
+"%VENV_PYTHON%" -c "import alembic, flask, openpyxl, PySide6, sqlalchemy, waitress"
+if errorlevel 1 goto :setup_failed
 "%VENV_PYTHON%" -m compileall -q "%ROOT_DIR%\iam_automation" "%ROOT_DIR%\scripts" "%ROOT_DIR%\tests" "%ROOT_DIR%\run_app.py"
 if errorlevel 1 goto :setup_failed
-"%VENV_PYTHON%" -m unittest discover -s "%ROOT_DIR%\tests" -q
-if errorlevel 1 goto :setup_failed
+if /I "%IAM_RUN_TESTS%"=="1" (
+    echo [IAM] Running project tests IAM_RUN_TESTS=1...
+    "%VENV_PYTHON%" -m unittest discover -s "%ROOT_DIR%\tests" -q
+    if errorlevel 1 goto :setup_failed
+) else (
+    echo [IAM] Skipping full test suite for startup. Set IAM_RUN_TESTS=1 to run it.
+)
 
 echo [IAM] Starting IAM Automation preflight and local webapp...
 set "VENV_PYTHONW=%VENV_DIR%\Scripts\pythonw.exe"
 if not exist "%VENV_PYTHONW%" set "VENV_PYTHONW=%VENV_PYTHON%"
 set "IAM_LAUNCHER_LOG=%ROOT_DIR%\.iam_launcher.log"
+type nul > "%IAM_LAUNCHER_LOG%"
 start "IAM Automation" /D "%ROOT_DIR%" "%VENV_PYTHONW%" "%ROOT_DIR%\run_app.py"
 echo [IAM] PySide6 control panel started. This console can now close.
 exit /b 0

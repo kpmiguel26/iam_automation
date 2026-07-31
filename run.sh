@@ -23,7 +23,7 @@ fi
 if [[ -z "$PYTHON_BIN" ]]; then
   for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
     if command -v "$candidate" >/dev/null 2>&1; then
-      if "$candidate" -c 'import sys; import tkinter; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+      if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
         PYTHON_BIN="$(command -v "$candidate")"
         break
       fi
@@ -32,7 +32,7 @@ if [[ -z "$PYTHON_BIN" ]]; then
 fi
 
 if [[ -z "$PYTHON_BIN" ]]; then
-  echo "[ERROR] Python 3.10 or newer with tkinter was not found. Install Python or set IAM_PYTHON_BIN."
+  echo "[ERROR] Python 3.10 or newer was not found. Install Python or set IAM_PYTHON_BIN."
   exit 1
 fi
 
@@ -55,8 +55,16 @@ echo "[IAM] Installing or updating project packages..."
 
 echo "[IAM] Verifying installed packages and project tests..."
 "$VENV_PYTHON" -m pip check
+"$VENV_PYTHON" -c 'import alembic, flask, openpyxl, PySide6, sqlalchemy, waitress'
 "$VENV_PYTHON" -m compileall -q "$ROOT_DIR/iam_automation" "$ROOT_DIR/scripts" "$ROOT_DIR/tests" "$ROOT_DIR/run_app.py"
-"$VENV_PYTHON" -m unittest discover -s "$ROOT_DIR/tests" -q
+if [[ "${IAM_RUN_TESTS:-0}" == "1" ]]; then
+  echo "[IAM] Running project tests (IAM_RUN_TESTS=1)..."
+  "$VENV_PYTHON" -m unittest discover -s "$ROOT_DIR/tests" -q
+else
+  echo "[IAM] Skipping full test suite for startup. Set IAM_RUN_TESTS=1 to run it."
+fi
 
 echo "[IAM] Starting IAM Automation preflight and local webapp..."
+export IAM_LAUNCHER_LOG="${IAM_LAUNCHER_LOG:-$ROOT_DIR/.iam_launcher.log}"
+: > "$IAM_LAUNCHER_LOG"
 exec "$VENV_PYTHON" "$ROOT_DIR/run_app.py"

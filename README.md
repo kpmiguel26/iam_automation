@@ -84,6 +84,8 @@ python scripts/stop_app.py
 
 On Windows, `run_windows_hidden.vbs` starts the same launcher without displaying a console window. Keep `run_windows.bat` for setup diagnostics and troubleshooting.
 
+The launchers validate runtime dependencies and compile the application before starting the control panel. They do not run the complete test suite on every startup. Run the tests explicitly with `IAM_RUN_TESTS=1 ./run.sh` on macOS/Linux, or set `IAM_RUN_TESTS=1` before running `run_windows.bat` on Windows. This keeps a restricted test environment or a socket-only test from preventing the local application from opening.
+
 The Access database initializer requires Windows with the Microsoft Access Database Engine and ODBC driver. On macOS, inspect the generated Access schema without creating a fake database file:
 
 ```bash
