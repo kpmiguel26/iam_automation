@@ -127,6 +127,41 @@ class NotificationService:
                 ))
         return len(recipients)
 
+    def notify_source_update_available(self, request_id: str, operation_type: str, record_count: int) -> int:
+        """Notify administrators that approved source data awaits row review."""
+        role_names = ("APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR", "ADMINISTRATOR")
+        now = datetime.now(timezone.utc).isoformat()
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(
+                select(AppUserModel).join(UserRoleModel).where(
+                    AppUserModel.active.is_(True),
+                    AppUserModel.status == "ACTIVE",
+                    UserRoleModel.role_name.in_(role_names),
+                )
+            ).all()
+            recipients = {row.username for row in rows}
+            for username in recipients:
+                notification_id = hashlib.sha256(
+                    f"source-update:{username.lower()}:{request_id}".encode("utf-8")
+                ).hexdigest()
+                session.merge(NotificationModel(
+                    notification_id=notification_id,
+                    recipient_username=username,
+                    notification_type="SOURCE_UPDATE_AVAILABLE",
+                    severity="WARNING",
+                    title="Source update ready for individual review",
+                    message=(
+                        f"{record_count} source record(s) from {operation_type.replace('_', ' ').title()} "
+                        "are waiting in Employee Updates. No employee was created automatically."
+                    ),
+                    entity_type="change_request",
+                    entity_id=request_id,
+                    target_route="/employees/source-updates",
+                    status="UNREAD",
+                    created_at_utc=now,
+                ))
+            return len(recipients)
+
     def mark_read(self, username: str, notification_id: str) -> None:
         with orm_session(self.database_path) as session:
             row = session.scalar(select(NotificationModel).where(

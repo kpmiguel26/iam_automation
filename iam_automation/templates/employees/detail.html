@@ -28,23 +28,24 @@
             <div>
               <h2 class="h5 mb-1">{{ worker.display_name or 'Unnamed worker' }}</h2>
               <span class="small text-secondary">Canonical profile · version {{ worker.record_version }}</span>
+              <a class="small d-block mt-2" href="{{ url_for('employees.employee_history', worker_id=worker.worker_id) }}">View previous versions ({{ versions|length }})</a>
             </div>
           </div>
-          <div class="alert alert-info small">Edit any field and save it as a request. Nothing changes until an eligible reviewer approves it.</div>
+          <div class="alert alert-info small">Imported employees start as <strong>Active</strong>. Choose another status when needed and save it as an audited request; the profile changes only after approval.</div>
           <div class="row g-3">
             <div class="col-md-6"><label class="form-label" for="firstName">First name</label><input id="firstName" class="form-control" name="first_name" value="{{ worker.first_name }}"></div>
             <div class="col-md-6"><label class="form-label" for="lastName">Last name</label><input id="lastName" class="form-control" name="last_name" value="{{ worker.last_name }}"></div>
             <div class="col-12"><label class="form-label" for="email">Canonical email</label><input id="email" class="form-control" type="email" name="email" value="{{ worker.canonical_email }}"></div>
             <div class="col-12">
               <label class="form-label" for="status">Employment status</label>
-              <select id="status" class="form-select" name="status">
+              <select id="status" class="form-select form-select-lg" name="status">
                 {% for value, label in [('PENDING', 'Pending'), ('ACTIVE', 'Active'), ('INACTIVE', 'Inactive'), ('TERMINATED', 'Terminated')] %}
                   <option value="{{ value }}" {% if worker.status == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
             </div>
           </div>
-          <div class="small text-secondary mt-3">Updated {{ worker.updated_at_utc|human_datetime }} · Status changes use the same approval workflow.</div>
+          <div class="small text-secondary mt-3">Current status: <strong>{{ worker.status.replace('_', ' ').title() }}</strong> · Updated {{ worker.updated_at_utc|human_datetime }} · Status changes use the same approval workflow.</div>
         </section>
       </div>
 

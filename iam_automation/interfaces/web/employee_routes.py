@@ -46,12 +46,17 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         page = min(page, page_count)
         if has_query and page != requested_page:
             workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, page=page, per_page=25)
-        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query)
+        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=service.pending_source_update_count())
 
     @blueprint.get("/source-updates")
     @authenticated
     def source_updates_overview():
-        return render_template("employees/source_updates_overview.html", overview=service.source_update_overview())
+        source_file = request.args.get("file", "").strip()
+        return render_template(
+            "employees/source_updates_overview.html",
+            overview=service.source_update_overview(source_file=source_file),
+            source_file=source_file,
+        )
 
     @blueprint.get("/source-updates/candidate/<record_id>")
     @authenticated
@@ -77,6 +82,14 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         if detail is None:
             return render_template("errors/404.html"), 404
         return render_template("employees/detail.html", operation_options=OPERATION_OPTIONS, message=request.args.get("notice"), error=request.args.get("error"), **detail)
+
+    @blueprint.get("/<worker_id>/history")
+    @authenticated
+    def employee_history(worker_id: str):
+        detail = service.get_worker(worker_id)
+        if detail is None:
+            return render_template("errors/404.html"), 404
+        return render_template("employees/history.html", **detail)
 
     @blueprint.get("/<worker_id>/source-updates")
     @authenticated

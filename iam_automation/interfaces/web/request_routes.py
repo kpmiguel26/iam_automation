@@ -8,7 +8,6 @@ from flask import Blueprint, render_template, request, session
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.shared_request_service import SharedRequestService
 from ...application.audit_service import record_audit
-from ...application.employee_service import EmployeeService
 from ...application.notification_service import NotificationService
 from ...application.user_service import UserService
 from ...identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, ROLE_SUPER_OPERATOR, normalize_role
@@ -23,7 +22,7 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
     service = SharedRequestService(sharepoint_root) if sharepoint_root else RequestService(database_path)
     users = UserService(database_path)
     notifications = NotificationService(database_path)
-    employees = EmployeeService(database_path)
+    source_import_operations = {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}
 
     def authenticated(view):
         @wraps(view)
@@ -59,13 +58,12 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
 
     def queue_context():
         """Build the approval view consistently after every queue action."""
-        queued = service.list_requests(queue=True)
-        recent_decisions = [
-            item for item in service.list_requests()
-            if item.operation_type in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}
-            and item.status in {"APPROVED", "REJECTED"}
-        ][:10]
-        return {"requests": queued, "recent_decisions": recent_decisions, "reviewers": reviewer_accounts()}
+        source_import_operations = {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}
+        queued = [
+            item for item in service.list_requests(queue=True)
+            if item.operation_type not in source_import_operations
+        ]
+        return {"requests": queued, "recent_decisions": [], "reviewers": reviewer_accounts()}
 
     @blueprint.get("/requests")
     @authenticated
@@ -137,42 +135,24 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
             if decided_item.status == "REJECTED":
                 notifications.create(decided_item.created_by, "REQUEST_REJECTED", "Request rejected", f"Request {request_id[:8]} was rejected by {session['iam_user']}: {review_note}", severity="WARNING", target_route="/requests", entity_type="change_request", entity_id=request_id)
             if decided_item.status == "APPROVED":
-                if decided_item.operation_type in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}:
-                    result = employees.apply_approved_import_records(
-                        decided_item.payload.get("record_ids", []),
+                is_source_import = decided_item.operation_type in source_import_operations
+                if is_source_import:
+                    record_count = int((decided_item.payload or {}).get("record_count", len((decided_item.payload or {}).get("record_ids", []))))
+                    notifications.notify_source_update_available(request_id, decided_item.operation_type, record_count)
+                    record_audit(
+                        audit_path,
                         str(session["iam_user"]),
-                        request_payload=decided_item.payload,
+                        "SOURCE_UPDATE_REVIEW_QUEUED",
+                        "change_request",
+                        request_id,
+                        new_values={"record_count": record_count, "canonical_write": False, "review_route": "/employees/source-updates"},
                     )
-                    if result["failed"]:
-                        failure_text = "; ".join(f"{item['record_id'][:8]}: {item['error']}" for item in result.get("errors", []))
-                        record_audit(audit_path, str(session["iam_user"]), "IMPORT_PARTIAL_FAILURE", "change_request", request_id, new_values={"failed": result["failed"], "errors": result.get("errors", [])})
-                        failed_ids = {str(item.get("record_id", "")) for item in result.get("errors", []) if item.get("record_id")}
-                        failed_previews = [preview for preview in decided_item.payload.get("record_previews", []) if str(preview.get("record_id", "")) in failed_ids]
-                        retry_request = service.create(
-                            CurrentUser(decided_item.created_by, decided_item.computer_name, tuple(session.get("iam_roles", ()))),
-                            decided_item.operation_type,
-                            decided_item.entity_id,
-                            {
-                                **decided_item.payload,
-                                "record_ids": sorted(failed_ids),
-                                "record_count": len(failed_ids),
-                                "record_previews": failed_previews,
-                                "retry_of": decided_item.request_id,
-                                "previous_errors": result.get("errors", []),
-                            },
-                            f"Retry failed records from approved request {decided_item.request_id[:8]}.",
-                        )
-                        record_audit(audit_path, str(session["iam_user"]), "IMPORT_RETRY_REQUEST_CREATED", "change_request", retry_request.request_id, new_values={"retry_of": request_id, "failed": result["failed"]})
-                        partial_notice = f" Import approved with {result['failed']} record(s) not promoted: {failure_text}. Follow-up request {retry_request.request_id[:8]} is now waiting for review."
-                    if decided_item.operation_type == "IMPORT_ROSTER_LOCK":
-                        refreshed = employees.refresh_rsr_matches()
-                        if refreshed["reviewed"]:
-                            record_audit(audit_path, str(session["iam_user"]), "RSR_MATCHING_REFRESHED", "import_batch", decided_item.entity_id, new_values=refreshed)
-                for user in users.list_users():
-                    if user.active and {normalize_role(role) for role in user.roles} & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
-                        notifications.create(user.username, "REQUEST_READY_FOR_PUBLICATION", "Approved request ready for publication", f"Request {request_id[:8]} was approved and is waiting in the Publication Queue.", severity="WARNING", target_route="/admin/publication", entity_type="change_request", entity_id=request_id)
-            if decided_item.status == "APPROVED" and decided_item.operation_type == "IMPORT_ROSTER_LOCK":
-                message = "Request approved. Roster Lock records created canonical employees and dependent RSR matches were refreshed." + partial_notice
+                else:
+                    for user in users.list_users():
+                        if user.active and {normalize_role(role) for role in user.roles} & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
+                            notifications.create(user.username, "REQUEST_READY_FOR_PUBLICATION", "Approved request ready for publication", f"Request {request_id[:8]} was approved and is waiting in the Publication Queue.", severity="WARNING", target_route="/admin/publication", entity_type="change_request", entity_id=request_id)
+            if decided_item.status == "APPROVED" and decided_item.operation_type in source_import_operations:
+                message = "Source request approved. Records are ready for individual matching and employee history review. No canonical employee was created automatically."
             elif decided_item.status == "APPROVED":
                 message = "Request approved and applied to this workstation. Runtime SQLite still requires publication." + partial_notice
             else:

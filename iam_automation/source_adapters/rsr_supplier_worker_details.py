@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from openpyxl import load_workbook
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..infrastructure.sqlite.orm import (
     ImportBatchModel,
@@ -22,6 +22,7 @@ from ..infrastructure.sqlite.orm import (
     WorkerSourceLineageModel,
     orm_session,
 )
+from ..application.worker_history_service import record_worker_version
 
 
 SOURCE_SYSTEM = "RSR_SUPPLIER_WORKER_DETAILS"
@@ -102,12 +103,12 @@ class RsrSupplierWorkerDetailsAdapter:
             preview = []
             for record in records:
                 payload = json.loads(record.normalized_json)
-                matches = self._find_matches(session, payload)
+                matches, match_reason = self._find_match_detail(session, payload)
                 if len(matches) == 1:
                     worker_id = matches[0]
                     conflicts = self._record_conflicts(session, worker_id, record, payload)
                     status = "CONFLICT" if conflicts else "MATCHED"
-                    reason = "Exact identifier match" if not conflicts else f"Exact identifier match; {len(conflicts)} field conflict(s) preserved for review"
+                    reason = match_reason if not conflicts else f"{match_reason}; {len(conflicts)} field conflict(s) preserved for review"
                     record.matched_worker_id = worker_id
                 elif len(matches) > 1:
                     status, reason = "AMBIGUOUS", "Identifiers resolve to multiple canonical workers"
@@ -139,14 +140,14 @@ class RsrSupplierWorkerDetailsAdapter:
             ).all()
             for record in records:
                 payload = json.loads(record.normalized_json)
-                matches = self._find_matches(session, payload)
+                matches, match_reason = self._find_match_detail(session, payload)
                 previous = record.match_status
                 if len(matches) == 1:
                     worker_id = matches[0]
                     conflict_fields = self._record_conflicts(session, worker_id, record, payload)
                     record.matched_worker_id = worker_id
                     record.match_status = "CONFLICT" if conflict_fields else "MATCHED"
-                    record.match_reason = "Exact identifier match" if not conflict_fields else f"Exact identifier match; {len(conflict_fields)} field conflict(s) preserved for review"
+                    record.match_reason = match_reason if not conflict_fields else f"{match_reason}; {len(conflict_fields)} field conflict(s) preserved for review"
                 elif len(matches) > 1:
                     record.matched_worker_id = None
                     record.match_status = "AMBIGUOUS"
@@ -224,7 +225,10 @@ class RsrSupplierWorkerDetailsAdapter:
                             last_name=last_name,
                             display_name=" ".join(part for part in (first_name, last_name) if part),
                             canonical_email=str(payload.get("email") or "").strip().lower(),
-                            status="PENDING",
+                            # Imported workers enter the canonical directory as
+                            # active; later status changes use the audited
+                            # employee request workflow.
+                            status="ACTIVE",
                             record_version=1,
                             created_at_utc=now,
                             updated_at_utc=now,
@@ -238,6 +242,7 @@ class RsrSupplierWorkerDetailsAdapter:
                     self._add_identifiers(session, worker_id, payload, now)
                     for field_name, value in payload.items():
                         session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=engagement.engagement_id, batch_id=record.batch_id, source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
+                    record_worker_version(session, worker_id, actor=actor, change_type="RSR_INITIAL_PROFILE" if record.match_status == "UNMATCHED" else "RSR_SOURCE_ENRICHMENT", source_system=record.source_system, source_file=record.source_file, source_checksum=record.source_checksum, source_record_key=record.source_record_key, changed_fields=list(payload))
                     record.status = "APPLIED"
                     applied += 1
                 except (ValueError, json.JSONDecodeError) as exc:
@@ -330,18 +335,37 @@ class RsrSupplierWorkerDetailsAdapter:
         return f"{payload.get('supplier_reference') or payload.get('worker_id') or 'ROW'}:{row_number}"
 
     @staticmethod
-    def _find_matches(session, payload: dict[str, str]) -> list[str]:
+    def _find_match_detail(session, payload: dict[str, str]) -> tuple[list[str], str]:
         values = [("VENDOR_EMPLOYEE_ID", payload.get("supplier_reference", "")), ("RSR_WORKER_ID", payload.get("worker_id", "")), ("BUYER_REFERENCE", payload.get("buyer_reference", ""))]
         workers: set[str] = set()
         for identifier_type, value in values:
             normalized = value.casefold().strip()
             if not normalized:
                 continue
-            workers.update(session.scalars(select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.identifier_type == identifier_type, WorkerIdentifierModel.normalized_value == normalized)).all())
-            workers.update(session.scalars(select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.identifier_type == identifier_type, WorkerIdentifierModel.identifier_value == value)).all())
+            workers.update(session.scalars(select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.identifier_type == identifier_type, WorkerIdentifierModel.normalized_value == normalized, WorkerIdentifierModel.active.is_(True))).all())
+            workers.update(session.scalars(select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.identifier_type == identifier_type, WorkerIdentifierModel.identifier_value == value, WorkerIdentifierModel.active.is_(True))).all())
             if workers:
                 break
-        return sorted(workers)
+        if workers:
+            active_workers = set(session.scalars(select(WorkerModel.worker_id).where(WorkerModel.worker_id.in_(workers), WorkerModel.superseded_by_worker_id.is_(None))).all())
+            if active_workers:
+                return sorted(active_workers), "Exact source identifier match"
+        email = str(payload.get("email") or payload.get("vendor_email") or "").strip().casefold()
+        if email:
+            matches = session.scalars(select(WorkerModel.worker_id).where(func.lower(WorkerModel.canonical_email) == email, WorkerModel.superseded_by_worker_id.is_(None))).all()
+            if matches:
+                return sorted(set(matches)), "Canonical email match"
+        first = str(payload.get("first_name") or "").strip().casefold()
+        last = str(payload.get("last_name") or "").strip().casefold()
+        if first and last:
+            matches = session.scalars(select(WorkerModel.worker_id).where(func.lower(WorkerModel.first_name) == first, func.lower(WorkerModel.last_name) == last, WorkerModel.superseded_by_worker_id.is_(None))).all()
+            if matches:
+                return sorted(set(matches)), "Canonical name match"
+        return [], "No canonical match"
+
+    @staticmethod
+    def _find_matches(session, payload: dict[str, str]) -> list[str]:
+        return RsrSupplierWorkerDetailsAdapter._find_match_detail(session, payload)[0]
 
     @staticmethod
     def _record_conflicts(session, worker_id: str, record: IngestionRecordModel, payload: dict[str, str]) -> list[str]:

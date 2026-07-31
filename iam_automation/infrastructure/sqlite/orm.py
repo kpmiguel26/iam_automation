@@ -196,6 +196,7 @@ class WorkerModel(Base):
     canonical_email: Mapped[str] = mapped_column(String, default="")
     status: Mapped[str] = mapped_column(String, default="PENDING")
     record_version: Mapped[int] = mapped_column(Integer, default=1)
+    superseded_by_worker_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at_utc: Mapped[str] = mapped_column(String, default="")
     updated_at_utc: Mapped[str] = mapped_column(String, default="")
 
@@ -280,6 +281,39 @@ class WorkerDiscrepancyModel(Base):
     resolved_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class WorkerProfileVersionModel(Base):
+    """Immutable canonical worker snapshot kept for audit and rollback review."""
+
+    __tablename__ = "worker_profile_versions"
+    __table_args__ = (UniqueConstraint("worker_id", "version_number", name="uq_worker_profile_version"),)
+
+    version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey("workers.worker_id"))
+    version_number: Mapped[int] = mapped_column(Integer)
+    change_type: Mapped[str] = mapped_column(String, default="SOURCE_IMPORT")
+    snapshot_json: Mapped[str] = mapped_column(Text)
+    changed_fields_json: Mapped[str] = mapped_column(Text, default="[]")
+    source_system: Mapped[str] = mapped_column(String, default="")
+    source_file: Mapped[str] = mapped_column(String, default="")
+    source_checksum: Mapped[str] = mapped_column(String, default="")
+    source_record_key: Mapped[str] = mapped_column(String, default="")
+    actor: Mapped[str] = mapped_column(String, default="system")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class WorkerMergeEventModel(Base):
+    """Records duplicate resolution without deleting either worker record."""
+
+    __tablename__ = "worker_merge_events"
+
+    merge_id: Mapped[str] = mapped_column(String, primary_key=True)
+    survivor_worker_id: Mapped[str] = mapped_column(ForeignKey("workers.worker_id"))
+    duplicate_worker_id: Mapped[str] = mapped_column(ForeignKey("workers.worker_id"))
+    reason: Mapped[str] = mapped_column(Text)
+    actor: Mapped[str] = mapped_column(String, default="system")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
 class SystemProfileModel(Base):
     __tablename__ = "system_profiles"
 
@@ -328,6 +362,7 @@ def _configure_sqlite_connection(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
     try:
         cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA foreign_keys=ON")
     finally:
         cursor.close()

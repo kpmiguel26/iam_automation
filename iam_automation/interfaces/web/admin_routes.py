@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from functools import wraps
 from pathlib import Path
 from typing import Callable
@@ -8,6 +9,7 @@ from flask import Blueprint, redirect, render_template, request, send_file, sess
 
 from ...application.delegation_service import DelegationService
 from ...application.employee_service import EmployeeService
+from ...application.employee_reset_service import EmployeeResetService
 from ...application.audit_service import record_audit
 from ...application.import_service import ImportService
 from ...application.notification_service import NotificationService
@@ -17,6 +19,7 @@ from ...application.request_service import RequestService
 from ...application.shared_request_service import SharedRequestService
 from ...application.governance_service import GovernanceService
 from ...application.publication_state import publication_pending
+from ...database.migration_runner import current_database_revision
 from ...application.session_service import SessionService
 from ...application.user_service import UserService
 from ...identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
@@ -35,7 +38,34 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     imports = ImportService(database_path)
     users = UserService(database_path)
     employees = EmployeeService(database_path)
+    employee_reset = EmployeeResetService(
+        local_runtime_path or database_path,
+        audit_path=audit_path or database_path.parent / "audit",
+        backup_directory=(published_runtime_path or database_path).parent / "backups",
+    )
     salesforce = SalesforceExportService(database_path, audit_path=audit_path)
+    automatic_source_types = {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"}
+
+    def imports_page_context(*, message=None, error=None):
+        batches = imports.list_batches()
+        automatic_batch_ids = {
+            batch.batch_id for batch in batches
+            if batch.source_type in automatic_source_types
+        }
+        return {
+            "batches": [
+                batch for batch in batches
+                if batch.source_type not in automatic_source_types
+            ],
+            "quarantine": [
+                item for item in imports.list_quarantine(open_only=True)
+                if item["batch_id"] not in automatic_batch_ids
+            ],
+            # Automatic source records are reviewed under Source Updates.
+            "staged_records": [],
+            "message": message,
+            "error": error,
+        }
 
     def admin_required(view: Callable):
         @wraps(view)
@@ -63,6 +93,19 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                 return "APPLICATION_ADMIN or MASTER_ADMIN role required.", 403
             return view(*args, **kwargs)
         return wrapped
+
+    def render_governance(*, error=None, message=None, reset_result=None):
+        return render_template(
+            "admin/governance.html",
+            checksum=governance.published_checksum(),
+            schema_revision=current_database_revision(local_runtime_path or database_path),
+            backups=governance.list_backups(),
+            events=governance.list_audit_events(),
+            publication_pending=publication_pending(local_runtime_path or database_path),
+            error=error,
+            message=message,
+            reset_result=reset_result,
+        )
 
     @blueprint.get("")
     @admin_required
@@ -161,7 +204,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                     message = f"Import {batch.batch_id[:8]} processed: {batch.valid_rows} valid, {batch.quarantine_rows} quarantined."
                 except (ValueError, RuntimeError) as exc:
                     error = str(exc)
-        return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=message, error=error)
+        return render_template("admin/imports.html", **imports_page_context(message=message, error=error))
 
     @blueprint.post("/imports/records/<record_id>/promote")
     @admin_required
@@ -170,7 +213,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             worker_id = employees.promote_ingestion_record(record_id, str(session["iam_user"]))
             return redirect(url_for("employees.employee_detail", worker_id=worker_id))
         except ValueError as exc:
-            return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=None, error=str(exc)), 400
+            return render_template("admin/imports.html", **imports_page_context(error=str(exc))), 400
 
     @blueprint.post("/imports/records/promote-all")
     @admin_required
@@ -184,29 +227,15 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             )
             if result["failed"]:
                 message += " Review the failed staged records before retrying."
-            return render_template(
-                "admin/imports.html",
-                batches=imports.list_batches(),
-                quarantine=imports.list_quarantine(open_only=True),
-                staged_records=employees.list_staged_records(),
-                message=message,
-                error=None,
-            )
+            return render_template("admin/imports.html", **imports_page_context(message=message))
         except (ValueError, RuntimeError) as exc:
-            return render_template(
-                "admin/imports.html",
-                batches=imports.list_batches(),
-                quarantine=imports.list_quarantine(open_only=True),
-                staged_records=employees.list_staged_records(),
-                message=None,
-                error=str(exc),
-            ), 400
+            return render_template("admin/imports.html", **imports_page_context(error=str(exc))), 400
 
     @blueprint.post("/imports/request-approval")
     @admin_required
     def request_import_approval():
         if shared_requests is None:
-            return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=None, error="A SharePoint workspace is required to create an import approval request."), 400
+            return render_template("admin/imports.html", **imports_page_context(error="Automatic source files are reviewed under Source Updates.")), 400
         staged = [item for item in employees.list_staged_records() if item["status"] == "STAGED" and (item["source_system"] != "RSR_SUPPLIER_WORKER_DETAILS" or item["match_status"] in {"MATCHED", "UNMATCHED"})]
         if not staged:
             return redirect(url_for("admin.import_center", notice="There are no staged records waiting for approval.", notice_type="info"))
@@ -239,7 +268,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             ids = ", ".join(item.request_id[:8] for item in created_requests)
             return redirect(url_for("admin.import_center", notice=f"Import approval request(s) {ids} created for {len(staged)} record(s).", notice_type="success"))
         except (OSError, ValueError, PermissionError) as exc:
-            return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=None, error=str(exc)), 400
+            return render_template("admin/imports.html", **imports_page_context(error=str(exc))), 400
 
     @blueprint.post("/imports/refresh-rsr-matches")
     @admin_required
@@ -257,7 +286,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         try:
             imports.resolve_quarantine(quarantine_id, str(session["iam_user"]))
         except ValueError as exc:
-            return render_template("admin/imports.html", batches=imports.list_batches(), quarantine=imports.list_quarantine(open_only=True), staged_records=employees.list_staged_records(), message=None, error=str(exc)), 400
+            return render_template("admin/imports.html", **imports_page_context(error=str(exc))), 400
         return redirect(url_for("admin.import_center"))
 
     @blueprint.get("/publication")
@@ -301,7 +330,21 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     @blueprint.get("/governance")
     @database_publish_required
     def governance_center():
-        return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events(), publication_pending=publication_pending(local_runtime_path or database_path), error=None)
+        return render_governance()
+
+    @blueprint.post("/governance/reset-employee-test-data")
+    @database_publish_required
+    def reset_employee_test_data():
+        if request.form.get("confirmation", "").strip() != "RESET EMPLOYEE TEST DATA":
+            return render_governance(error="Type RESET EMPLOYEE TEST DATA exactly to confirm this test-data cleanup."), 400
+        try:
+            result = employee_reset.reset(str(session["iam_user"]), clear_workflow_records=True)
+            return render_governance(
+                message="Employee and import test data was cleared locally. Review the backup, then publish the runtime if other workstations should receive the clean state.",
+                reset_result=result,
+            )
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            return render_governance(error=f"Employee test-data cleanup failed: {exc}"), 400
 
     @blueprint.post("/governance/publish")
     @database_publish_required
@@ -313,7 +356,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             governance.publish(str(session["iam_user"]), request.form.get("expected_checksum", ""))
             return redirect(url_for("admin.governance_center"))
         except Exception as exc:
-            return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events(), publication_pending=publication_pending(local_runtime_path or database_path), error=str(exc)), 400
+            return render_governance(error=str(exc)), 400
 
     @blueprint.post("/governance/restore")
     @master_required
@@ -324,7 +367,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             governance.restore(str(session["iam_user"]), request.form.get("backup_name", ""))
             return redirect(url_for("admin.governance_center"))
         except Exception as exc:
-            return render_template("admin/governance.html", checksum=governance.published_checksum(), backups=governance.list_backups(), events=governance.list_audit_events(), publication_pending=publication_pending(local_runtime_path or database_path), error=str(exc)), 400
+            return render_governance(error=str(exc)), 400
 
     @blueprint.get("/security/sessions")
     @master_required

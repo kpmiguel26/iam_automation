@@ -311,4 +311,7 @@ def initialize_runtime_database(path: Path) -> Path:
     from .migration_runner import apply_pending_migrations
 
     apply_pending_migrations(path, actor="runtime-bootstrap")
+    from ..application.worker_history_service import backfill_missing_worker_versions
+
+    backfill_missing_worker_versions(path)
     return path

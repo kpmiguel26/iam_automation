@@ -14,6 +14,7 @@ _REVISION_TO_LEGACY_VERSION = {
     "0003_ingestion_records": "v003_ingestion_records",
     "0004_worker_domain": "v004_worker_domain",
     "0005_rsr_worker_details": "v005_rsr_worker_details",
+    "0006_worker_history": "v006_worker_history",
 }
 _LEGACY_TO_REVISION = {value: key for key, value in _REVISION_TO_LEGACY_VERSION.items()}
 
@@ -58,6 +59,8 @@ def _legacy_version_for_revision(revision: str | None) -> tuple[str, ...]:
         return ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain")
     if revision == "0005_rsr_worker_details":
         return ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details")
+    if revision == "0006_worker_history":
+        return ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history")
     if revision == "0001_baseline":
         return ("v001_initial_schema",)
     return ()
@@ -80,10 +83,20 @@ def apply_pending_migrations(database_path: Path, actor: str = "system") -> tupl
             if before is None:
                 legacy = set(_legacy_versions(path))
                 config = _alembic_config(connection)
-                if "v002_notification_indexes" in legacy:
-                    command.stamp(config, "0002_notification_indexes")
-                elif "v001_initial_schema" in legacy:
-                    command.stamp(config, "0001_baseline")
+                legacy_revision = next(
+                    (
+                        revision
+                        for revision in reversed(tuple(_REVISION_TO_LEGACY_VERSION))
+                        if _REVISION_TO_LEGACY_VERSION[revision] in legacy
+                    ),
+                    None,
+                )
+                if legacy_revision:
+                    # The original runner recorded legacy versions without an
+                    # Alembic head. Stamp the newest known legacy version, then
+                    # actually execute every newer migration (including v006).
+                    command.stamp(config, legacy_revision)
+                    command.upgrade(config, "head")
                 else:
                     command.upgrade(config, "head")
             else:
@@ -109,5 +122,18 @@ def applied_migrations(database_path: Path) -> tuple[str, ...]:
     try:
         with engine.connect() as connection:
             return _legacy_version_for_revision(_current_revision(connection))
+    finally:
+        engine.dispose()
+
+
+def current_database_revision(database_path: Path) -> str | None:
+    """Return the Alembic schema revision currently stored in SQLite."""
+    path = database_path.expanduser().resolve()
+    if not path.is_file():
+        return None
+    engine = create_engine(f"sqlite:///{path.as_posix()}", connect_args={"check_same_thread": False})
+    try:
+        with engine.connect() as connection:
+            return _current_revision(connection)
     finally:
         engine.dispose()

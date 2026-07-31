@@ -3,11 +3,73 @@
 {% block content %}
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell">
   <a class="back-link" href="{{ url_for('employees.employee_directory') }}">Back to Employees</a>
-  <div class="page-heading mt-3"><div><p class="eyebrow">Operations</p><h1>Source update review</h1><p class="text-secondary mb-0">Review only new or changed source data before creating a request.</p></div></div>
-  <div class="alert alert-info mt-4">Existing employees show only changed fields. Unmatched records are listed as new employee candidates. No canonical data is changed from this page.</div>
+  <div class="page-heading mt-3"><div><p class="eyebrow">Operations</p><h1>Source update review</h1><p class="text-secondary mb-0">Review new source data one employee at a time before creating or enriching a canonical profile.</p></div></div>
+  <div class="alert alert-warning mt-4 d-flex align-items-start gap-3"><span class="fs-4" aria-hidden="true">!</span><div><strong>{{ overview.pending_count }} source record(s) {% if source_file %}from this file {% endif %}are waiting for review.</strong>{% if source_file %}<br><span><strong>Selected file:</strong> {{ source_file }}</span>{% endif %}<br><span>Nothing is imported into canonical Employees automatically. The first approved match can create the employee; later files are matched to that employee and retained as source history.</span></div></div>
+  <section class="surface source-file-filter-panel mt-4">
+    <div class="source-file-filter-heading">
+      <div>
+        <p class="eyebrow mb-1">Review scope</p>
+        <h2 class="h5 mb-0">Choose an import to review</h2>
+      </div>
+      <span class="source-file-filter-status">{% if source_file %}One file selected{% else %}All files{% endif %}</span>
+    </div>
+    <form class="source-file-filter-form" method="get">
+      <div class="source-file-filter-control">
+        <label class="form-label" for="source-file-filter">Source file</label>
+        <select class="form-select" id="source-file-filter" name="file">
+          <option value="">All source files</option>
+          {% for file in overview.source_files %}<option value="{{ file }}" {% if source_file == file %}selected{% endif %}>{{ file }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="source-file-filter-actions">
+        <button class="btn btn-primary" type="submit"><span aria-hidden="true">⌕</span> Apply</button>
+        {% if source_file %}<a class="btn btn-outline-secondary" href="{{ url_for('employees.source_updates_overview') }}">Clear</a>{% endif %}
+      </div>
+    </form>
+    <div class="source-file-filter-hint">Review one workbook at a time to keep the import queue focused.</div>
+  </section>
+  {% set duplicates = overview.duplicate_summary %}
+  <section class="surface p-4 mt-4">
+    <div class="section-heading">
+      <div><p class="eyebrow mb-1">Data quality signal</p><h2 class="h5 mb-0">Possible duplicate source records</h2></div>
+      <span class="small text-secondary">{{ duplicates.record_count }} record(s) in {{ duplicates.group_count }} group(s)</span>
+    </div>
+    <p class="text-secondary small mt-2 mb-0">These records share an identifier or a strong name/email combination. Corroborated records point to one existing employee; possible duplicates need review before promotion.</p>
+    {% if duplicates.groups %}
+      <div class="row g-3 mt-1">
+        {% for group in duplicates.groups[:12] %}
+          <div class="col-12 col-xl-6">
+            <div class="duplicate-signal-card {% if group.classification == 'CORROBORATED' %}is-corroborated{% endif %}">
+              <div class="d-flex justify-content-between gap-2 align-items-start">
+                <div><div class="small text-secondary">{{ group.signal }}</div><strong>{{ group.value }}</strong></div>
+                <span class="badge {% if group.classification == 'CORROBORATED' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ group.classification|replace('_', ' ')|title }}</span>
+              </div>
+              <div class="small text-secondary mt-2">{{ group.record_count }} source record(s)</div>
+              <ul class="list-unstyled small mb-0 mt-2">
+                {% for item in group.records[:4] %}
+                  <li class="duplicate-record-row">
+                    {% if item.matched_worker_id %}
+                      <a href="{{ url_for('employees.source_updates', worker_id=item.matched_worker_id) }}">{{ item.worker_name or item.matched_worker_id }}</a>
+                    {% else %}
+                      <a href="{{ url_for('employees.source_candidate', record_id=item.record_id) }}">{{ item.worker_name or 'Unnamed candidate' }}</a>
+                    {% endif %}
+                    <span>{{ item.source_system|replace('_', ' ')|title }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+              {% if group.record_count > 4 %}<div class="small text-secondary mt-2">+ {{ group.record_count - 4 }} more record(s)</div>{% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% if duplicates.group_count > 12 %}<div class="small text-secondary mt-3">Showing the 12 largest groups. Use the source filters and review links to continue.</div>{% endif %}
+    {% else %}
+      <div class="alert alert-success mt-3 mb-0">No duplicate signals were found among the pending source records.</div>
+    {% endif %}
+  </section>
   <section class="surface p-4 mt-4">
     <div class="section-heading"><div><p class="eyebrow mb-1">Matched workers</p><h2 class="h5 mb-0">Existing employees with source changes</h2></div><span class="small text-secondary">{{ overview.existing_updates|length }} employee(s)</span></div>
-    {% for preview in overview.existing_updates %}<div class="border-top mt-3 pt-3"><div class="d-flex justify-content-between gap-3 flex-wrap"><div><a class="h6 text-decoration-none" href="{{ url_for('employees.source_updates', worker_id=preview.worker_id) }}">{{ preview.worker_name }}</a><div class="small text-secondary">{{ preview.updates|length }} source update set(s)</div></div><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.source_updates', worker_id=preview.worker_id) }}">Review changes</a></div></div>{% else %}<p class="text-success mb-0 mt-3">No changed source values found for existing employees.</p>{% endfor %}
+    {% for preview in overview.existing_updates %}<div class="border-top mt-3 pt-3"><div class="d-flex justify-content-between gap-3 flex-wrap"><div><a class="h6 text-decoration-none" href="{{ url_for('employees.source_updates', worker_id=preview.worker_id) }}">{{ preview.worker_name }}</a><div class="small text-secondary">{{ preview.updates|length }} source update set(s) · matching and history available</div></div><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.source_updates', worker_id=preview.worker_id) }}">Review changes</a></div></div>{% else %}<p class="text-success mb-0 mt-3">No changed source values found for existing employees.</p>{% endfor %}
   </section>
   <section class="surface p-4 mt-4"><div class="section-heading"><div><p class="eyebrow mb-1">New candidates</p><h2 class="h5 mb-0">Source records without a canonical match</h2></div><span class="small text-secondary">{{ overview.new_employee_records|length }} record(s)</span></div>
     <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>Candidate</th><th>Identifier</th><th>Source</th><th>Match status</th><th>Next step</th></tr></thead><tbody>

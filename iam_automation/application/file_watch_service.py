@@ -73,6 +73,10 @@ class FileWatchService:
                         review_requests.add(observation.path)
                     else:
                         self._sync_approved_import(Path(observation.path))
+                        # The approval JSON is only a shared signal. It must not
+                        # create a generic file alert or imply that canonical
+                        # employees were already updated.
+                        review_requests.add(observation.path)
                     successful_ingestions.add(observation.path)
                 except Exception as exc:
                     LOGGER.exception("File processing failed for %s", observation.path)
@@ -95,7 +99,12 @@ class FileWatchService:
                         previous.last_seen_at_utc = now
                     if observation.path not in review_requests:
                         for username in admins:
-                            session.add(self._notification(username, observation))
+                            # File notifications use a deterministic ID so a
+                            # repeated scan cannot create duplicates. Preserve
+                            # an existing READ/RESOLVED status on retry.
+                            notification = self._notification(username, observation)
+                            if session.get(NotificationModel, notification.notification_id) is None:
+                                session.add(notification)
             return len(successful_ingestions)
 
     def _ensure_import_review_request(self, observation: FileObservation, result) -> None:
@@ -111,6 +120,15 @@ class FileWatchService:
         shared = SharedRequestService(self.sharepoint_root)
         existing = shared.find_import_request(batch_id=batch_id, source_checksum=source_checksum)
         if existing is not None:
+            # A reset or a second workstation may already have the shared JSON.
+            # Re-publish the idempotent notification so the local admin still
+            # sees the review work without creating another request.
+            self.notifications.notify_request_reviewers(
+                existing.request_id,
+                existing.operation_type,
+                existing.created_by,
+                record_count=int((existing.payload or {}).get("record_count", 0)),
+            )
             return
 
         source_system = observation.file_kind
@@ -157,10 +175,6 @@ class FileWatchService:
                 for observation in observations
                 if (previous := session.get(FileObservationModel, observation.path)) is None
                 or previous.signature != observation.signature
-                # Older builds recorded approved requests as generic file
-                # observations. Reconcile each of those once after upgrade so
-                # employees approved on another workstation appear locally.
-                or (observation.file_kind == "APPROVED_IMPORT" and previous.file_kind == "APPROVED_IMPORT")
             ]
 
     def _record_ingestion_failure(self, observation: FileObservation, error: Exception) -> None:
@@ -182,21 +196,21 @@ class FileWatchService:
                 ))
 
     def _sync_approved_import(self, path: Path) -> None:
-        """Apply a shared approved import to this workstation's local SQLite.
+        """Register an approved source file for individual review.
 
-        Approval is shared through JSON, while canonical workers remain local
-        until the next runtime publication. This reconciliation makes an
-        approval performed on another workstation visible here without making
-        every workstation publish its database automatically.
+        Approval JSON is a shared signal, not permission to bulk-write every
+        row into the local canonical database. Promotion happens one employee
+        at a time from Source Updates, where matching, history, and business
+        rules are visible to the reviewer.
         """
         request = load_request_file(path)
         if request.operation_type not in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}:
             return
-        record_ids = request.payload.get("record_ids", [])
-        result = EmployeeService(self.database_path).apply_approved_import_records(record_ids, "shared-approval-sync", request_payload=request.payload)
-        if int(result.get("failed", 0)):
-            errors = "; ".join(f"{item.get('record_id', '')[:8]}: {item.get('error', 'unknown error')}" for item in result.get("errors", []))
-            raise RuntimeError(f"Approved import {request.request_id[:8]} could not be fully synchronized: {errors}")
+        self.notifications.notify_source_update_available(
+            request.request_id,
+            request.operation_type,
+            int(request.payload.get("record_count", len(request.payload.get("record_ids", [])))),
+        )
 
     @staticmethod
     def _observation_priority(observation: FileObservation) -> int:
@@ -253,7 +267,7 @@ class FileWatchService:
             "PUBLISHED_RUNTIME": ("Workspace database updated", "A new published runtime database is available for local refresh."),
             "ROSTER_LOCK": ("Roster Lock ingested", "A vendor Roster Lock workbook was staged for validation and reconciliation."),
             "RSR_SUPPLIER_WORKER_DETAILS": ("RSR worker details ingested", "Supplier worker details were staged for matching against canonical employees."),
-            "APPROVED_IMPORT": ("Approved import synchronized", "An approved import was applied to this workstation's local employee database."),
+            "APPROVED_IMPORT": ("Employee updates ready", "Approved source records are ready for individual matching and review. No employee was created automatically."),
         }
         title, message = labels[observation.file_kind]
         now = datetime.now(timezone.utc).isoformat()
@@ -266,7 +280,7 @@ class FileWatchService:
             message=f"{message} File: {Path(observation.path).name}",
             entity_type="file",
             entity_id=observation.path,
-            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/admin/imports" if observation.file_kind in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"} else "/admin"),
+            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/employees/source-updates" if observation.file_kind == "APPROVED_IMPORT" else "/admin/imports" if observation.file_kind in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"} else "/admin"),
             status="UNREAD",
             created_at_utc=now,
         )

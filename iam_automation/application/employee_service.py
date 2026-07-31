@@ -14,9 +14,12 @@ from ..infrastructure.sqlite.orm import (
     WorkerEngagementModel,
     WorkerIdentifierModel,
     WorkerModel,
+    WorkerMergeEventModel,
+    WorkerProfileVersionModel,
     WorkerSourceLineageModel,
     orm_session,
 )
+from .worker_history_service import record_worker_version, version_dict
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,21 @@ class EmployeeService:
 
     def __init__(self, database_path: Path):
         self.database_path = database_path
+
+    @staticmethod
+    def _source_file_name(value: object) -> str:
+        """Return a portable basename for records created on any OS."""
+        return Path(str(value or "").replace("\\", "/")).name
+
+    def _pending_source_records(self, source_file: str = "") -> list[IngestionRecordModel]:
+        """Load pending source records, optionally scoped to one workbook."""
+        pending_statuses = ("STAGED", "MATCHED", "CONFLICT", "UNMATCHED", "AMBIGUOUS")
+        selected_file = self._source_file_name(source_file) if source_file else ""
+        with orm_session(self.database_path) as session:
+            records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.status.in_(pending_statuses))).all()
+        if not selected_file:
+            return records
+        return [record for record in records if self._source_file_name(record.source_file) == selected_file]
 
     def list_workers(self, search: str = "", status: str = "ALL", vendor: str = "ALL", source: str = "ALL", engagement: str = "") -> list[EmployeeSummary]:
         """Return the full directory for internal callers and small datasets."""
@@ -81,6 +99,7 @@ class EmployeeService:
                     select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.worker_id == WorkerModel.worker_id, WorkerIdentifierModel.identifier_value.ilike(pattern)).exists(),
                     select(WorkerEngagementModel.worker_id).where(WorkerEngagementModel.worker_id == WorkerModel.worker_id, or_(WorkerEngagementModel.vendor_name.ilike(pattern), WorkerEngagementModel.job_title.ilike(pattern))).exists(),
                 ))
+            filters.append(WorkerModel.superseded_by_worker_id.is_(None))
             statement = select(WorkerModel).where(*filters).order_by(WorkerModel.display_name, WorkerModel.worker_id)
             total = int(session.scalar(select(func.count()).select_from(WorkerModel).where(*filters)) or 0)
             if per_page is not None:
@@ -104,7 +123,14 @@ class EmployeeService:
     def list_staged_records(self) -> list[dict[str, str]]:
         with orm_session(self.database_path) as session:
             rows = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.status.in_(("STAGED", "MATCHED", "CONFLICT", "UNMATCHED", "AMBIGUOUS"))).order_by(IngestionRecordModel.created_at_utc.desc())).all()
-            return [{"record_id": row.record_id, "batch_id": row.batch_id, "source_system": row.source_system, "source_record_key": row.source_record_key, "source_file": Path(row.source_file).name, "status": row.status, "match_status": row.match_status, "matched_worker_id": row.matched_worker_id or "", "match_reason": row.match_reason, "payload": json.loads(row.normalized_json)} for row in rows]
+            return [{"record_id": row.record_id, "batch_id": row.batch_id, "source_system": row.source_system, "source_record_key": row.source_record_key, "source_file": self._source_file_name(row.source_file), "status": row.status, "match_status": row.match_status, "matched_worker_id": row.matched_worker_id or "", "match_reason": row.match_reason, "payload": json.loads(row.normalized_json)} for row in rows]
+
+    def pending_source_update_count(self) -> int:
+        """Count staged source rows without loading their payloads."""
+        with orm_session(self.database_path) as session:
+            return int(session.scalar(select(func.count()).select_from(IngestionRecordModel).where(
+                IngestionRecordModel.status.in_(("STAGED", "MATCHED", "CONFLICT", "UNMATCHED", "AMBIGUOUS")),
+            )) or 0)
 
     def request_previews(self, record_ids: list[str]) -> list[dict[str, object]]:
         """Return portable review data for a shared JSON approval request."""
@@ -120,7 +146,7 @@ class EmployeeService:
                     "record_id": row.record_id,
                     "source_record_key": row.source_record_key,
                     "source_system": row.source_system,
-                    "source_file": Path(row.source_file).name,
+                    "source_file": self._source_file_name(row.source_file),
                     "status": row.status,
                     "match_status": row.match_status,
                     "match_reason": row.match_reason,
@@ -205,9 +231,10 @@ class EmployeeService:
             engagements = session.scalars(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker_id).order_by(WorkerEngagementModel.created_at_utc.desc())).all()
             lineage = session.scalars(select(WorkerSourceLineageModel).where(WorkerSourceLineageModel.worker_id == worker_id).order_by(WorkerSourceLineageModel.observed_at_utc.desc()).limit(100)).all()
             discrepancies = session.scalars(select(WorkerDiscrepancyModel).where(WorkerDiscrepancyModel.worker_id == worker_id).order_by(WorkerDiscrepancyModel.created_at_utc.desc())).all()
-            return {"worker": worker, "identifiers": identifiers, "engagements": engagements, "lineage": lineage, "discrepancies": discrepancies}
+            versions = session.scalars(select(WorkerProfileVersionModel).where(WorkerProfileVersionModel.worker_id == worker_id).order_by(WorkerProfileVersionModel.version_number.desc())).all()
+            return {"worker": worker, "identifiers": identifiers, "engagements": engagements, "lineage": lineage, "discrepancies": discrepancies, "versions": [version_dict(item) for item in versions]}
 
-    def source_update_preview(self, worker_id: str) -> dict[str, object] | None:
+    def source_update_preview(self, worker_id: str, source_file: str = "") -> dict[str, object] | None:
         """Return only pending source rows that affect one canonical worker.
 
         Source workbooks remain immutable evidence. This preview compares staged
@@ -290,6 +317,9 @@ class EmployeeService:
                 )
                 .order_by(IngestionRecordModel.created_at_utc.desc(), IngestionRecordModel.row_number.desc())
             ).all()
+            selected_file = self._source_file_name(source_file) if source_file else ""
+            if selected_file:
+                rows = [row for row in rows if self._source_file_name(row.source_file) == selected_file]
             updates: list[dict[str, object]] = []
             seen: set[tuple[str, str, str]] = set()
             incoming_by_field: dict[str, dict[str, str]] = {}
@@ -305,7 +335,7 @@ class EmployeeService:
                         "incoming_value": incoming,
                         "source_field": source_field,
                         "source_system": row.source_system,
-                        "source_file": Path(row.source_file).name,
+                        "source_file": self._source_file_name(row.source_file),
                         "record_id": row.record_id,
                     })
                     if incoming.casefold() == current_value.casefold():
@@ -324,7 +354,7 @@ class EmployeeService:
                     updates.append({
                         "record_id": row.record_id,
                         "source_system": row.source_system,
-                        "source_file": Path(row.source_file).name,
+                        "source_file": self._source_file_name(row.source_file),
                         "source_record_key": row.source_record_key,
                         "source_checksum": row.source_checksum,
                         "row_number": row.row_number,
@@ -354,7 +384,7 @@ class EmployeeService:
                 "new_employee_records": [],
             }
 
-    def new_employee_source_preview(self) -> list[dict[str, object]]:
+    def new_employee_source_preview(self, source_file: str = "") -> list[dict[str, object]]:
         """Return staged source rows that have no canonical worker match."""
         with orm_session(self.database_path) as session:
             rows = session.scalars(
@@ -365,13 +395,16 @@ class EmployeeService:
                 )
                 .order_by(IngestionRecordModel.created_at_utc.desc(), IngestionRecordModel.row_number)
             ).all()
+            selected_file = self._source_file_name(source_file) if source_file else ""
+            if selected_file:
+                rows = [row for row in rows if self._source_file_name(row.source_file) == selected_file]
             result = []
             for row in rows:
                 payload = json.loads(row.normalized_json)
                 result.append({
                     "record_id": row.record_id,
                     "source_system": row.source_system,
-                    "source_file": Path(row.source_file).name,
+                    "source_file": self._source_file_name(row.source_file),
                     "source_record_key": row.source_record_key,
                     "match_status": row.match_status,
                     "match_reason": row.match_reason,
@@ -395,7 +428,7 @@ class EmployeeService:
                 "record_id": row.record_id,
                 "batch_id": row.batch_id,
                 "source_system": row.source_system,
-                "source_file": Path(row.source_file).name,
+                "source_file": self._source_file_name(row.source_file),
                 "source_record_key": row.source_record_key,
                 "source_checksum": row.source_checksum,
                 "status": row.status,
@@ -405,25 +438,124 @@ class EmployeeService:
                 "payload": payload,
             }
 
-    def source_update_overview(self) -> dict[str, object]:
+    def source_update_overview(self, source_file: str = "") -> dict[str, object]:
         """Build the compact review worklist for the Employees area."""
-        with orm_session(self.database_path) as session:
-            worker_ids = session.scalars(
-                select(IngestionRecordModel.matched_worker_id)
-                .where(
-                    IngestionRecordModel.matched_worker_id.is_not(None),
-                    IngestionRecordModel.status.in_(("STAGED", "MATCHED", "CONFLICT")),
-                )
-                .distinct()
-            ).all()
+        selected_file = self._source_file_name(source_file) if source_file else ""
+        pending_records = self._pending_source_records(selected_file)
+        worker_ids = sorted({str(record.matched_worker_id) for record in pending_records if record.matched_worker_id})
         existing = []
         for worker_id in worker_ids:
-            preview = self.source_update_preview(str(worker_id))
+            preview = self.source_update_preview(str(worker_id), source_file=selected_file)
             if preview and preview["updates"]:
                 existing.append(preview)
-        return {"existing_updates": existing, "new_employee_records": self.new_employee_source_preview()}
+        new_records = self.new_employee_source_preview(source_file=selected_file)
+        return {
+            "existing_updates": existing,
+            "new_employee_records": new_records,
+            "duplicate_summary": self.source_duplicate_summary(source_file=selected_file),
+            "source_files": sorted({self._source_file_name(record.source_file) for record in self._pending_source_records() if record.source_file}),
+            "selected_source_file": selected_file,
+            "pending_count": len(new_records) + sum(len(item.get("updates", [])) for item in existing),
+        }
 
-    def _promote_record_in_session(self, session, record: IngestionRecordModel, now: str) -> tuple[str, bool]:
+    def source_duplicate_summary(self, source_file: str = "") -> dict[str, object]:
+        """Group pending source records that may describe the same person.
+
+        This is intentionally a review signal, not an automatic merge. Strong
+        identifiers are preferred; name and email are used only as a weaker
+        fallback when no identifier is available. A group whose records already
+        resolve to one canonical worker is corroborating source history rather
+        than a duplicate canonical employee.
+        """
+        signal_definitions = (
+            ("Vendor employee ID", "vendor_employee_id"),
+            ("Supplier reference", "supplier_reference"),
+            ("Worker ID", "worker_id"),
+            ("Fieldglass ID", "fieldglass_id"),
+            ("NUID", "nuid"),
+        )
+        groups: dict[tuple[str, str], dict[str, object]] = {}
+        records = self._pending_source_records(source_file)
+
+        for record in records:
+            try:
+                payload = json.loads(record.normalized_json or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+
+            signals: list[tuple[str, str]] = []
+            for label, field_name in signal_definitions:
+                value = str(payload.get(field_name) or "").strip()
+                if value:
+                    signals.append((label, value.casefold()))
+            if not signals:
+                first_name = str(payload.get("first_name") or payload.get("employee_first_name") or "").strip()
+                last_name = str(payload.get("last_name") or payload.get("employee_last_name") or "").strip()
+                email = str(payload.get("email") or payload.get("vendor_email_address") or "").strip()
+                if first_name and last_name and email:
+                    signals.append(("Name + email", f"{first_name} {last_name}|{email}".casefold()))
+            if not signals:
+                continue
+
+            item = {
+                "record_id": record.record_id,
+                "source_system": record.source_system,
+                "source_file": self._source_file_name(record.source_file),
+                "source_record_key": record.source_record_key,
+                "matched_worker_id": record.matched_worker_id,
+                "worker_name": " ".join(
+                    part for part in (
+                        payload.get("first_name") or payload.get("employee_first_name") or "",
+                        payload.get("last_name") or payload.get("employee_last_name") or "",
+                    ) if str(part).strip()
+                ),
+            }
+            for label, normalized_value in signals:
+                group_key = (label, normalized_value)
+                group = groups.setdefault(
+                    group_key,
+                    {
+                        "signal": label,
+                        "value": str(dict(signals).get(label, normalized_value)),
+                        "records": [],
+                    },
+                )
+                group["records"].append(item)
+
+        duplicate_groups = []
+        seen_group_records: set[tuple[str, str]] = set()
+        for group in groups.values():
+            records_in_group = group["records"]
+            unique_records = {item["record_id"] for item in records_in_group}
+            if len(unique_records) < 2:
+                continue
+            worker_ids = {item["matched_worker_id"] for item in records_in_group if item["matched_worker_id"]}
+            classification = "CORROBORATED" if len(worker_ids) == 1 else "REVIEW_DUPLICATE"
+            unique_items = []
+            for item in records_in_group:
+                marker = (group["value"], item["record_id"])
+                if marker not in seen_group_records:
+                    seen_group_records.add(marker)
+                    unique_items.append(item)
+            duplicate_groups.append(
+                {
+                    "signal": group["signal"],
+                    "value": group["value"],
+                    "classification": classification,
+                    "record_count": len(unique_items),
+                    "records": unique_items,
+                }
+            )
+        duplicate_groups.sort(key=lambda item: (-item["record_count"], item["signal"], item["value"]))
+        return {
+            "groups": duplicate_groups,
+            "group_count": len(duplicate_groups),
+            "record_count": len({item["record_id"] for group in duplicate_groups for item in group["records"]}),
+        }
+
+    def _promote_record_in_session(self, session, record: IngestionRecordModel, now: str, actor: str = "system") -> tuple[str, bool]:
         """Promote one record while the caller owns the transaction."""
         payload = json.loads(record.normalized_json)
         identifier_value = str(payload.get("vendor_employee_id") or "").strip()
@@ -454,7 +586,9 @@ class EmployeeService:
                 last_name=last_name,
                 display_name=" ".join(part for part in (first_name, last_name) if part),
                 canonical_email=str(payload.get("email") or "").strip().lower(),
-                status="PENDING",
+                # A promoted canonical worker is active by default. Source or
+                # engagement statuses remain preserved on the engagement.
+                status="ACTIVE",
                 record_version=1,
                 created_at_utc=now,
                 updated_at_utc=now,
@@ -520,6 +654,17 @@ class EmployeeService:
                 )
             )
         record.status = "MATCHED"
+        record_worker_version(
+            session,
+            worker_id,
+            actor=actor,
+            change_type="ROSTER_LOCK_INITIAL_PROFILE" if created else "ROSTER_LOCK_ENRICHMENT",
+            source_system=record.source_system,
+            source_file=record.source_file,
+            source_checksum=record.source_checksum,
+            source_record_key=record.source_record_key,
+            changed_fields=list(payload),
+        )
         return worker_id, created
 
     def promote_all_staged_records(self, actor: str) -> dict[str, object]:
@@ -529,7 +674,6 @@ class EmployeeService:
         valid rows from being promoted. The transaction is committed once at
         the end so the web application never performs one request per worker.
         """
-        del actor  # The caller owns the audit event for this bulk operation.
         now = datetime.now(timezone.utc).isoformat()
         errors: list[dict[str, str]] = []
         processed = created = reused = 0
@@ -541,7 +685,7 @@ class EmployeeService:
             ).all()
             for record in records:
                 try:
-                    _, was_created = self._promote_record_in_session(session, record, now)
+                    _, was_created = self._promote_record_in_session(session, record, now, actor)
                     processed += 1
                     if was_created:
                         created += 1
@@ -554,7 +698,6 @@ class EmployeeService:
 
     def promote_staged_records(self, record_ids: list[str], actor: str) -> dict[str, object]:
         """Apply only the records approved by an import request."""
-        del actor
         selected_ids = {str(record_id) for record_id in record_ids if str(record_id).strip()}
         if not selected_ids:
             raise ValueError("The import request contains no staged records.")
@@ -568,7 +711,7 @@ class EmployeeService:
                     errors.append({"record_id": record.record_id, "error": f"Record is no longer staged: {record.status}."})
                     continue
                 try:
-                    _, was_created = self._promote_record_in_session(session, record, now)
+                    _, was_created = self._promote_record_in_session(session, record, now, actor)
                     processed += 1
                     created += int(was_created)
                     reused += int(not was_created)
@@ -590,5 +733,42 @@ class EmployeeService:
                 raise ValueError("Ingestion record was not found.")
             if record.status not in {"STAGED", "MATCHED"}:
                 raise ValueError(f"Ingestion record cannot be promoted from status {record.status}.")
-            worker_id, _ = self._promote_record_in_session(session, record, now)
+            worker_id, _ = self._promote_record_in_session(session, record, now, actor)
             return worker_id
+
+    def merge_workers(self, survivor_worker_id: str, duplicate_worker_id: str, reason: str, actor: str) -> dict[str, object]:
+        """Merge duplicate canonical profiles without destroying historical evidence."""
+        reason = reason.strip()
+        if not reason:
+            raise ValueError("A merge reason is required.")
+        if survivor_worker_id == duplicate_worker_id:
+            raise ValueError("The survivor and duplicate must be different workers.")
+        now = datetime.now(timezone.utc).isoformat()
+        with orm_session(self.database_path) as session:
+            survivor = session.get(WorkerModel, survivor_worker_id)
+            duplicate = session.get(WorkerModel, duplicate_worker_id)
+            if survivor is None or duplicate is None:
+                raise ValueError("Both workers must exist before merging.")
+            if duplicate.superseded_by_worker_id:
+                raise ValueError("The duplicate worker has already been superseded.")
+            moved = {"identifiers": 0, "engagements": 0, "lineage": 0, "discrepancies": 0}
+            survivor_keys = {(item.source_system, item.identifier_type, item.normalized_value) for item in session.scalars(select(WorkerIdentifierModel).where(WorkerIdentifierModel.worker_id == survivor_worker_id)).all()}
+            for item in session.scalars(select(WorkerIdentifierModel).where(WorkerIdentifierModel.worker_id == duplicate_worker_id)).all():
+                key = (item.source_system, item.identifier_type, item.normalized_value)
+                if key in survivor_keys:
+                    item.active = False
+                    continue
+                item.worker_id = survivor_worker_id
+                survivor_keys.add(key)
+                moved["identifiers"] += 1
+            for model, key in ((WorkerEngagementModel, "engagements"), (WorkerSourceLineageModel, "lineage"), (WorkerDiscrepancyModel, "discrepancies")):
+                for item in session.scalars(select(model).where(model.worker_id == duplicate_worker_id)).all():
+                    item.worker_id = survivor_worker_id
+                    moved[key] += 1
+            duplicate.status = "DUPLICATE_SUPERSEDED"
+            duplicate.superseded_by_worker_id = survivor_worker_id
+            duplicate.updated_at_utc = now
+            session.add(WorkerMergeEventModel(merge_id=str(uuid.uuid4()), survivor_worker_id=survivor_worker_id, duplicate_worker_id=duplicate_worker_id, reason=reason, actor=actor, created_at_utc=now))
+            record_worker_version(session, survivor_worker_id, actor=actor, change_type="MERGE_SURVIVOR", changed_fields=["identifiers", "engagements", "lineage", "discrepancies"])
+            record_worker_version(session, duplicate_worker_id, actor=actor, change_type="MERGE_SUPERSEDED", changed_fields=["status", "superseded_by_worker_id"])
+            return {"survivor_worker_id": survivor_worker_id, "duplicate_worker_id": duplicate_worker_id, "moved": moved}

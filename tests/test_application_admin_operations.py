@@ -90,6 +90,32 @@ class ApplicationAdminOperationsTests(unittest.TestCase):
             self.assertEqual(len(notifications), 1)
             self.assertEqual(notifications[0].notification_type, "FILE_DETECTED")
 
+    def test_file_watcher_retry_does_not_duplicate_existing_file_notification(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            database = initialize_runtime_database(base / "runtime.sqlite")
+            UserService(database).create_user("admin", "Admin", "secret", ["APPLICATION_ADMIN"])
+            pending = base / "requests" / "pending"
+            pending.mkdir(parents=True)
+            request_file = pending / "request-001.json"
+            request_file.write_text('{"request_id":"request-001"}', encoding="utf-8")
+
+            watcher = FileWatchService(database, base)
+            self.assertEqual(watcher.scan_once(), 1)
+            notification = watcher.notifications.list_for_user("admin")[0]
+            watcher.notifications.mark_read("admin", notification.notification_id)
+
+            # Simulate a retry after the observation write was interrupted,
+            # while the notification row was already committed.
+            from iam_automation.infrastructure.sqlite.orm import FileObservationModel, orm_session
+            with orm_session(database) as session:
+                session.delete(session.get(FileObservationModel, str(request_file)))
+
+            self.assertEqual(watcher.scan_once(), 1)
+            notifications = watcher.notifications.list_for_user("admin")
+            self.assertEqual(len(notifications), 1)
+            self.assertEqual(notifications[0].status, "READ")
+
     def test_file_watcher_detects_published_runtime_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
