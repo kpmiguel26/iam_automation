@@ -46,6 +46,10 @@ def worker_snapshot(session, worker_id: str) -> dict[str, object]:
             for item in engagements
         ],
         "lineage_count": len(lineage),
+        "lineage": [
+            {"lineage_id": item.lineage_id, "field_name": item.field_name, "normalized_value": item.normalized_value, "raw_value": item.raw_value, "source_system": item.source_system}
+            for item in lineage
+        ],
     }
 
 

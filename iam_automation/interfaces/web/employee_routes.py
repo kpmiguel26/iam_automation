@@ -58,6 +58,28 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             source_file=source_file,
         )
 
+    @blueprint.route("/source-updates/duplicate/<record_id>", methods=["GET", "POST"])
+    @authenticated
+    def duplicate_review(record_id: str):
+        review = service.duplicate_review(record_id)
+        if review is None:
+            return render_template("errors/404.html"), 404
+        message = error = None
+        if request.method == "POST":
+            if not review.get("worker_id"):
+                error = "Este grupo todavía no tiene un empleado canónico único para aplicar los valores seleccionados."
+            else:
+                choices = {key.removeprefix("field_"): value for key, value in request.form.items() if key.startswith("field_") and value}
+                try:
+                    grouped: dict[str, list[str]] = {}
+                    for field, source_record_id in choices.items():
+                        grouped.setdefault(source_record_id, []).append(field)
+                    results = [service.apply_selected_source_updates(review["worker_id"], [source_record_id], fields, str(session["iam_user"])) for source_record_id, fields in grouped.items()]
+                    message = f"Se aplicaron localmente {sum(int(result['processed']) for result in results)} registro(s) y se actualizó el histórico."
+                except (OSError, ValueError, PermissionError) as exc:
+                    error = str(exc)
+        return render_template("employees/duplicate_review.html", review=review, message=message, error=error)
+
     @blueprint.get("/source-updates/candidate/<record_id>")
     @authenticated
     def source_candidate(record_id: str):
@@ -113,9 +135,9 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         if not record_ids:
             return redirect(url_for("employees.source_updates", worker_id=worker_id, error="No pending source changes are available.", notice_type="warning"))
         try:
-            result = service.apply_approved_import_records(record_ids, current_user.username)
+            result = service.apply_selected_source_updates(worker_id, record_ids, request.form.getlist("apply_fields"), current_user.username)
             record_audit(audit_path, current_user.username, "EMPLOYEE_SOURCE_CHANGE_APPLIED", "worker", worker_id, new_values={"record_ids": record_ids, "result": result})
-            return redirect(url_for("employees.source_updates", worker_id=worker_id, notice=f"Applied {result.get('processed', 0)} source record(s).", notice_type="success"))
+            return redirect(url_for("employees.source_updates", worker_id=worker_id, notice=f"Applied locally: {result.get('processed', 0)} source record(s). History updated. Publish SQLite separately to share it.", notice_type="success"))
         except (OSError, ValueError, PermissionError) as exc:
             return redirect(url_for("employees.source_updates", worker_id=worker_id, error=str(exc), notice_type="danger"))
 
@@ -133,7 +155,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             request_id = _request_source_change(
                 operation_type="UPDATE_EMPLOYEE",
                 entity_id=worker_id,
-                payload={"source_delta": True, "worker_id": worker_id, "record_ids": record_ids, "source_updates": preview["updates"], "fields": preview.get("fields", [])},
+                payload={"source_delta": True, "worker_id": worker_id, "record_ids": record_ids, "source_updates": preview["updates"], "fields": preview.get("fields", []), "apply_fields": request.form.getlist("apply_fields")},
                 reason=request.form.get("reason", "Source update review"),
                 actor=actor,
             )
