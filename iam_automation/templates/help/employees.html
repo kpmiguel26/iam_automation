@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Employees guide{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <div class="page-heading">
+    <div><p class="eyebrow">Operations guide</p><h1>Employees</h1><p class="text-secondary mb-0">How to find an employee, understand source-owned data and submit a controlled change.</p></div>
+    <a class="btn btn-primary" href="{{ url_for('employees.employee_directory') }}">Open Employees</a>
+  </div>
+
+  <div class="alert alert-info mt-4"><strong>Important:</strong> Employee profiles are primarily read-only. SRS, AccessNow and Master Roster Lock keep separate values; the employee profile shows them together without allowing one platform to overwrite another.</div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-lg-8">
+      <section class="surface p-4 h-100">
+        <p class="eyebrow mb-1">Quick start</p><h2 class="h4">Find and understand an employee</h2>
+        <ol class="help-steps mb-0">
+          <li>Open <a href="{{ url_for('employees.employee_directory') }}">Employees</a> from Operations.</li>
+          <li>Search by name, email, vendor identifier or vendor. You can also filter by status, source and engagement.</li>
+          <li>Select the employee name to open the read-only profile tree.</li>
+          <li>Expand a source platform to inspect its identifiers, snapshots and all captured fields.</li>
+          <li>Use <strong>Review source updates</strong> when a new file has pending changes that require field-level review.</li>
+        </ol>
+      </section>
+    </div>
+    <div class="col-lg-4">
+      <section class="surface p-4 h-100">
+        <p class="eyebrow mb-1">Source ownership</p><h2 class="h5">Who owns what?</h2>
+        <ul class="small text-secondary mb-0"><li><strong>SRS:</strong> supplier and Fieldglass worker details.</li><li><strong>AccessNow:</strong> active/termination status and AccessNow identifiers.</li><li><strong>Master Roster Lock:</strong> roster and vendor engagement values.</li><li><strong>Administrative change:</strong> canonical profile fields after approval.</li></ul>
+      </section>
+    </div>
+  </div>
+
+  <section class="surface p-4 mt-4">
+    <div class="section-heading"><div><p class="eyebrow mb-1">Step-by-step</p><h2 class="h4 mb-1">Using the employee area</h2><p class="small text-secondary mb-0">Open each topic for the action and the expected result.</p></div></div>
+    <div class="accordion mt-3" id="employeeHelpAccordion">
+      <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#employeeHelpDirectory">1. Employee directory</button></h3><div id="employeeHelpDirectory" class="accordion-collapse collapse show" data-bs-parent="#employeeHelpAccordion"><div class="accordion-body"><p>Use the search field for a broad lookup. Status, vendor and source filters can be combined. The directory loads results only after a search or filter is submitted.</p><ul class="mb-0"><li><strong>Source:</strong> filters by the platform that supplied an identifier.</li><li><strong>Engagement:</strong> searches vendor, program, project, role, location and statement of work.</li><li><strong>Review:</strong> indicates open discrepancies that deserve attention.</li></ul></div></div></div>
+      <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#employeeHelpProfile">2. Employee profile tree</button></h3><div id="employeeHelpProfile" class="accordion-collapse collapse" data-bs-parent="#employeeHelpAccordion"><div class="accordion-body"><p>The first page is a read-only overview. The tree is organized as:</p><div class="help-tree-example"><div>Employee</div><div class="ms-3">└─ Canonical identity</div><div class="ms-3">└─ Source platforms</div><div class="ms-5">├─ SRS</div><div class="ms-5">├─ AccessNow</div><div class="ms-5">└─ Master Roster Lock</div><div class="ms-3">└─ Immutable history</div></div><p class="mb-0">Expand a platform to see its identifiers, mapped engagement snapshot and all source fields. Values from different platforms are intentionally shown side by side.</p></div></div></div>
+      <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#employeeHelpSources">3. Read source data</button></h3><div id="employeeHelpSources" class="accordion-collapse collapse" data-bs-parent="#employeeHelpAccordion"><div class="accordion-body"><p>Each source accordion is evidence from that platform. If values disagree, compare the source file and observed timestamp before deciding which business process should correct it.</p><ul class="mb-0"><li>Identifiers are source-owned and should not be manually changed casually.</li><li>Mapped fields provide a convenient summary; “All fields” shows the complete source lineage.</li><li>A source update should change only that source’s snapshot, never another source’s snapshot.</li></ul></div></div></div>
+      <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#employeeHelpUpdates">4. Review source updates</button></h3><div id="employeeHelpUpdates" class="accordion-collapse collapse" data-bs-parent="#employeeHelpAccordion"><div class="accordion-body"><p>When a source file is ingested, it is staged first. Open <a href="{{ url_for('employees.source_updates_overview') }}">Updates</a> to review matched employees, new candidates and possible duplicates.</p><ol class="mb-0"><li>Open the employee or candidate.</li><li>Compare current value and incoming value field by field.</li><li>Select only the fields that should be applied.</li><li>Apply locally only when authorized, or submit for approval.</li><li>Confirm the new version in the employee history.</li></ol></div></div></div>
+      <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#employeeHelpEdit">5. Submit an administrative edit</button></h3><div id="employeeHelpEdit" class="accordion-collapse collapse" data-bs-parent="#employeeHelpAccordion"><div class="accordion-body"><p>Click <strong>Edit profile</strong> on the employee overview. The edit page contains the full form and the required Business reason.</p><div class="alert alert-warning mb-0"><strong>Editing does not save directly.</strong> Submitting creates a request. A reviewer must approve it before the canonical profile changes, and the change is then recorded in immutable history.</div></div></div></div>
+      <div class="accordion-item"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#employeeHelpHistory">6. Understand history and publication</button></h3><div id="employeeHelpHistory" class="accordion-collapse collapse" data-bs-parent="#employeeHelpAccordion"><div class="accordion-body"><p>History records the version, actor, source, file, changed fields and previous/current values. Local application and SQLite publication are separate steps.</p><ul class="mb-0"><li><strong>Applied locally:</strong> the change exists on this workstation and history is available immediately.</li><li><strong>Published:</strong> an administrator shares the SQLite snapshot with other workstations.</li><li><strong>Refresh:</strong> another workstation must refresh its workspace to receive the published snapshot.</li></ul></div></div></div>
+    </div>
+  </section>
+
+  <section class="surface p-4 mt-4"><p class="eyebrow mb-1">Troubleshooting</p><h2 class="h5">If something looks wrong</h2><div class="row g-3 small text-secondary"><div class="col-md-4"><strong class="d-block text-dark">Employee not found</strong>Check the directory search and confirm the local workspace has refreshed.</div><div class="col-md-4"><strong class="d-block text-dark">Values disagree</strong>Open each source accordion and compare source, file and timestamp. Do not overwrite another source to “fix” it.</div><div class="col-md-4"><strong class="d-block text-dark">History is missing</strong>Confirm the change was applied locally. Publishing only shares the local history; it does not create it.</div></div></section>
+</div>
+{% endblock %}

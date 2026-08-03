@@ -8,7 +8,7 @@
 
   <section class="employee-hero mt-3">
     <div class="employee-hero-identity"><span class="avatar avatar-xl">{{ (worker.display_name or '?')[:1]|upper }}</span><div><p class="eyebrow mb-1">Canonical employee profile</p><h1 class="mb-1">{{ worker.display_name or 'Unnamed worker' }}</h1><div class="employee-hero-meta"><span><strong>ID</strong> <code>{{ worker.worker_id }}</code></span><span><strong>Email</strong> {{ worker.canonical_email or 'No canonical email' }}</span><span><strong>Version</strong> {{ worker.record_version }}</span></div></div></div>
-    <div class="employee-hero-actions"><span class="status-pill status-{{ worker.status|lower }}"><span></span>{{ worker.status.replace('_', ' ').title() }}</span><a class="btn btn-primary" href="{{ url_for('employees.employee_edit', worker_id=worker.worker_id) }}">Edit profile</a></div>
+    <div class="employee-hero-actions"><span class="status-pill status-{{ worker.status|lower }}"><span></span>{{ worker.status.replace('_', ' ').title() }}</span><button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#employeeContextHelp" aria-label="Open employee help">? Help</button><a class="btn btn-primary" href="{{ url_for('employees.employee_edit', worker_id=worker.worker_id) }}">Edit profile</a></div>
   </section>
 
   <div class="alert alert-info mt-4 mb-4"><strong>Source-owned profile.</strong> This page is read-only. SRS, AccessNow and Master Roster Lock data stay separated; use Edit profile only to submit an approved administrative change.</div>
@@ -37,4 +37,5 @@
     </div>
   </section>
 </div>
+{% include "employees/_context_help.html" %}
 {% endblock %}

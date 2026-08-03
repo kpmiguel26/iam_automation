@@ -280,4 +280,6 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .history-readable-tags { display: flex; flex-wrap: wrap; gap: .5rem; }
 .history-readable-tag { background: #eef6f6; border: 1px solid #cfe5e5; border-radius: 999px; color: #075e61; font-size: .78rem; padding: .35rem .6rem; }
 .history-readable-tag small { color: #697587; margin-left: .25rem; }
+.help-tree-example { background: #f7fafc; border-left: 3px solid var(--kp-teal); border-radius: .35rem; color: var(--kp-navy); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.8; margin: 1rem 0; padding: .7rem 1rem; }
+.help-context-callout { background: #eef7f7; border-left: 4px solid var(--kp-teal); border-radius: .45rem; display: grid; gap: .25rem; padding: .85rem 1rem; }
 @media (max-width: 760px) { .history-readable-grid { grid-template-columns: 1fr; } }
