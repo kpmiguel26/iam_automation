@@ -8,6 +8,7 @@ from flask import Blueprint, render_template, request, session
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.shared_request_service import SharedRequestService
 from ...application.audit_service import record_audit
+from ...application.employee_service import EmployeeService
 from ...application.notification_service import NotificationService
 from ...application.user_service import UserService
 from ...identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_REVIEWER, ROLE_SUPER_OPERATOR, normalize_role
@@ -20,6 +21,7 @@ def _current_user() -> CurrentUser:
 def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | None = None, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("requests", __name__)
     service = SharedRequestService(sharepoint_root) if sharepoint_root else RequestService(database_path)
+    employees = EmployeeService(database_path)
     users = UserService(database_path)
     notifications = NotificationService(database_path)
     source_import_operations = {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}
@@ -148,13 +150,15 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
                         new_values={"record_count": record_count, "canonical_write": False, "review_route": "/employees/source-updates"},
                     )
                 else:
+                    local_result = employees.apply_change_request(decided_item.request_id, decided_item.operation_type, decided_item.entity_id, decided_item.payload, str(session["iam_user"]))
+                    record_audit(audit_path, str(session["iam_user"]), "REQUEST_APPLIED_LOCALLY", "worker", decided_item.entity_id, new_values={"request_id": request_id, "result": local_result})
                     for user in users.list_users():
                         if user.active and {normalize_role(role) for role in user.roles} & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
                             notifications.create(user.username, "REQUEST_READY_FOR_PUBLICATION", "Approved request ready for publication", f"Request {request_id[:8]} was approved and is waiting in the Publication Queue.", severity="WARNING", target_route="/admin/publication", entity_type="change_request", entity_id=request_id)
             if decided_item.status == "APPROVED" and decided_item.operation_type in source_import_operations:
                 message = "Source request approved. Records are ready for individual matching and employee history review. No canonical employee was created automatically."
             elif decided_item.status == "APPROVED":
-                message = "Request approved and applied to this workstation. Runtime SQLite still requires publication." + partial_notice
+                message = "Request approved and applied locally. The new history version is now in this runtime; publish SQLite only to share it." + partial_notice
             else:
                 message = "Request decision recorded."
             return render_template("requests/approval_queue.html", **queue_context(), message=message, error=None)

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Review duplicate{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <a class="back-link" href="{{ url_for('employees.source_updates_overview') }}">Back to source updates</a>
+  {% if message %}<div class="alert alert-success mt-3">{{ message }}</div>{% endif %}
+  {% if error %}<div class="alert alert-danger mt-3">{{ error }}</div>{% endif %}
+  <div class="page-heading mt-3">
+    <div><p class="eyebrow">Duplicate review</p><h1>{{ review.records[0].worker_name or 'Unnamed candidate' }}</h1><p class="text-secondary mb-0">Compare each incoming value and choose exactly which source value should be kept.</p></div>
+    <span class="badge text-bg-warning">{{ review.group.classification|replace('_', ' ')|title }}</span>
+  </div>
+  <div class="alert alert-info mt-4">The selected values are applied to the local SQLite runtime and recorded in the employee history. Publishing SQLite is a separate step used to share the result with other teams.</div>
+  <form method="post">
+    <section class="surface p-4 mt-3">
+      <div class="section-heading"><div><p class="eyebrow mb-1">Matching evidence</p><h2 class="h5 mb-0">{{ review.group.signal }}: {{ review.group.value }}</h2></div><span class="small text-secondary">{{ review.records|length }} source record(s)</span></div>
+      <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>Source record</th><th>Source</th><th>File</th></tr></thead><tbody>{% for record in review.records %}<tr><td><code>{{ record.source_record_key }}</code></td><td>{{ record.source_system|replace('_', ' ')|title }}</td><td>{{ record.source_file }}</td></tr>{% endfor %}</tbody></table></div>
+    </section>
+    <section class="surface p-4 mt-3">
+      <div class="section-heading"><div><p class="eyebrow mb-1">Field decisions</p><h2 class="h5 mb-0">Choose the value to use</h2></div><span class="small text-secondary">One choice per field</span></div>
+      <div class="table-responsive mt-3"><table class="table align-middle mb-0"><thead><tr><th>Field</th><th>Current canonical value</th><th>Incoming values</th></tr></thead><tbody>
+        {% for field in review.fields %}<tr><td><strong>{{ field.label }}</strong></td><td>{% if field.current_value %}<span class="text-secondary">{{ field.current_value }}</span>{% else %}<span class="text-secondary">Not set</span>{% endif %}</td><td>{% for choice in field.choices %}<div class="form-check mb-2"><input class="form-check-input" type="radio" name="field_{{ field.name }}" value="{{ choice.record_id }}" id="{{ field.name }}_{{ loop.index }}" {% if loop.first %}checked{% endif %}><label class="form-check-label" for="{{ field.name }}_{{ loop.index }}"><strong>{{ choice.value }}</strong> <span class="small text-secondary">({{ choice.source|replace('_', ' ')|title }})</span></label></div>{% endfor %}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {% if review.worker_id %}<div class="d-flex justify-content-end mt-4"><button class="btn btn-primary" type="submit">Apply selected values locally</button></div>{% else %}<div class="alert alert-warning mt-4 mb-0">These records do not resolve to one canonical employee yet. Review the values here, then use the candidate workflow to decide which employee to create.</div>{% endif %}
+    </section>
+  </form>
+</div>
+{% endblock %}

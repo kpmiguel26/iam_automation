@@ -20,6 +20,7 @@ from ..infrastructure.sqlite.orm import (
     orm_session,
 )
 from .worker_history_service import record_worker_version, version_dict
+from .publication_state import mark_publication_pending
 
 
 @dataclass(frozen=True)
@@ -216,6 +217,137 @@ class EmployeeService:
             result["errors"] = list(result["errors"]) + list(roster_result["errors"])
         return result
 
+    def apply_selected_source_updates(self, worker_id: str, record_ids: list[str], fields: list[str], actor: str) -> dict[str, object]:
+        """Apply selected incoming fields locally and append immutable history."""
+        selected = {str(value).strip() for value in fields if str(value).strip()}
+        record_set = {str(value).strip() for value in record_ids if str(value).strip()}
+        if not record_set:
+            raise ValueError("No source records were selected.")
+        if not selected:
+            raise ValueError("Select at least one field to apply.")
+        source_fields = {
+            "first_name": ("worker", "first_name"), "last_name": ("worker", "last_name"),
+            "email": ("worker", "canonical_email"), "vendor_email": ("worker", "canonical_email"), "vendor_email_address": ("worker", "canonical_email"),
+            "vendor_name": ("engagement", "vendor_name"), "job_title": ("engagement", "job_title"),
+            "lob": ("engagement", "lob"), "program": ("engagement", "program"), "project": ("engagement", "project"),
+            "country": ("engagement", "country"), "site_location": ("engagement", "site_location"),
+            "supervisor_name": ("engagement", "supervisor_name"), "worker_start_date": ("engagement", "onboarding_date"),
+            "worker_end_date": ("engagement", "production_start_date"), "worker_status": ("engagement", "status"),
+            "npn": ("engagement", "npn"), "resident_license_state": ("engagement", "license_state"),
+            "resident_license_number": ("engagement", "license_number"), "taxonomy": ("engagement", "taxonomy_code"),
+            "key_billable_function": ("engagement", "key_billable_function"),
+        }
+        applied, changed_fields = 0, set()
+        now = datetime.now(timezone.utc).isoformat()
+        with orm_session(self.database_path) as session:
+            worker = session.get(WorkerModel, worker_id)
+            if worker is None:
+                raise ValueError("Worker was not found.")
+            engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker_id).order_by(WorkerEngagementModel.updated_at_utc.desc()))
+            records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(record_set), IngestionRecordModel.matched_worker_id == worker_id)).all()
+            if not records:
+                raise ValueError("The selected source records no longer match this employee.")
+            for record in records:
+                if record.status not in {"STAGED", "MATCHED", "CONFLICT"}:
+                    continue
+                payload = json.loads(record.normalized_json)
+                for source_field in selected:
+                    target = source_fields.get(source_field)
+                    incoming = str(payload.get(source_field) or "").strip()
+                    if not target or not incoming:
+                        continue
+                    owner, attribute = target
+                    if owner == "worker":
+                        current = str(getattr(worker, attribute) or "")
+                        setattr(worker, attribute, incoming.lower() if attribute == "canonical_email" else incoming)
+                        if attribute in {"first_name", "last_name"}:
+                            worker.display_name = " ".join(part for part in (worker.first_name, worker.last_name) if part)
+                    else:
+                        if engagement is None:
+                            engagement = WorkerEngagementModel(engagement_id=str(uuid.uuid4()), worker_id=worker_id, source_system=record.source_system, created_at_utc=now, updated_at_utc=now)
+                            session.add(engagement)
+                        current = str(getattr(engagement, attribute) or "")
+                        setattr(engagement, attribute, incoming)
+                        engagement.updated_at_utc = now
+                    if current.casefold() != incoming.casefold():
+                        changed_fields.add(attribute)
+                for field_name, value in payload.items():
+                    session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=engagement.engagement_id if engagement else None, batch_id=record.batch_id, source_system=record.source_system, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
+                record.status = "APPLIED"
+                applied += 1
+            if changed_fields:
+                record_worker_version(session, worker_id, actor=actor, change_type="SELECTIVE_SOURCE_UPDATE", source_system="LOCAL_REVIEW", changed_fields=sorted(changed_fields))
+            session.commit()
+        mark_publication_pending(self.database_path, actor=actor, reason="Selective source update applied locally")
+        return {"processed": applied, "applied": applied, "changed_fields": sorted(changed_fields), "actor": actor}
+
+    def apply_change_request(self, request_id: str, operation_type: str, worker_id: str, payload: dict[str, object], actor: str) -> dict[str, object]:
+        """Apply an approved employee request to this runtime and record its history."""
+        now = datetime.now(timezone.utc).isoformat()
+        worker_fields = {"first_name": "first_name", "last_name": "last_name", "email": "canonical_email", "status": "status"}
+        engagement_fields = {"job_title": "job_title", "lob": "lob", "vendor_name": "vendor_name", "program": "program", "project": "project", "country": "country", "site_location": "site_location", "supervisor_name": "supervisor_name", "onboarding_date": "onboarding_date", "production_start_date": "production_start_date", "engagement_status": "status", "npn": "npn", "license_state": "license_state", "license_number": "license_number", "taxonomy_code": "taxonomy_code", "key_billable_function": "key_billable_function"}
+        changed_fields: list[str] = []
+        with orm_session(self.database_path) as session:
+            worker = session.get(WorkerModel, worker_id)
+            if operation_type == "CREATE_EMPLOYEE":
+                if worker is not None:
+                    raise ValueError("The requested employee already exists.")
+                worker = WorkerModel(worker_id=worker_id, first_name=str(payload.get("first_name") or ""), last_name=str(payload.get("last_name") or ""), display_name=" ".join(str(payload.get(key) or "").strip() for key in ("first_name", "last_name") if str(payload.get(key) or "").strip()), canonical_email=str(payload.get("email") or "").strip().lower(), status=str(payload.get("status") or "ACTIVE"), record_version=0, created_at_utc=now, updated_at_utc=now)
+                session.add(worker)
+                changed_fields = sorted(payload.keys())
+            else:
+                if worker is None:
+                    raise ValueError("The requested employee was not found in the local runtime.")
+                engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker_id).order_by(WorkerEngagementModel.updated_at_utc.desc()))
+                for field, attribute in worker_fields.items():
+                    if field not in payload:
+                        continue
+                    value = str(payload[field] or "").strip()
+                    setattr(worker, attribute, value.lower() if attribute == "canonical_email" else value)
+                    changed_fields.append(attribute)
+                for field, attribute in engagement_fields.items():
+                    if field not in payload:
+                        continue
+                    if engagement is None:
+                        engagement = WorkerEngagementModel(engagement_id=str(uuid.uuid4()), worker_id=worker_id, source_system="CHANGE_REQUEST", created_at_utc=now, updated_at_utc=now)
+                        session.add(engagement)
+                    setattr(engagement, attribute, str(payload[field] or "").strip())
+                    engagement.updated_at_utc = now
+                    changed_fields.append(attribute)
+                if "first_name" in payload or "last_name" in payload:
+                    worker.display_name = " ".join(part for part in (worker.first_name, worker.last_name) if part)
+                if "identifier_updates" in payload:
+                    for identifier_id, value in dict(payload["identifier_updates"]).items():
+                        identifier = session.get(WorkerIdentifierModel, identifier_id)
+                        if identifier:
+                            identifier.identifier_value = str(value)
+                            identifier.normalized_value = str(value).casefold()
+                            changed_fields.append("identifiers")
+                if "lineage_updates" in payload:
+                    for lineage_id, value in dict(payload["lineage_updates"]).items():
+                        lineage_item = session.get(WorkerSourceLineageModel, lineage_id)
+                        if lineage_item and lineage_item.worker_id == worker_id:
+                            new_value = str(value or "").strip()
+                            if lineage_item.normalized_value != new_value:
+                                lineage_item.raw_value = new_value
+                                lineage_item.normalized_value = new_value
+                                lineage_item.observed_at_utc = now
+                                changed_fields.append(f"lineage:{lineage_item.field_name}")
+                if operation_type == "DEACTIVATE_EMPLOYEE" and "status" not in payload:
+                    worker.status = "INACTIVE"
+                    changed_fields.append("status")
+            record_worker_version(session, worker_id, actor=actor, change_type="CHANGE_REQUEST_APPLIED", source_system="CHANGE_REQUEST", source_record_key=request_id, changed_fields=sorted(set(changed_fields)))
+            session.commit()
+        mark_publication_pending(self.database_path, actor=actor, reason=f"Approved change request {request_id} applied locally")
+        return {"request_id": request_id, "worker_id": worker_id, "changed_fields": sorted(set(changed_fields)), "applied": True, "actor": actor}
+
+    def change_request_has_history(self, request_id: str) -> bool:
+        with orm_session(self.database_path) as session:
+            # Versions created by the earlier bug were empty baselines. They
+            # must be eligible for one reconciliation pass so their payload
+            # can be applied and recorded correctly.
+            return bool(session.scalar(select(WorkerProfileVersionModel.version_id).where(WorkerProfileVersionModel.source_record_key == request_id, WorkerProfileVersionModel.changed_fields_json != "[]").limit(1)))
+
     def refresh_rsr_matches(self) -> dict[str, int]:
         """Refresh enrichment-source matching after canonical workers change."""
         from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
@@ -232,7 +364,22 @@ class EmployeeService:
             lineage = session.scalars(select(WorkerSourceLineageModel).where(WorkerSourceLineageModel.worker_id == worker_id).order_by(WorkerSourceLineageModel.observed_at_utc.desc()).limit(100)).all()
             discrepancies = session.scalars(select(WorkerDiscrepancyModel).where(WorkerDiscrepancyModel.worker_id == worker_id).order_by(WorkerDiscrepancyModel.created_at_utc.desc())).all()
             versions = session.scalars(select(WorkerProfileVersionModel).where(WorkerProfileVersionModel.worker_id == worker_id).order_by(WorkerProfileVersionModel.version_number.desc())).all()
-            return {"worker": worker, "identifiers": identifiers, "engagements": engagements, "lineage": lineage, "discrepancies": discrepancies, "versions": [version_dict(item) for item in versions]}
+            version_items = [version_dict(item) for item in versions]
+            for index, item in enumerate(version_items):
+                previous = version_items[index + 1]["snapshot"] if index + 1 < len(version_items) else {}
+                previous_engagement = (previous.get("engagements") or [{}])[0]
+                current_engagement = (item["snapshot"].get("engagements") or [{}])[0]
+                item["changes"] = []
+                for field in item["changed_fields"]:
+                    if field.startswith("lineage:"):
+                        lineage_field = field.split(":", 1)[1]
+                        current_value = next((row.get("normalized_value", "") for row in item["snapshot"].get("lineage", []) if row.get("field_name") == lineage_field), "")
+                        previous_value = next((row.get("normalized_value", "") for row in previous.get("lineage", []) if row.get("field_name") == lineage_field), "")
+                    else:
+                        current_value = item["snapshot"].get(field, current_engagement.get(field, ""))
+                        previous_value = previous.get(field, previous_engagement.get(field, ""))
+                    item["changes"].append({"field": field, "previous_value": previous_value or "Not set", "new_value": current_value or "Not set"})
+            return {"worker": worker, "identifiers": identifiers, "engagements": engagements, "lineage": lineage, "discrepancies": discrepancies, "versions": version_items}
 
     def source_update_preview(self, worker_id: str, source_file: str = "") -> dict[str, object] | None:
         """Return only pending source rows that affect one canonical worker.
@@ -511,6 +658,7 @@ class EmployeeService:
                         payload.get("last_name") or payload.get("employee_last_name") or "",
                     ) if str(part).strip()
                 ),
+                "payload": payload,
             }
             for label, normalized_value in signals:
                 group_key = (label, normalized_value)
@@ -554,6 +702,31 @@ class EmployeeService:
             "group_count": len(duplicate_groups),
             "record_count": len({item["record_id"] for group in duplicate_groups for item in group["records"]}),
         }
+
+    def duplicate_review(self, record_id: str) -> dict[str, object] | None:
+        """Build one human-friendly, field-by-field duplicate comparison."""
+        summary = self.source_duplicate_summary()
+        group = next((item for item in summary["groups"] if any(row["record_id"] == record_id for row in item["records"])), None)
+        if group is None:
+            return None
+        records = group["records"]
+        worker_ids = {row["matched_worker_id"] for row in records if row.get("matched_worker_id")}
+        worker_id = next(iter(worker_ids), "") if len(worker_ids) == 1 else ""
+        current: dict[str, str] = {}
+        if worker_id:
+            detail = self.get_worker(worker_id)
+            if detail:
+                worker = detail["worker"]
+                engagement = detail["engagements"][0] if detail["engagements"] else None
+                current = {"first_name": worker.first_name or "", "last_name": worker.last_name or "", "email": worker.canonical_email or ""}
+                if engagement:
+                    for source_field, attribute in {
+                        "vendor_name": "vendor_name", "job_title": "job_title", "lob": "lob", "program": "program", "project": "project", "country": "country", "site_location": "site_location", "supervisor_name": "supervisor_name", "worker_start_date": "onboarding_date", "worker_end_date": "production_start_date", "worker_status": "status", "npn": "npn", "resident_license_state": "license_state", "resident_license_number": "license_number", "taxonomy": "taxonomy_code", "key_billable_function": "key_billable_function",
+                    }.items():
+                        current[source_field] = str(getattr(engagement, attribute) or "")
+        field_names = sorted({key for row in records for key, value in row.get("payload", {}).items() if str(value or "").strip()})
+        fields = [{"name": name, "label": name.replace("_", " ").title(), "current_value": current.get(name, ""), "choices": [{"record_id": row["record_id"], "source": row["source_system"], "value": str(row["payload"].get(name) or "")} for row in records if str(row["payload"].get(name) or "").strip()]} for name in field_names]
+        return {"group": group, "records": records, "worker_id": worker_id, "fields": fields}
 
     def _promote_record_in_session(self, session, record: IngestionRecordModel, now: str, actor: str = "system") -> tuple[str, bool]:
         """Promote one record while the caller owns the transaction."""

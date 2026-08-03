@@ -36,33 +36,9 @@
     </div>
     <p class="text-secondary small mt-2 mb-0">These records share an identifier or a strong name/email combination. Corroborated records point to one existing employee; possible duplicates need review before promotion.</p>
     {% if duplicates.groups %}
-      <div class="row g-3 mt-1">
-        {% for group in duplicates.groups[:12] %}
-          <div class="col-12 col-xl-6">
-            <div class="duplicate-signal-card {% if group.classification == 'CORROBORATED' %}is-corroborated{% endif %}">
-              <div class="d-flex justify-content-between gap-2 align-items-start">
-                <div><div class="small text-secondary">{{ group.signal }}</div><strong>{{ group.value }}</strong></div>
-                <span class="badge {% if group.classification == 'CORROBORATED' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ group.classification|replace('_', ' ')|title }}</span>
-              </div>
-              <div class="small text-secondary mt-2">{{ group.record_count }} source record(s)</div>
-              <ul class="list-unstyled small mb-0 mt-2">
-                {% for item in group.records[:4] %}
-                  <li class="duplicate-record-row">
-                    {% if item.matched_worker_id %}
-                      <a href="{{ url_for('employees.source_updates', worker_id=item.matched_worker_id) }}">{{ item.worker_name or item.matched_worker_id }}</a>
-                    {% else %}
-                      <a href="{{ url_for('employees.source_candidate', record_id=item.record_id) }}">{{ item.worker_name or 'Unnamed candidate' }}</a>
-                    {% endif %}
-                    <span>{{ item.source_system|replace('_', ' ')|title }}</span>
-                  </li>
-                {% endfor %}
-              </ul>
-              {% if group.record_count > 4 %}<div class="small text-secondary mt-2">+ {{ group.record_count - 4 }} more record(s)</div>{% endif %}
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-      {% if duplicates.group_count > 12 %}<div class="small text-secondary mt-3">Showing the 12 largest groups. Use the source filters and review links to continue.</div>{% endif %}
+      <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>Name</th><th>Duplicate signal</th><th>Records</th><th>Status</th><th>Review</th></tr></thead><tbody>
+        {% for group in duplicates.groups %}{% set first = group.records[0] %}<tr><td><a class="fw-semibold text-decoration-none" href="{{ url_for('employees.duplicate_review', record_id=first.record_id) }}">{{ first.worker_name or 'Unnamed candidate' }}</a><div class="small text-secondary">{{ group.value }}</div></td><td>{{ group.signal }}</td><td>{{ group.record_count }}</td><td><span class="badge {% if group.classification == 'CORROBORATED' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ group.classification|replace('_', ' ')|title }}</span></td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.duplicate_review', record_id=first.record_id) }}">Open review</a></td></tr>{% endfor %}
+      </tbody></table></div>
     {% else %}
       <div class="alert alert-success mt-3 mb-0">No duplicate signals were found among the pending source records.</div>
     {% endif %}

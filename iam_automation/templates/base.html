@@ -41,6 +41,7 @@
   {% endif %}
 </header>
 {% if request.args.get('notice') %}<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080"><div id="iamToast" class="toast align-items-center text-bg-{{ request.args.get('notice_type', 'info') }} border-0" role="status" aria-live="polite" aria-atomic="true"><div class="d-flex"><div class="toast-body">{{ request.args.get('notice') }}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div></div></div>{% endif %}
+{% if session.get('iam_user') and priority_notifications %}<section class="container-fluid px-4 px-lg-5 pt-3" aria-label="Priority notifications"><div class="priority-notification-panel"><div class="priority-notification-heading"><span class="priority-notification-icon">!</span><div><strong>Important workspace updates</strong><div class="small">Review these notifications before continuing work.</div></div><a class="btn btn-sm btn-light" href="{{ url_for('notifications_page') }}">View all</a></div><div class="priority-notification-list">{% for item in priority_notifications %}<a class="priority-notification-item" href="{{ url_for('notification_open', notification_id=item.notification_id) }}"><span class="priority-notification-dot severity-{{ item.severity|lower }}"></span><span><strong>{{ item.title }}</strong><small>{{ item.message }}</small></span><span class="priority-notification-arrow">→</span></a>{% endfor %}</div></div></section>{% endif %}
 {% if session.get('iam_user') %}<div class="container-fluid px-4 px-lg-5 pt-3"><div class="alert alert-warning py-2 mb-0 small"><strong>Development build:</strong> This workspace is under active testing. Please report bugs from the Workspace menu.</div></div>{% endif %}
 {% if session.get('is_admin') and publication_pending %}<div class="container-fluid px-4 px-lg-5 pt-3"><div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mb-0"><span><strong>Local changes are waiting for publication.</strong> User, role, or password changes are currently available only on this workstation.</span>{% if 'MASTER_ADMIN' in session.get('iam_roles', []) or 'APPLICATION_ADMIN' in session.get('iam_roles', []) %}<a class="btn btn-sm btn-warning" href="{{ url_for('admin.governance_center') }}">Open database administration</a>{% else %}<span class="small">An Application Admin or Master Admin must publish the runtime database.</span>{% endif %}</div></div>{% endif %}
 <main>{% block content %}{% endblock %}</main>
@@ -54,6 +55,25 @@
     if (toast && window.bootstrap) {
       bootstrap.Toast.getOrCreateInstance(toast, { delay: 3500 }).show();
     }
+
+    document.querySelectorAll('form[method="post"], form[method="POST"]').forEach(function (form) {
+      form.addEventListener('submit', function () {
+        if (form.dataset.loadingHandled === 'true' || form.dataset.noLoader === 'true') return;
+        form.dataset.loadingHandled = 'true';
+        var action = (form.getAttribute('action') || '').toLowerCase();
+        var message = form.dataset.loadingMessage || 'Guardando cambios y actualizando el workspace…';
+        if (action.indexOf('publish') !== -1) message = 'Publicando snapshot SQLite, creando respaldo y notificando al equipo…';
+        else if (action.indexOf('approval') !== -1 || action.indexOf('decision') !== -1) message = 'Guardando decisión y aplicando el cambio local…';
+        else if (form.enctype === 'multipart/form-data') message = 'Cargando y validando el archivo…';
+        var overlay = document.createElement('div');
+        overlay.className = 'transaction-loading';
+        overlay.setAttribute('role', 'status');
+        overlay.setAttribute('aria-live', 'polite');
+        overlay.innerHTML = '<div class="transaction-loading-card"><span class="spinner-border" aria-hidden="true"></span><div><strong>Procesando transacción</strong><small>' + message + '</small></div></div>';
+        document.body.appendChild(overlay);
+        form.querySelectorAll('button, input[type="submit"]').forEach(function (control) { control.disabled = true; });
+      });
+    });
   });
 </script>
 </body>

@@ -264,7 +264,7 @@ class FileWatchService:
             "PENDING_REQUEST": ("New request file detected", "A new JSON request is waiting in the pending folder."),
             "CONFIGURATION": ("Configuration file detected", "A configuration file changed and is ready for review."),
             "IDENTITY_DISCOVERY": ("Identity discovery updated", "A workstation identity record is available for administrative review."),
-            "PUBLISHED_RUNTIME": ("Workspace database updated", "A new published runtime database is available for local refresh."),
+            "PUBLISHED_RUNTIME": ("New database snapshot published", "A new runtime SQLite snapshot is available. Refresh this workstation when you are not editing a form."),
             "ROSTER_LOCK": ("Roster Lock ingested", "A vendor Roster Lock workbook was staged for validation and reconciliation."),
             "RSR_SUPPLIER_WORKER_DETAILS": ("RSR worker details ingested", "Supplier worker details were staged for matching against canonical employees."),
             "APPROVED_IMPORT": ("Employee updates ready", "Approved source records are ready for individual matching and review. No employee was created automatically."),

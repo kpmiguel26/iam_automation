@@ -40,7 +40,7 @@ Working document: [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACC
 - [ ] Execute the user/access UAT checklist and record stakeholder sign-off.
 - [ ] Carry the approved decisions into the ORM, services, routes and authorization tests.
 
-## Data Operations - Next Objective: IAM Ingestion Foundation
+## Data Operations - Completed Foundation / Next Objective: Selective Source Reconciliation
 
 - [x] Define initial CSV/XLSX ingestion contract and source validation.
 - [ ] Confirm official Fieldglass report and mapping owner.
@@ -53,8 +53,15 @@ Working document: [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACC
 - [ ] Add business validation hooks for rehire, blacklist, active worker and contract dates.
 - [x] Implement initial validation and quarantine workflow.
 - [x] Add quarantine resolution and import batch history.
+- [x] Add Roster Lock and RSR Supplier Worker Details ingestion foundations.
+- [x] Add canonical worker history, immutable profile versions and duplicate merge events.
+- [x] Keep source-file approval review-only until an explicit worker decision is made.
+- [x] Add source-update notifications and an Employees Updates attention indicator.
 - [ ] Implement generated templates and target exports.
 - [ ] Add single-writer coordination around approved changes.
+- [ ] Refine selective employee-level source review and application outcomes.
+- [ ] Add duplicate clusters, merge recommendations and unresolved-discrepancy reporting.
+- [ ] Confirm vendor normalization and source precedence with stakeholders.
 
 ## Publication And Recovery
 
@@ -74,6 +81,7 @@ Working document: [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACC
 - [ ] Validate the Windows launcher with Python 3.10.
 - [ ] Validate macOS launcher with Python 3.10+.
 - [ ] Run user acceptance scenarios and record sign-off.
+- [x] Run the full regression suite after the Windows ingestion merge: 99 tests passed.
 
 ## Documentation And Delivery
 
@@ -93,3 +101,5 @@ Working document: [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACC
 - [ ] Define canonical worker identifier, source precedence and data lineage.
 - [ ] Implement rehire, blacklist, active-worker and contract-date validation rules.
 - [ ] Implement Roster Lock/Fieldglass reconciliation and discrepancy workflow.
+- [x] Add worker version history and duplicate-worker merge evidence.
+- [ ] Confirm selective source-update review behavior with stakeholders.

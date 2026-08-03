@@ -218,3 +218,16 @@
 - Registered the existing runtime structure as `v001_initial_schema` and added `v002_notification_indexes` as the first incremental migration.
 - Runtime bootstrap now applies pending migrations idempotently after creating the current baseline schema. Future features must add a versioned migration instead of replacing `db_sharepoint` with `db_dev`.
 - Added regression coverage for baseline registration, ordered application and idempotent reruns.
+
+### Worker Identity History, Windows Merge and Daily Closure - 2026-07-31
+
+- Integrated the Windows ingestion update from `feature/iam-data-ingestion-foundation` into `feature/worker-identity-history`.
+- Implemented immutable worker profile versions, duplicate merge events and superseded-worker handling through the worker history migration.
+- Preserved one canonical worker identity across source files, source identifiers, rehires and historical versions.
+- Kept newly discovered and ambiguous source records in review rather than creating or enriching canonical employees automatically.
+- Added source-update notifications and the Employees Updates attention indicator for operational review.
+- Reset derived employee runtime data for a clean test cycle while preserving application users and roles.
+- Published the feature branch and the validated `production` branch. The merge commit is `19ca5f7`.
+- Full regression verification passed: **99 tests**. The loopback Waitress smoke test required local socket permission and passed when run with it.
+- Deliberately excluded generated SQLite, audit, backup and request artifacts from Git; these belong to the local simulated SharePoint runtime, not the source baseline.
+- Next objective is selective source reconciliation: official source contracts, vendor normalization, matching, duplicate review, employee-level decisions and operational notification cleanup.

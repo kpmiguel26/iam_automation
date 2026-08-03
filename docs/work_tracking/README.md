@@ -19,8 +19,10 @@ This folder is the working control center for implementation planning and projec
 
 ## Current Branch
 
-`feature/iam-data-ingestion-foundation`
+`feature/worker-identity-history`
+
+Release baseline: `production`
 
 ## Current Baseline
 
-The local preflight, runtime SQLite synchronization, separate application login, local Flask/Waitress process and Admin Control Center are operational in development. The active branch is preparing the IAM data-ingestion foundation while user/access refinements are tracked independently from the official source formats.
+The local preflight, runtime SQLite synchronization, separate application login, local Flask/Waitress process, Admin Control Center, ingestion foundation and canonical worker history are operational in development. The active branch contains the worker-history increment and the merged Windows ingestion update. Generated runtime fixture data remains local and is excluded from Git. The next objective is selective source reconciliation and employee-level review.

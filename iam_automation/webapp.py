@@ -150,11 +150,14 @@ def create_app(
         username = str(session.get("iam_user", ""))
         notification_service = NotificationService(runtime_path) if runtime_path and username and runtime_path.is_file() else None
         unread_count = notification_service.unread_count(username) if notification_service else 0
-        recent_notifications = notification_service.list_for_user(username, unread_only=True)[:5] if notification_service else []
+        unread_notifications = notification_service.list_for_user(username, unread_only=True) if notification_service else []
+        recent_notifications = unread_notifications[:5]
+        priority_notifications = [item for item in unread_notifications if item.severity in {"CRITICAL", "ERROR", "WARNING"} or item.notification_type in {"FILE_DETECTED", "DATABASE_SNAPSHOT_PUBLISHED"}][:4]
         return {
             "is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & {str(role).upper() for role in roles}),
             "unread_notification_count": unread_count,
             "recent_notifications": recent_notifications,
+            "priority_notifications": priority_notifications,
             "static_version": static_version,
             "publication_pending": publication_pending(runtime_path),
         }
