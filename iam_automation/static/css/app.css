@@ -253,6 +253,16 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .issue-type-question { background: #fff4dc; color: #8a5b12; }
 .accordion-button { gap: .5rem; }
 .accordion-button:not(.collapsed) { background: #f8fafc; box-shadow: inset 0 -1px 0 rgba(0,0,0,.08); color: var(--kp-navy); }
+.treeview { color: var(--kp-navy); }
+.treeview-node { align-items: center; border-radius: .5rem; display: flex; gap: .7rem; min-height: 42px; padding: .55rem .75rem; }
+.treeview-node:hover { background: #f7fafc; }
+.treeview-root { background: #eef7f7; border: 1px solid #cce5e5; }
+.treeview-children { border-left: 1px solid #d4e0e8; margin: .35rem 0 0 1.15rem; padding-left: 1rem; }
+.treeview-branch, .treeview-toggle { color: var(--kp-teal); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
+.treeview-toggle { font-size: 1.1rem; width: 1rem; }
+.treeview .accordion { border-left: 1px solid #d4e0e8; }
+.treeview .accordion-item { border-left: 0; }
+.source-snapshot-card { background: #fbfcfe; border: 1px solid #e1e7ee; border-radius: .5rem; padding: .85rem 1rem; }
 .duplicate-signal-card { background: #fffaf0; border: 1px solid #f2c879; border-left: 4px solid #d97706; border-radius: .55rem; min-height: 100%; padding: 1rem; }
 .duplicate-signal-card.is-corroborated { background: #f1fbf6; border-color: #9bd5b6; border-left-color: #198754; }
 .duplicate-signal-card strong { color: var(--kp-navy); overflow-wrap: anywhere; }

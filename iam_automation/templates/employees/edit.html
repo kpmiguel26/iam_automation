@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Edit employee profile{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <a class="back-link" href="{{ url_for('employees.employee_detail', worker_id=worker.worker_id) }}">Back to employee profile</a>
+  {% if message %}<div class="alert alert-success mt-3">{{ message }}</div>{% endif %}
+  {% if error %}<div class="alert alert-danger mt-3">{{ error }}</div>{% endif %}
+
+  <section class="employee-hero mt-3">
+    <div class="employee-hero-identity"><span class="avatar avatar-xl">{{ (worker.display_name or '?')[:1]|upper }}</span><div><p class="eyebrow mb-1">Canonical employee profile</p><h1 class="mb-1">{{ worker.display_name or 'Unnamed worker' }}</h1><div class="employee-hero-meta"><span><strong>ID</strong> <code>{{ worker.worker_id }}</code></span><span><strong>Email</strong> {{ worker.canonical_email or 'No canonical email' }}</span><span><strong>Version</strong> {{ worker.record_version }}</span></div></div></div>
+    <div class="employee-hero-actions"><span class="status-pill status-{{ worker.status|lower }}"><span></span>{{ worker.status.replace('_', ' ').title() }}</span><a class="btn btn-outline-primary" href="{{ url_for('employees.source_updates', worker_id=worker.worker_id) }}">Review source updates</a></div>
+  </section>
+  <nav class="employee-section-nav" aria-label="Employee profile sections"><a href="#employee-overview">Overview</a><a href="#employee-source-profiles">Source snapshots</a><a href="#employee-lineage">Evidence</a><a href="#employee-history">History <span>{{ versions|length }}</span></a></nav>
+
+  <form method="post" action="{{ url_for('employees.request_employee_change', worker_id=worker.worker_id) }}">
+    {% set engagement = engagements[0] if engagements else none %}
+    <div class="employee-action-bar"><div><strong>Propose a profile change</strong><span>Changes are saved as a request and require approval.</span></div><button class="btn btn-primary" type="submit">Save change request</button></div>
+    <div class="row g-4 mt-2" id="employee-overview">
+      <div class="col-lg-5">
+        <section class="surface p-4 h-100 employee-edit-card">
+          <div class="d-flex align-items-center gap-3 mb-4">
+            <span class="avatar avatar-lg">{{ (worker.display_name or '?')[:1]|upper }}</span>
+            <div>
+              <h2 class="h5 mb-1">{{ worker.display_name or 'Unnamed worker' }}</h2>
+              <span class="small text-secondary">Canonical profile · version {{ worker.record_version }}</span>
+              <a class="small d-block mt-2" href="#employee-history">View profile history ({{ versions|length }})</a>
+            </div>
+          </div>
+          <div class="section-helper"><span class="section-helper-icon">i</span><span>These fields change the canonical profile after approval. Your current values remain visible in the history.</span></div>
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label" for="firstName">First name</label><input id="firstName" class="form-control" name="first_name" value="{{ worker.first_name }}"></div>
+            <div class="col-md-6"><label class="form-label" for="lastName">Last name</label><input id="lastName" class="form-control" name="last_name" value="{{ worker.last_name }}"></div>
+            <div class="col-12"><label class="form-label" for="email">Canonical email</label><input id="email" class="form-control" type="email" name="email" value="{{ worker.canonical_email }}"></div>
+            <div class="col-12">
+              <label class="form-label" for="status">Employment status</label>
+              <select id="status" class="form-select form-select-lg" name="status">
+                {% for value, label in [('PENDING', 'Pending'), ('ACTIVE', 'Active'), ('INACTIVE', 'Inactive'), ('TERMINATED', 'Terminated')] %}
+                  <option value="{{ value }}" {% if worker.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="small text-secondary mt-3">Current status: <strong>{{ worker.status.replace('_', ' ').title() }}</strong> · Updated {{ worker.updated_at_utc|human_datetime }} · Status changes use the same approval workflow.</div>
+        </section>
+      </div>
+
+      <div class="col-lg-7">
+        <section class="surface p-4 h-100 employee-edit-card" id="employee-engagement">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div><h2 class="h5 mb-1">Consolidated view</h2><p class="small text-secondary mb-0">This is the current profile view. Source-owned values remain separated below.</p></div>
+            <span class="small text-secondary">{{ engagements|length }} record(s)</span>
+          </div>
+          <div class="row g-3 mt-2">
+            {% set fields = [
+              ('vendor_name', 'Vendor', 'vendorName', engagement.vendor_name if engagement else ''),
+              ('job_title', 'Job title', 'jobTitle', engagement.job_title if engagement else ''),
+              ('lob', 'Line of business', 'lob', engagement.lob if engagement else ''),
+              ('program', 'Program', 'program', engagement.program if engagement else ''),
+              ('project', 'Project', 'project', engagement.project if engagement else ''),
+              ('country', 'Country', 'country', engagement.country if engagement else ''),
+              ('site_location', 'Site / location', 'siteLocation', engagement.site_location if engagement else ''),
+              ('supervisor_name', 'Supervisor', 'supervisorName', engagement.supervisor_name if engagement else ''),
+              ('onboarding_date', 'Onboarding date', 'onboardingDate', engagement.onboarding_date if engagement else ''),
+              ('production_start_date', 'Production start date', 'productionStartDate', engagement.production_start_date if engagement else ''),
+              ('engagement_status', 'Engagement status', 'engagementStatus', engagement.status if engagement else ''),
+              ('npn', 'NPN', 'npn', engagement.npn if engagement else ''),
+              ('license_state', 'License state', 'licenseState', engagement.license_state if engagement else ''),
+              ('license_number', 'License number', 'licenseNumber', engagement.license_number if engagement else ''),
+              ('taxonomy_code', 'Taxonomy code', 'taxonomyCode', engagement.taxonomy_code if engagement else ''),
+              ('key_billable_function', 'Key billable function', 'keyBillableFunction', engagement.key_billable_function if engagement else '')
+            ] %}
+            {% for name, label, input_id, value in fields %}
+              <div class="col-md-6"><label class="form-label" for="{{ input_id }}">{{ label }}</label><input id="{{ input_id }}" class="form-control" name="{{ name }}" value="{{ value }}"></div>
+            {% endfor %}
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section class="surface p-4 mt-4 employee-data-card" id="employee-identifiers">
+      <div class="d-flex justify-content-between align-items-center"><h2 class="h5 mb-0">Source identifiers</h2><span class="small text-secondary">The canonical worker ID cannot be changed.</span></div>
+      <div class="table-responsive mt-3">
+        <table class="table table-sm align-middle mb-0"><thead><tr><th>Source</th><th>Type</th><th>Proposed value</th><th>Confidence</th></tr></thead><tbody>
+          {% for item in identifiers %}<tr><td>{{ item.source_system }}</td><td>{{ item.identifier_type }}</td><td><input class="form-control form-control-sm" name="identifier_{{ item.identifier_id }}" value="{{ item.identifier_value }}"></td><td>{{ item.confidence }}</td></tr>
+          {% else %}<tr><td colspan="4" class="text-secondary">No external identifiers.</td></tr>{% endfor %}
+        </tbody></table>
+      </div>
+    </section>
+
+    <section class="surface p-4 mt-4 employee-data-card" id="employee-source-profiles">
+      <div class="section-heading"><div><p class="eyebrow mb-1">Source-owned profile data</p><h2 class="h5 mb-1">Platform snapshots</h2><p class="small text-secondary mb-0">Each platform keeps its own values. A source can update only its own snapshot.</p></div><span class="small text-secondary">{{ source_profiles|length }} source(s)</span></div>
+      <div class="accordion mt-3" id="sourceProfilesAccordion">
+        {% for profile in source_profiles %}
+          {% set source_id = 'sourceProfile' ~ loop.index %}
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="{{ source_id }}Heading"><button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#{{ source_id }}Body" aria-expanded="{{ 'true' if loop.first else 'false' }}" aria-controls="{{ source_id }}Body"><strong>{{ 'SRS' if profile.source_system == 'RSR_SUPPLIER_WORKER_DETAILS' else 'Master Roster Lock' if profile.source_system == 'ROSTER_LOCK' else 'AccessNow' if profile.source_system == 'ACCESSNOW' else profile.source_system.replace('_', ' ').title() }}</strong><span class="small text-secondary ms-3">{{ profile.engagements|length }} snapshot(s) · {{ profile.identifiers|length }} identifier(s) · {{ profile.lineage|length }} field(s)</span></button></h2>
+            <div id="{{ source_id }}Body" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" aria-labelledby="{{ source_id }}Heading" data-bs-parent="#sourceProfilesAccordion"><div class="accordion-body">
+              {% for engagement_item in profile.engagements %}<div class="border rounded p-3 mb-3"><div class="d-flex justify-content-between gap-3 flex-wrap"><strong>{{ engagement_item.vendor_name or 'Source engagement' }}</strong><span class="badge text-bg-light">{{ engagement_item.status or 'No status' }}</span></div><div class="row g-2 small mt-2"><div class="col-md-4"><span class="text-secondary d-block">Role</span>{{ engagement_item.job_title or 'Not provided' }}</div><div class="col-md-4"><span class="text-secondary d-block">Program / project</span>{{ engagement_item.program or '—' }}{% if engagement_item.project %} / {{ engagement_item.project }}{% endif %}</div><div class="col-md-4"><span class="text-secondary d-block">Location</span>{{ engagement_item.country or '—' }}{% if engagement_item.site_location %} · {{ engagement_item.site_location }}{% endif %}</div><div class="col-md-4"><span class="text-secondary d-block">Supervisor</span>{{ engagement_item.supervisor_name or '—' }}</div><div class="col-md-4"><span class="text-secondary d-block">Onboarding</span>{{ engagement_item.onboarding_date or '—' }}</div><div class="col-md-4"><span class="text-secondary d-block">End / sunset</span>{{ engagement_item.production_start_date or '—' }}</div></div></div>{% else %}<p class="text-secondary">No engagement fields were mapped for this source.</p>{% endfor %}
+              {% if profile.identifiers %}<div class="mb-3"><strong class="small text-uppercase text-secondary">Source identifiers</strong><div class="d-flex flex-wrap gap-2 mt-2">{% for identifier in profile.identifiers %}<span class="badge rounded-pill text-bg-light"><strong>{{ identifier.identifier_type }}</strong>: {{ identifier.identifier_value }}</span>{% endfor %}</div></div>{% endif %}
+              <details><summary class="small text-secondary">View all source fields ({{ profile.lineage|length }})</summary><div class="table-responsive mt-2"><table class="table table-sm align-middle mb-0"><thead><tr><th>Field</th><th>Value</th><th>Observed</th></tr></thead><tbody>{% for item in profile.lineage %}<tr><td>{{ item.field_name }}</td><td class="text-break">{{ item.normalized_value or '—' }}</td><td class="small text-secondary">{{ item.observed_at_utc|human_datetime }}</td></tr>{% endfor %}</tbody></table></div></details>
+            </div></div>
+          </div>
+        {% else %}<p class="text-secondary mb-0">No source snapshots recorded.</p>{% endfor %}
+      </div>
+    </section>
+
+    <section class="surface p-4 mt-4 employee-data-card" id="employee-discrepancies">
+      <div class="d-flex justify-content-between align-items-center"><h2 class="h5 mb-0">Discrepancies</h2><span class="small text-secondary">Review conflicting source values before approval</span></div>
+      {% for item in discrepancies %}<div class="border-bottom py-3"><span class="badge text-bg-warning">{{ item.status }}</span><strong class="d-block mt-1">{{ item.field_name }}</strong><small>{{ item.current_value }} versus {{ item.incoming_value }}</small></div>{% else %}<p class="text-success mb-0 mt-3">No open discrepancies.</p>{% endfor %}
+    </section>
+
+    <section class="surface p-4 mt-4 employee-data-card" id="employee-lineage">
+      <div class="d-flex justify-content-between align-items-center"><h2 class="h5 mb-0">Source lineage</h2><span class="small text-secondary">Proposed edits are preserved as requests</span></div><div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>Field</th><th>Source</th><th>Proposed value</th><th>Observed</th></tr></thead><tbody>
+        {% for item in lineage[:30] %}<tr><td>{{ item.field_name }}</td><td>{{ item.source_system }}</td><td><input class="form-control form-control-sm" name="lineage_{{ item.lineage_id }}" value="{{ item.normalized_value }}"></td><td class="small">{{ item.observed_at_utc|human_datetime }}</td></tr>
+        {% else %}<tr><td colspan="4" class="text-secondary">No lineage recorded.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+
+    <section class="surface p-4 mt-4 employee-data-card" id="employee-history">
+      <div class="section-heading">
+        <div><p class="eyebrow mb-1">Immutable employee timeline</p><h2 class="h5 mb-1">Profile history</h2><p class="small text-secondary mb-0">Approved imports and administrative changes are shown here without leaving the employee profile.</p></div>
+        <div class="d-flex align-items-center gap-2 flex-wrap"><span class="status-pill status-active"><span></span>{{ versions|length }} version(s)</span><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('employees.employee_history', worker_id=worker.worker_id) }}">Open full history</a></div>
+      </div>
+      <div class="alert alert-info small mt-3 mb-4">The latest version is marked <strong>Current</strong>. Source files, actors, changed fields and technical evidence remain available for audit.</div>
+      {% include "employees/_history_timeline.html" %}
+    </section>
+
+    <section class="surface p-4 mt-4 employee-submit-panel"><div class="row align-items-end g-3"><div class="col-lg-9"><label class="form-label" for="reason">Business reason <span class="text-danger">*</span></label><textarea id="reason" class="form-control" name="reason" rows="3" required placeholder="Explain what changed and why this request is needed"></textarea><div class="form-text">A reviewer will see the proposed values and the reason before approval.</div></div><div class="col-lg-3"><button class="btn btn-primary btn-lg w-100" type="submit">Submit for approval</button></div></div></section>
+  </form>
+</div>
+{% endblock %}

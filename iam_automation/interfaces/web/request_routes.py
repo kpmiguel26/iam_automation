@@ -24,7 +24,7 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
     employees = EmployeeService(database_path)
     users = UserService(database_path)
     notifications = NotificationService(database_path)
-    source_import_operations = {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}
+    source_import_operations = {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS", "IMPORT_ACCESSNOW"}
 
     def authenticated(view):
         @wraps(view)
@@ -60,7 +60,7 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
 
     def queue_context():
         """Build the approval view consistently after every queue action."""
-        source_import_operations = {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}
+        source_import_operations = {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS", "IMPORT_ACCESSNOW"}
         queued = [
             item for item in service.list_requests(queue=True)
             if item.operation_type not in source_import_operations

@@ -32,7 +32,7 @@ class SharedRequestService:
             user=user,
             application_version="local",
             operation_type=operation_type.strip().upper(),
-            entity_type="ImportBatch" if operation_type.strip().upper() in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"} else "Employee",
+            entity_type="ImportBatch" if operation_type.strip().upper() in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS", "IMPORT_ACCESSNOW"} else "Employee",
             entity_id=entity_id.strip(),
             expected_record_version=0,
             payload=payload,
@@ -57,7 +57,7 @@ class SharedRequestService:
     def find_import_request(self, *, batch_id: str, source_checksum: str = ""):
         """Find an existing shared review request so watcher scans stay idempotent."""
         for request in self._load_all():
-            if request.operation_type not in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}:
+            if request.operation_type not in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS", "IMPORT_ACCESSNOW"}:
                 continue
             payload = request.payload or {}
             if str(batch_id) in {str(value) for value in payload.get("batch_ids", [])}:

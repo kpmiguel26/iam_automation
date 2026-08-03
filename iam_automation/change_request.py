@@ -17,7 +17,7 @@ REQUEST_FILENAME_RE = re.compile(r"^\d{8}T\d{6}Z_[0-9a-fA-F-]{36}\.json$")
 # large Fieldglass batch without opening the source workbook. Keep a bounded
 # limit, but allow normal 600+ row requests to travel through SharePoint JSON.
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
-ALLOWED_OPERATION_TYPES = {"CREATE_EMPLOYEE", "UPDATE_EMPLOYEE", "DEACTIVATE_EMPLOYEE", "IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}
+ALLOWED_OPERATION_TYPES = {"CREATE_EMPLOYEE", "UPDATE_EMPLOYEE", "DEACTIVATE_EMPLOYEE", "IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS", "IMPORT_ACCESSNOW"}
 ALLOWED_ENTITY_TYPES = {"Employee", "ImportBatch"}
 REQUEST_STATUSES = {
     "PENDING",

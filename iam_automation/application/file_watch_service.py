@@ -15,6 +15,7 @@ from ..identity import CurrentUser, ROLE_REQUESTER, computer_name
 from .employee_service import EmployeeService
 from .notification_service import NotificationService
 from .roster_lock_ingestion_service import RosterLockIngestionService
+from .accessnow_ingestion_service import AccessNowIngestionService
 from .shared_request_service import SharedRequestService
 from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 
@@ -31,9 +32,10 @@ class FileObservation:
 
 
 class FileWatchService:
-    """Detect shared changes and stage Roster Lock files safely.
+    """Detect shared changes and stage source reports safely.
 
-    JSON/configuration changes remain notification-driven. Roster Lock workbooks
+    JSON/configuration changes remain notification-driven. Source workbooks and
+    AccessNow reports
     are validated and staged automatically, but promotion into canonical workers
     remains an explicit administrative action.
     """
@@ -58,8 +60,9 @@ class FileWatchService:
             changed.sort(key=self._observation_priority)
             successful_ingestions: set[str] = set()
             review_requests: set[str] = set()
+            accessnow_processed = False
             for observation in changed:
-                if observation.file_kind not in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS", "APPROVED_IMPORT"}:
+                if observation.file_kind not in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW", "APPROVED_IMPORT"}:
                     successful_ingestions.add(observation.path)
                     continue
                 try:
@@ -71,6 +74,14 @@ class FileWatchService:
                         result = RsrSupplierWorkerDetailsAdapter(self.database_path).ingest_file(Path(observation.path))
                         self._ensure_import_review_request(observation, result)
                         review_requests.add(observation.path)
+                    elif observation.file_kind == "ACCESSNOW":
+                        if accessnow_processed:
+                            successful_ingestions.add(observation.path)
+                            continue
+                        result = AccessNowIngestionService(self.database_path).ingest_folder(self.sharepoint_root / "acessnow")
+                        self._ensure_import_review_request(observation, result)
+                        accessnow_processed = True
+                        review_requests.update(item.path for item in changed if item.file_kind == "ACCESSNOW")
                     else:
                         self._sync_approved_import(Path(observation.path))
                         # The approval JSON is only a shared signal. It must not
@@ -116,7 +127,8 @@ class FileWatchService:
         """
         batch_id = str(result.batch_id)
         source_path = Path(observation.path)
-        source_checksum = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        source_checksum = str(getattr(result, "source_checksum", "")) or hashlib.sha256(source_path.read_bytes()).hexdigest()
+        source_filename = str(getattr(result, "filename", source_path.name))
         shared = SharedRequestService(self.sharepoint_root)
         existing = shared.find_import_request(batch_id=batch_id, source_checksum=source_checksum)
         if existing is not None:
@@ -141,14 +153,14 @@ class FileWatchService:
         operation_type = (
             "IMPORT_RSR_SUPPLIER_DETAILS"
             if source_system == "RSR_SUPPLIER_WORKER_DETAILS"
-            else "IMPORT_ROSTER_LOCK"
+            else "IMPORT_ACCESSNOW" if source_system == "ACCESSNOW" else "IMPORT_ROSTER_LOCK"
         )
         payload = {
             "batch_ids": [batch_id],
             "record_ids": record_ids,
             "record_count": len(record_ids),
             "source_system": source_system,
-            "source_file": source_path.name,
+            "source_file": source_filename,
             "source_checksum": source_checksum,
             "total_rows": int(result.total_rows),
             "staged_rows": int(result.staged_rows),
@@ -204,7 +216,7 @@ class FileWatchService:
         rules are visible to the reviewer.
         """
         request = load_request_file(path)
-        if request.operation_type not in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS"}:
+        if request.operation_type not in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS", "IMPORT_ACCESSNOW"}:
             return
         self.notifications.notify_source_update_available(
             request.request_id,
@@ -230,13 +242,14 @@ class FileWatchService:
             (self.sharepoint_root / "database" / "snapshots", "PUBLISHED_RUNTIME"),
             (self.sharepoint_root / "rosterlocks", "ROSTER_LOCK"),
             (self.sharepoint_root / "rsrsuplierworkerdetails", "RSR_SUPPLIER_WORKER_DETAILS"),
+            (self.sharepoint_root / "acessnow", "ACCESSNOW"),
             (self.sharepoint_root / "requests" / "approved", "APPROVED_IMPORT"),
         )
         observations: list[FileObservation] = []
         for root, kind in roots:
             if not root.is_dir():
                 continue
-            patterns = ("*.json", "*.toml") if kind == "CONFIGURATION" else (("iam_runtime.sqlite",) if kind == "PUBLISHED_RUNTIME" else (("*.xlsx",) if kind in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"} else ("*.json",)))
+            patterns = ("*.json", "*.toml") if kind == "CONFIGURATION" else (("iam_runtime.sqlite",) if kind == "PUBLISHED_RUNTIME" else (("*.xlsx", "*.csv") if kind == "ACCESSNOW" else (("*.xlsx",) if kind in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"} else ("*.json",))))
             for pattern in patterns:
                 for path in root.glob(pattern):
                     if path.is_file() and not path.name.startswith("."):
@@ -267,6 +280,7 @@ class FileWatchService:
             "PUBLISHED_RUNTIME": ("New database snapshot published", "A new runtime SQLite snapshot is available. Refresh this workstation when you are not editing a form."),
             "ROSTER_LOCK": ("Roster Lock ingested", "A vendor Roster Lock workbook was staged for validation and reconciliation."),
             "RSR_SUPPLIER_WORKER_DETAILS": ("RSR worker details ingested", "Supplier worker details were staged for matching against canonical employees."),
+            "ACCESSNOW": ("AccessNow reports ingested", "Active and termination reports were merged and staged for employee status review."),
             "APPROVED_IMPORT": ("Employee updates ready", "Approved source records are ready for individual matching and review. No employee was created automatically."),
         }
         title, message = labels[observation.file_kind]
@@ -280,7 +294,7 @@ class FileWatchService:
             message=f"{message} File: {Path(observation.path).name}",
             entity_type="file",
             entity_id=observation.path,
-            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/employees/source-updates" if observation.file_kind == "APPROVED_IMPORT" else "/admin/imports" if observation.file_kind in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"} else "/admin"),
+            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/employees/source-updates" if observation.file_kind in {"APPROVED_IMPORT", "ACCESSNOW"} else "/admin/imports" if observation.file_kind in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"} else "/admin"),
             status="UNREAD",
             created_at_utc=now,
         )

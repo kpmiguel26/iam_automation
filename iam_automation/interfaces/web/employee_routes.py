@@ -105,6 +105,14 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             return render_template("errors/404.html"), 404
         return render_template("employees/detail.html", operation_options=OPERATION_OPTIONS, message=request.args.get("notice"), error=request.args.get("error"), **detail)
 
+    @blueprint.get("/<worker_id>/edit")
+    @authenticated
+    def employee_edit(worker_id: str):
+        detail = service.get_worker(worker_id)
+        if detail is None:
+            return render_template("errors/404.html"), 404
+        return render_template("employees/edit.html", operation_options=OPERATION_OPTIONS, message=request.args.get("notice"), error=request.args.get("error"), **detail)
+
     @blueprint.get("/<worker_id>/history")
     @authenticated
     def employee_history(worker_id: str):
@@ -184,7 +192,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             return render_template("errors/404.html"), 404
         try:
             actor = str(session["iam_user"])
-            operation_type = "IMPORT_RSR_SUPPLIER_DETAILS" if preview["source_system"] == "RSR_SUPPLIER_WORKER_DETAILS" else "IMPORT_ROSTER_LOCK"
+            operation_type = "IMPORT_RSR_SUPPLIER_DETAILS" if preview["source_system"] == "RSR_SUPPLIER_WORKER_DETAILS" else "IMPORT_ACCESSNOW" if preview["source_system"] == "ACCESSNOW" else "IMPORT_ROSTER_LOCK"
             request_id = _request_source_change(operation_type=operation_type, entity_id=str(preview["batch_id"]), payload={"record_ids": [record_id], "record_previews": [preview]}, reason=request.form.get("reason", "New source employee review"), actor=actor)
             return redirect(url_for("employees.source_candidate", record_id=record_id, notice=f"Request {request_id[:8]} submitted for administrator approval.", notice_type="success"))
         except (OSError, ValueError, PermissionError) as exc:

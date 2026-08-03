@@ -154,7 +154,7 @@ class EmployeeService:
                     "worker_name": " ".join(part for part in (payload.get("first_name", ""), payload.get("last_name", "")) if part),
                     "email": payload.get("email", ""),
                     "vendor": payload.get("vendor_name", "") or payload.get("statement_of_work", "").split(maxsplit=1)[0],
-                    "identifier": payload.get("vendor_employee_id", "") or payload.get("supplier_reference", "") or payload.get("worker_id", ""),
+                    "identifier": payload.get("accessnow_employee_id", "") or payload.get("accessnow_nuid", "") or payload.get("vendor_employee_id", "") or payload.get("supplier_reference", "") or payload.get("worker_id", ""),
                     "statement_of_work": payload.get("statement_of_work", ""),
                 })
             return previews
@@ -184,6 +184,7 @@ class EmployeeService:
     def apply_approved_import_records(self, record_ids: list[str], actor: str, *, request_payload: dict[str, object] | None = None) -> dict[str, object]:
         """Apply approved source records through their source-specific adapter."""
         from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter, SOURCE_SYSTEM
+        from .accessnow_ingestion_service import AccessNowIngestionService, SOURCE_SYSTEM as ACCESSNOW_SOURCE
 
         if request_payload is not None:
             record_ids = self.resolve_import_record_ids(request_payload)
@@ -192,6 +193,7 @@ class EmployeeService:
         result: dict[str, object] = {"processed": 0, "created": 0, "reused": 0, "failed": 0, "errors": []}
         roster_ids = []
         rsr_ids = []
+        accessnow_ids = []
         for record_id in record_ids:
             with orm_session(self.database_path) as session:
                 record = session.get(IngestionRecordModel, record_id)
@@ -199,6 +201,8 @@ class EmployeeService:
                     continue
                 if record.source_system == SOURCE_SYSTEM:
                     rsr_ids.append(record_id)
+                elif record.source_system == ACCESSNOW_SOURCE:
+                    accessnow_ids.append(record_id)
                 else:
                     roster_ids.append(record_id)
         if rsr_ids:
@@ -208,6 +212,13 @@ class EmployeeService:
             result["reused"] = int(result["reused"]) + int(rsr_result.get("reused", 0))
             result["failed"] = int(result["failed"]) + int(rsr_result["failed"])
             result["errors"] = list(result["errors"]) + list(rsr_result["errors"])
+        if accessnow_ids:
+            accessnow_result = AccessNowIngestionService(self.database_path).apply_approved_records(accessnow_ids, actor)
+            result["processed"] = int(result["processed"]) + int(accessnow_result["processed"])
+            result["created"] = int(result["created"]) + int(accessnow_result.get("created", 0))
+            result["reused"] = int(result["reused"]) + int(accessnow_result.get("reused", 0))
+            result["failed"] = int(result["failed"]) + int(accessnow_result["failed"])
+            result["errors"] = list(result["errors"]) + list(accessnow_result["errors"])
         if roster_ids:
             roster_result = self.promote_staged_records(roster_ids, actor)
             result["processed"] = int(result["processed"]) + int(roster_result["processed"])
@@ -232,6 +243,7 @@ class EmployeeService:
             "lob": ("engagement", "lob"), "program": ("engagement", "program"), "project": ("engagement", "project"),
             "country": ("engagement", "country"), "site_location": ("engagement", "site_location"),
             "supervisor_name": ("engagement", "supervisor_name"), "worker_start_date": ("engagement", "onboarding_date"),
+            "accessnow_status": ("worker", "status"),
             "worker_end_date": ("engagement", "production_start_date"), "worker_status": ("engagement", "status"),
             "npn": ("engagement", "npn"), "resident_license_state": ("engagement", "license_state"),
             "resident_license_number": ("engagement", "license_number"), "taxonomy": ("engagement", "taxonomy_code"),
@@ -251,6 +263,12 @@ class EmployeeService:
                 if record.status not in {"STAGED", "MATCHED", "CONFLICT"}:
                     continue
                 payload = json.loads(record.normalized_json)
+                if record.source_system == "ACCESSNOW":
+                    record_engagement = None
+                elif record.source_system in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"}:
+                    record_engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker_id, WorkerEngagementModel.source_system == record.source_system).order_by(WorkerEngagementModel.updated_at_utc.desc()))
+                else:
+                    record_engagement = engagement
                 for source_field in selected:
                     target = source_fields.get(source_field)
                     incoming = str(payload.get(source_field) or "").strip()
@@ -259,20 +277,24 @@ class EmployeeService:
                     owner, attribute = target
                     if owner == "worker":
                         current = str(getattr(worker, attribute) or "")
+                        if attribute != "status" and current:
+                            continue
                         setattr(worker, attribute, incoming.lower() if attribute == "canonical_email" else incoming)
                         if attribute in {"first_name", "last_name"}:
                             worker.display_name = " ".join(part for part in (worker.first_name, worker.last_name) if part)
                     else:
-                        if engagement is None:
-                            engagement = WorkerEngagementModel(engagement_id=str(uuid.uuid4()), worker_id=worker_id, source_system=record.source_system, created_at_utc=now, updated_at_utc=now)
-                            session.add(engagement)
-                        current = str(getattr(engagement, attribute) or "")
-                        setattr(engagement, attribute, incoming)
-                        engagement.updated_at_utc = now
+                        if record_engagement is None:
+                            record_engagement = WorkerEngagementModel(engagement_id=str(uuid.uuid4()), worker_id=worker_id, source_system=record.source_system, created_at_utc=now, updated_at_utc=now)
+                            session.add(record_engagement)
+                        current = str(getattr(record_engagement, attribute) or "")
+                        if current:
+                            continue
+                        setattr(record_engagement, attribute, incoming)
+                        record_engagement.updated_at_utc = now
                     if current.casefold() != incoming.casefold():
                         changed_fields.add(attribute)
                 for field_name, value in payload.items():
-                    session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=engagement.engagement_id if engagement else None, batch_id=record.batch_id, source_system=record.source_system, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
+                    session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=record_engagement.engagement_id if record_engagement else None, batch_id=record.batch_id, source_system=record.source_system, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
                 record.status = "APPLIED"
                 applied += 1
             if changed_fields:
@@ -361,7 +383,7 @@ class EmployeeService:
                 return None
             identifiers = session.scalars(select(WorkerIdentifierModel).where(WorkerIdentifierModel.worker_id == worker_id).order_by(WorkerIdentifierModel.source_system, WorkerIdentifierModel.identifier_type)).all()
             engagements = session.scalars(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker_id).order_by(WorkerEngagementModel.created_at_utc.desc())).all()
-            lineage = session.scalars(select(WorkerSourceLineageModel).where(WorkerSourceLineageModel.worker_id == worker_id).order_by(WorkerSourceLineageModel.observed_at_utc.desc()).limit(100)).all()
+            lineage = session.scalars(select(WorkerSourceLineageModel).where(WorkerSourceLineageModel.worker_id == worker_id).order_by(WorkerSourceLineageModel.observed_at_utc.desc())).all()
             discrepancies = session.scalars(select(WorkerDiscrepancyModel).where(WorkerDiscrepancyModel.worker_id == worker_id).order_by(WorkerDiscrepancyModel.created_at_utc.desc())).all()
             versions = session.scalars(select(WorkerProfileVersionModel).where(WorkerProfileVersionModel.worker_id == worker_id).order_by(WorkerProfileVersionModel.version_number.desc())).all()
             version_items = [version_dict(item) for item in versions]
@@ -379,7 +401,16 @@ class EmployeeService:
                         current_value = item["snapshot"].get(field, current_engagement.get(field, ""))
                         previous_value = previous.get(field, previous_engagement.get(field, ""))
                     item["changes"].append({"field": field, "previous_value": previous_value or "Not set", "new_value": current_value or "Not set"})
-            return {"worker": worker, "identifiers": identifiers, "engagements": engagements, "lineage": lineage, "discrepancies": discrepancies, "versions": version_items}
+            source_names = sorted({item.source_system for item in identifiers if item.source_system} | {item.source_system for item in engagements if item.source_system} | {item.source_system for item in lineage if item.source_system})
+            source_profiles = []
+            for source_system in source_names:
+                source_profiles.append({
+                    "source_system": source_system,
+                    "identifiers": [item for item in identifiers if item.source_system == source_system],
+                    "engagements": [item for item in engagements if item.source_system == source_system],
+                    "lineage": [item for item in lineage if item.source_system == source_system],
+                })
+            return {"worker": worker, "identifiers": identifiers, "engagements": engagements, "lineage": lineage, "source_profiles": source_profiles, "discrepancies": discrepancies, "versions": version_items}
 
     def source_update_preview(self, worker_id: str, source_file: str = "") -> dict[str, object] | None:
         """Return only pending source rows that affect one canonical worker.
@@ -404,6 +435,7 @@ class EmployeeService:
             "worker_start_date": "onboarding_date",
             "worker_end_date": "production_start_date",
             "worker_status": "engagement_status",
+            "accessnow_status": "status",
             "npn": "npn",
             "resident_license_state": "license_state",
             "resident_license_number": "license_number",
@@ -433,6 +465,7 @@ class EmployeeService:
                 "first_name": worker.first_name or "",
                 "last_name": worker.last_name or "",
                 "canonical_email": worker.canonical_email or "",
+                "status": worker.status or "",
                 **{
                     f"identifier_{item.identifier_type.lower()}": item.identifier_value or ""
                     for item in identifiers
@@ -557,7 +590,7 @@ class EmployeeService:
                     "match_reason": row.match_reason,
                     "worker_name": " ".join(part for part in (payload.get("first_name", ""), payload.get("last_name", "")) if part),
                     "email": payload.get("email", ""),
-                    "identifier": payload.get("vendor_employee_id", "") or payload.get("supplier_reference", "") or payload.get("worker_id", ""),
+                    "identifier": payload.get("accessnow_employee_id", "") or payload.get("accessnow_nuid", "") or payload.get("vendor_employee_id", "") or payload.get("supplier_reference", "") or payload.get("worker_id", ""),
                     "payload": payload,
                     "batch_id": row.batch_id,
                     "source_checksum": row.source_checksum,
@@ -615,6 +648,8 @@ class EmployeeService:
         than a duplicate canonical employee.
         """
         signal_definitions = (
+            ("AccessNow Employee ID", "accessnow_employee_id"),
+            ("AccessNow NUID", "accessnow_nuid"),
             ("Vendor employee ID", "vendor_employee_id"),
             ("Supplier reference", "supplier_reference"),
             ("Worker ID", "worker_id"),

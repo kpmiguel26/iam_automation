@@ -44,7 +44,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         backup_directory=(published_runtime_path or database_path).parent / "backups",
     )
     salesforce = SalesforceExportService(database_path, audit_path=audit_path)
-    automatic_source_types = {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"}
+    automatic_source_types = {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW"}
 
     def imports_page_context(*, message=None, error=None):
         batches = imports.list_batches()
@@ -243,7 +243,8 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             actor = str(session["iam_user"])
             groups = {
                 "IMPORT_RSR_SUPPLIER_DETAILS": [item for item in staged if item["source_system"] == "RSR_SUPPLIER_WORKER_DETAILS"],
-                "IMPORT_ROSTER_LOCK": [item for item in staged if item["source_system"] != "RSR_SUPPLIER_WORKER_DETAILS"],
+                "IMPORT_ACCESSNOW": [item for item in staged if item["source_system"] == "ACCESSNOW"],
+                "IMPORT_ROSTER_LOCK": [item for item in staged if item["source_system"] not in {"RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW"}],
             }
             created_requests = []
             for operation_type, items in groups.items():
