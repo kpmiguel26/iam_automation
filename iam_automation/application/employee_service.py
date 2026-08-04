@@ -987,7 +987,7 @@ class EmployeeService:
         """List all non-superseded source people as lightweight dossiers."""
         with orm_session(self.database_path) as session:
             rows = session.scalars(select(IngestionRecordModel).where(
-                IngestionRecordModel.status.in_(("STAGED", "MATCHED", "UNMATCHED", "AMBIGUOUS", "CONFLICT", "LINKED", "CURRENT")),
+                IngestionRecordModel.status.in_(("STAGED", "MATCHED", "UNMATCHED", "AMBIGUOUS", "CONFLICT")),
                 IngestionRecordModel.observation_state != "SUPERSEDED",
             ).order_by(IngestionRecordModel.created_at_utc.desc(), IngestionRecordModel.row_number)).all()
             groups: dict[str, list[dict[str, object]]] = {}
@@ -1040,6 +1040,31 @@ class EmployeeService:
                 record.match_reason = "Candidate dossier consolidated into one canonical employee"
             session.commit()
         return {"worker_id": worker_id, "created": created, "record_ids": sorted(selected), "actor": actor}
+
+    def create_all_source_candidates(self, actor: str) -> dict[str, object]:
+        """Create one canonical employee per eligible pending dossier."""
+        people = self.list_source_people()
+        result = {"dossiers": 0, "created": 0, "reused": 0, "processed": 0, "skipped": 0, "failed": 0, "errors": []}
+        for person in people:
+            record_ids = [str(item["record_id"]) for item in person.get("records", [])]
+            try:
+                with orm_session(self.database_path) as session:
+                    rows = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(record_ids))).all()
+                    if not rows or any(row.match_status in {"AMBIGUOUS", "CONFLICT"} for row in rows):
+                        result["skipped"] += 1
+                        continue
+                preparation = self.prepare_source_candidate(record_ids, actor)
+                applied = self.apply_approved_import_records(record_ids, actor)
+                result["dossiers"] += 1
+                result["created"] += int(bool(preparation["created"]))
+                result["reused"] += int(not preparation["created"])
+                result["processed"] += int(applied.get("processed", 0))
+                result["failed"] += int(applied.get("failed", 0))
+                result["errors"].extend(applied.get("errors", []))
+            except (OSError, ValueError, PermissionError, json.JSONDecodeError) as exc:
+                result["failed"] += 1
+                result["errors"].append({"record_id": record_ids[0] if record_ids else "", "error": str(exc)})
+        return result
 
     def source_update_overview(self, source_file: str = "") -> dict[str, object]:
         """Build the compact review worklist for the Employees area."""

@@ -149,6 +149,23 @@ class SourceUpdatesTests(unittest.TestCase):
             self.assertEqual(people[0]["record_count"], 3)
             self.assertEqual(people[0]["source_count"], 3)
 
+    def test_create_all_source_candidates_creates_one_worker_for_all_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            records = [
+                self._record("access", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00"),
+                self._record("rsr", "RSR_SUPPLIER_WORKER_DETAILS", "rsr.xlsx", "R-100", "2026-08-02T00:00:00+00:00"),
+                self._record("roster", "ROSTER_LOCK", "roster.xlsx", "V-100", "2026-08-03T00:00:00+00:00"),
+            ]
+            with orm_session(database) as session:
+                session.add_all(records)
+            result = EmployeeService(database).create_all_source_candidates("admin")
+            self.assertEqual(result["created"], 1)
+            self.assertEqual(result["processed"], 3)
+            with orm_session(database) as session:
+                self.assertEqual(session.query(WorkerModel).count(), 1)
+                self.assertEqual(session.query(IngestionRecordModel).filter(IngestionRecordModel.matched_worker_id.is_not(None)).count(), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

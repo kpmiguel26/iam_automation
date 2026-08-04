@@ -89,6 +89,19 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             all_people=all_people,
         )
 
+    @blueprint.post("/source-updates/create-all")
+    @authenticated
+    def create_all_source_candidates():
+        current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
+        if not current_user.can_decide_requests:
+            return redirect(url_for("employees.source_updates_overview", all_people="1", notice="Solo un administrador puede ejecutar la creación masiva.", notice_type="danger"))
+        try:
+            result = service.create_all_source_candidates(current_user.username)
+            record_audit(audit_path, current_user.username, "ALL_SOURCE_CANDIDATES_APPLIED", "source_updates", "bulk", new_values={"result": result})
+            return redirect(url_for("employees.source_updates_overview", all_people="1", notice=f"Procesados {result['dossiers']} expediente(s): {result['created']} empleado(s) creado(s), {result['reused']} reutilizado(s), {result['skipped']} omitido(s) y {result['failed']} con error.", notice_type="success"))
+        except (OSError, ValueError, PermissionError) as exc:
+            return redirect(url_for("employees.source_updates_overview", all_people="1", notice=str(exc), notice_type="danger"))
+
     @blueprint.route("/source-updates/duplicate/<record_id>", methods=["GET", "POST"])
     @authenticated
     def duplicate_review(record_id: str):

@@ -56,6 +56,12 @@ body { background: #f4f6f8; color: #172033; }
 .transaction-loading-card .spinner-border { color: var(--kp-teal); flex: 0 0 auto; }
 .transaction-loading-card strong, .transaction-loading-card small { display: block; }
 .transaction-loading-card small { color: #687689; margin-top: .25rem; }
+.iam-confirmation { align-items: center; background: rgba(8,25,58,.58); display: flex; inset: 0; justify-content: center; padding: 1rem; position: fixed; z-index: 2100; }
+.iam-confirmation-card { background: #fff; border: 1px solid #dce2ea; border-radius: .75rem; box-shadow: 0 22px 70px rgba(0,0,0,.28); max-width: 520px; padding: 1.5rem; width: 100%; }
+.iam-confirmation-icon { align-items: center; background: #fff3cd; border: 1px solid #f0c36d; border-radius: 50%; color: #8a5b00; display: flex; font-size: 1.15rem; font-weight: 800; height: 2.4rem; justify-content: center; margin-bottom: 1rem; width: 2.4rem; }
+.iam-confirmation-card h2 { color: var(--kp-navy); font-size: 1.25rem; margin: 0; }
+.iam-confirmation-card p { color: #687689; line-height: 1.55; margin: .75rem 0 1.25rem; }
+.iam-confirmation-actions { display: flex; gap: .6rem; justify-content: flex-end; }
 .workspace-update-modal .modal-content { border: 3px solid #f0b429; box-shadow: 0 24px 80px rgba(14,32,70,.35); }
 .workspace-update-modal .modal-header { background: #fff8e1; border-bottom-color: #f5d88a; padding: 1.5rem 1.6rem; }
 .workspace-update-modal .modal-body { font-size: 1rem; padding: 1.6rem; }
