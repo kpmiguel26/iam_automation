@@ -23,6 +23,7 @@ from ..infrastructure.sqlite.orm import (
     orm_session,
 )
 from ..application.worker_history_service import record_worker_version
+from ..application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 
 
 SOURCE_SYSTEM = "RSR_SUPPLIER_WORKER_DETAILS"
@@ -336,32 +337,7 @@ class RsrSupplierWorkerDetailsAdapter:
 
     @staticmethod
     def _find_match_detail(session, payload: dict[str, str]) -> tuple[list[str], str]:
-        values = [("VENDOR_EMPLOYEE_ID", payload.get("supplier_reference", "")), ("RSR_WORKER_ID", payload.get("worker_id", "")), ("BUYER_REFERENCE", payload.get("buyer_reference", ""))]
-        workers: set[str] = set()
-        for identifier_type, value in values:
-            normalized = value.casefold().strip()
-            if not normalized:
-                continue
-            workers.update(session.scalars(select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.identifier_type == identifier_type, WorkerIdentifierModel.normalized_value == normalized, WorkerIdentifierModel.active.is_(True))).all())
-            workers.update(session.scalars(select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.identifier_type == identifier_type, WorkerIdentifierModel.identifier_value == value, WorkerIdentifierModel.active.is_(True))).all())
-            if workers:
-                break
-        if workers:
-            active_workers = set(session.scalars(select(WorkerModel.worker_id).where(WorkerModel.worker_id.in_(workers), WorkerModel.superseded_by_worker_id.is_(None))).all())
-            if active_workers:
-                return sorted(active_workers), "Exact source identifier match"
-        email = str(payload.get("email") or payload.get("vendor_email") or "").strip().casefold()
-        if email:
-            matches = session.scalars(select(WorkerModel.worker_id).where(func.lower(WorkerModel.canonical_email) == email, WorkerModel.superseded_by_worker_id.is_(None))).all()
-            if matches:
-                return sorted(set(matches)), "Canonical email match"
-        first = str(payload.get("first_name") or "").strip().casefold()
-        last = str(payload.get("last_name") or "").strip().casefold()
-        if first and last:
-            matches = session.scalars(select(WorkerModel.worker_id).where(func.lower(WorkerModel.first_name) == first, func.lower(WorkerModel.last_name) == last, WorkerModel.superseded_by_worker_id.is_(None))).all()
-            if matches:
-                return sorted(set(matches)), "Canonical name match"
-        return [], "No canonical match"
+        return find_worker_matches(session, SOURCE_SYSTEM, payload)
 
     @staticmethod
     def _find_matches(session, payload: dict[str, str]) -> list[str]:
@@ -394,11 +370,4 @@ class RsrSupplierWorkerDetailsAdapter:
 
     @staticmethod
     def _add_identifiers(session, worker_id: str, payload: dict[str, str], now: str) -> None:
-        for identifier_type, value in (("RSR_WORKER_ID", payload.get("worker_id", "")), ("VENDOR_EMPLOYEE_ID", payload.get("supplier_reference", "")), ("BUYER_REFERENCE", payload.get("buyer_reference", "")), ("WORK_ORDER_ID", payload.get("work_order_id", ""))):
-            value = str(value or "").strip()
-            if not value:
-                continue
-            normalized = value.casefold()
-            existing = session.scalar(select(WorkerIdentifierModel).where(WorkerIdentifierModel.source_system == SOURCE_SYSTEM, WorkerIdentifierModel.identifier_type == identifier_type, WorkerIdentifierModel.normalized_value == normalized))
-            if existing is None:
-                session.add(WorkerIdentifierModel(identifier_id=str(uuid.uuid4()), worker_id=worker_id, source_system=SOURCE_SYSTEM, identifier_type=identifier_type, identifier_value=value, normalized_value=normalized, confidence="HIGH", created_at_utc=now))
+        ensure_source_identifiers(session, worker_id, SOURCE_SYSTEM, payload, now)

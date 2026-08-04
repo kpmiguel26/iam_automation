@@ -35,10 +35,10 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         source = request.args.get("source", "ALL")
         engagement = request.args.get("engagement", "")
         try:
-            page = max(1, int(request.args.get("page", "1")))
+            requested_page = max(1, int(request.args.get("page", "1")))
         except ValueError:
-            page = 1
-        requested_page = page
+            requested_page = 1
+        page = requested_page
         statuses, vendors, sources = service.filter_values()
         has_query = bool(search.strip() or engagement.strip() or status != "ALL" or vendor != "ALL" or source != "ALL")
         workers, total_workers = (service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, page=page, per_page=25) if has_query else ([], 0))
@@ -51,12 +51,56 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
     @blueprint.get("/source-updates")
     @authenticated
     def source_updates_overview():
+        source_system = request.args.get("source", "").strip()
         source_file = request.args.get("file", "").strip()
+        mode = request.args.get("mode", "").strip().lower()
+        person_query = request.args.get("person", "").strip()
+        all_people = request.args.get("all_people", "") == "1"
+        try:
+            requested_page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            requested_page = 1
+        page = requested_page
+        sources = service.list_source_systems()
+        files = service.list_source_files(source_system) if source_system else []
+        file_summary = service.get_source_file_summary(source_system, source_file) if source_system and source_file else None
+        records, total_records = service.list_source_records(source_system, source_file, page=page, per_page=50) if file_summary else ([], 0)
+        page_count = max(1, (total_records + 49) // 50)
+        page = min(page, page_count)
+        if file_summary and page != requested_page:
+            records, total_records = service.list_source_records(source_system, source_file, page=page, per_page=50)
+        duplicate_summary = service.source_duplicate_summary(source_file=source_file) if mode == "duplicates" else None
+        people = service.list_source_people() if all_people else service.search_source_people(person_query) if person_query else []
         return render_template(
             "employees/source_updates_overview.html",
-            overview=service.source_update_overview(source_file=source_file),
+            sources=sources,
+            files=files,
+            records=records,
+            total_records=total_records,
+            page=page,
+            page_count=page_count,
+            source_system=source_system,
             source_file=source_file,
+            file_summary=file_summary,
+            mode=mode,
+            duplicate_summary=duplicate_summary,
+            person_query=person_query,
+            people=people,
+            all_people=all_people,
         )
+
+    @blueprint.post("/source-updates/create-all")
+    @authenticated
+    def create_all_source_candidates():
+        current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
+        if not current_user.can_decide_requests:
+            return redirect(url_for("employees.source_updates_overview", all_people="1", notice="Solo un administrador puede ejecutar la creación masiva.", notice_type="danger"))
+        try:
+            result = service.create_all_source_candidates(current_user.username)
+            record_audit(audit_path, current_user.username, "ALL_SOURCE_CANDIDATES_APPLIED", "source_updates", "bulk", new_values={"result": result})
+            return redirect(url_for("employees.source_updates_overview", all_people="1", notice=f"Procesados {result['dossiers']} expediente(s): {result['created']} empleado(s) creado(s), {result['reused']} reutilizado(s), {result['skipped']} omitido(s) y {result['failed']} con error.", notice_type="success"))
+        except (OSError, ValueError, PermissionError) as exc:
+            return redirect(url_for("employees.source_updates_overview", all_people="1", notice=str(exc), notice_type="danger"))
 
     @blueprint.route("/source-updates/duplicate/<record_id>", methods=["GET", "POST"])
     @authenticated
@@ -66,7 +110,13 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             return render_template("errors/404.html"), 404
         message = error = None
         if request.method == "POST":
-            if not review.get("worker_id"):
+            if request.form.get("action") == "use_latest":
+                try:
+                    result = service.resolve_source_duplicate(record_id, str(session["iam_user"]))
+                    return redirect(url_for("employees.source_updates_overview", notice=f"Canonical employee created/updated from the latest {result['source_system']} observation. {len(result['superseded_record_ids'])} older observation(s) were preserved as history.", notice_type="success"))
+                except (OSError, ValueError, PermissionError) as exc:
+                    error = str(exc)
+            elif not review.get("worker_id"):
                 error = "Este grupo todavía no tiene un empleado canónico único para aplicar los valores seleccionados."
             else:
                 choices = {key.removeprefix("field_"): value for key, value in request.form.items() if key.startswith("field_") and value}
@@ -178,9 +228,14 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         if not current_user.can_decide_requests:
             return redirect(url_for("employees.source_candidate", record_id=record_id, error="Only an administrator can apply source changes directly.", notice_type="danger"))
         try:
-            result = service.apply_approved_import_records([record_id], current_user.username)
+            preview = service.source_candidate_preview(record_id)
+            if preview is None:
+                return render_template("errors/404.html"), 404
+            record_ids = [str(item["record_id"]) for item in preview.get("records", [])]
+            preparation = service.prepare_source_candidate(record_ids or [record_id], current_user.username)
+            result = service.apply_approved_import_records(record_ids or [record_id], current_user.username)
             record_audit(audit_path, current_user.username, "NEW_EMPLOYEE_SOURCE_APPLIED", "ingestion_record", record_id, new_values={"result": result})
-            return redirect(url_for("employees.source_candidate", record_id=record_id, notice=f"Applied source record. {result.get('created', 0)} employee created.", notice_type="success"))
+            return redirect(url_for("employees.source_candidate", record_id=record_id, notice=f"Applied {result.get('processed', 0)} source record(s) to one canonical employee. {'Created' if preparation['created'] else 'Reused'} worker {preparation['worker_id'][:8]}.", notice_type="success"))
         except (OSError, ValueError, PermissionError) as exc:
             return redirect(url_for("employees.source_candidate", record_id=record_id, error=str(exc), notice_type="danger"))
 
@@ -193,7 +248,9 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         try:
             actor = str(session["iam_user"])
             operation_type = "IMPORT_RSR_SUPPLIER_DETAILS" if preview["source_system"] == "RSR_SUPPLIER_WORKER_DETAILS" else "IMPORT_ACCESSNOW" if preview["source_system"] == "ACCESSNOW" else "IMPORT_ROSTER_LOCK"
-            request_id = _request_source_change(operation_type=operation_type, entity_id=str(preview["batch_id"]), payload={"record_ids": [record_id], "record_previews": [preview]}, reason=request.form.get("reason", "New source employee review"), actor=actor)
+            evidence = list(preview.get("records", []))
+            record_ids = [str(item["record_id"]) for item in evidence] or [record_id]
+            request_id = _request_source_change(operation_type=operation_type, entity_id=str(preview["batch_id"]), payload={"record_ids": record_ids, "record_previews": evidence or [preview]}, reason=request.form.get("reason", "New source employee review"), actor=actor)
             return redirect(url_for("employees.source_candidate", record_id=record_id, notice=f"Request {request_id[:8]} submitted for administrator approval.", notice_type="success"))
         except (OSError, ValueError, PermissionError) as exc:
             return redirect(url_for("employees.source_candidate", record_id=record_id, error=str(exc), notice_type="danger"))

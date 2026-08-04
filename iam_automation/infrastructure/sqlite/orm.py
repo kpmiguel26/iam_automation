@@ -183,6 +183,10 @@ class IngestionRecordModel(Base):
     match_status: Mapped[str] = mapped_column(String, default="NOT_EVALUATED")
     matched_worker_id: Mapped[str | None] = mapped_column(String, nullable=True)
     match_reason: Mapped[str] = mapped_column(Text, default="")
+    observation_state: Mapped[str] = mapped_column(String, default="PENDING")
+    superseded_by_record_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    linked_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_seen_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at_utc: Mapped[str] = mapped_column(String, default="")
 
 
@@ -216,6 +220,23 @@ class WorkerIdentifierModel(Base):
     valid_from_utc: Mapped[str | None] = mapped_column(String, nullable=True)
     valid_to_utc: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class WorkerSourceProfileModel(Base):
+    """Current source-specific identity/profile projection for one worker."""
+
+    __tablename__ = "worker_source_profiles"
+    __table_args__ = (UniqueConstraint("source_system", "source_record_key", name="uq_worker_source_profile_key"),)
+
+    profile_id: Mapped[str] = mapped_column(String, primary_key=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey("workers.worker_id"))
+    source_system: Mapped[str] = mapped_column(String)
+    source_record_key: Mapped[str] = mapped_column(String)
+    current_record_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String, default="CURRENT")
+    first_seen_at_utc: Mapped[str] = mapped_column(String, default="")
+    last_seen_at_utc: Mapped[str] = mapped_column(String, default="")
 
 
 class WorkerEngagementModel(Base):

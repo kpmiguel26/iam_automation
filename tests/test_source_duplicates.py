@@ -19,6 +19,8 @@ class SourceDuplicateSummaryTests(unittest.TestCase):
         source_system: str = "ROSTER_LOCK",
         source_file: str | None = None,
         matched_worker_id: str | None = None,
+        source_record_key: str | None = None,
+        created_at_utc: str = "2026-07-31T12:00:00+00:00",
     ) -> IngestionRecordModel:
         return IngestionRecordModel(
             record_id=record_id,
@@ -27,33 +29,31 @@ class SourceDuplicateSummaryTests(unittest.TestCase):
             source_file=source_file or f"{source_system.lower()}.xlsx",
             source_checksum=f"checksum-{record_id}",
             row_number=2,
-            source_record_key=record_id,
+            source_record_key=source_record_key or record_id,
             normalized_json=json.dumps(payload),
             payload_json=json.dumps(payload),
             status="MATCHED" if matched_worker_id else "STAGED",
             match_status="MATCHED" if matched_worker_id else "UNMATCHED",
             matched_worker_id=matched_worker_id,
             match_reason="",
-            created_at_utc="2026-07-31T12:00:00+00:00",
+            created_at_utc=created_at_utc,
         )
 
-    def test_same_strong_identifier_is_reported_as_possible_duplicate(self):
+    def test_same_strong_identifier_from_different_sources_is_not_a_duplicate(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
             with orm_session(database) as session:
                 session.add_all(
                     [
-                        self._record("one", {"vendor_employee_id": "E-100", "first_name": "Ada", "last_name": "Lovelace"}),
-                        self._record("two", {"vendor_employee_id": "E-100", "first_name": "Ada", "last_name": "Lovelace"}, source_system="RSR_SUPPLIER_WORKER_DETAILS"),
+                        self._record("one", {"vendor_employee_id": "E-100", "first_name": "Ada", "last_name": "Lovelace"}, source_record_key="E-100"),
+                        self._record("two", {"vendor_employee_id": "E-100", "first_name": "Ada", "last_name": "Lovelace"}, source_system="RSR_SUPPLIER_WORKER_DETAILS", source_record_key="E-100"),
                     ]
                 )
 
             summary = EmployeeService(database).source_duplicate_summary()
 
-            self.assertEqual(summary["group_count"], 1)
-            self.assertEqual(summary["record_count"], 2)
-            self.assertEqual(summary["groups"][0]["signal"], "Vendor employee ID")
-            self.assertEqual(summary["groups"][0]["classification"], "REVIEW_DUPLICATE")
+            self.assertEqual(summary["group_count"], 0)
+            self.assertEqual(summary["record_count"], 0)
 
     def test_same_identifier_for_one_worker_is_correlated_source_history(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -61,8 +61,8 @@ class SourceDuplicateSummaryTests(unittest.TestCase):
             with orm_session(database) as session:
                 session.add_all(
                     [
-                        self._record("one", {"vendor_employee_id": "E-100", "first_name": "Ada"}, matched_worker_id="worker-1"),
-                        self._record("two", {"vendor_employee_id": "E-100", "first_name": "Ada"}, source_system="RSR_SUPPLIER_WORKER_DETAILS", matched_worker_id="worker-1"),
+                        self._record("one", {"vendor_employee_id": "E-100", "first_name": "Ada"}, matched_worker_id="worker-1", source_record_key="E-100"),
+                        self._record("two", {"vendor_employee_id": "E-100", "first_name": "Ada"}, matched_worker_id="worker-1", source_record_key="E-100"),
                     ]
                 )
 
@@ -77,8 +77,8 @@ class SourceDuplicateSummaryTests(unittest.TestCase):
             with orm_session(database) as session:
                 session.add_all(
                     [
-                        self._record("one", {"first_name": "Ada", "last_name": "Lovelace", "email": "ada@example.com"}),
-                        self._record("two", {"first_name": "Ada", "last_name": "Lovelace", "email": "ada@example.com"}, source_system="FIELDGLASS"),
+                        self._record("one", {"first_name": "Ada", "last_name": "Lovelace", "email": "ada@example.com"}, source_record_key="E-100"),
+                        self._record("two", {"first_name": "Ada", "last_name": "Lovelace", "email": "ada@example.com"}, source_record_key="E-100"),
                     ]
                 )
 
@@ -86,6 +86,31 @@ class SourceDuplicateSummaryTests(unittest.TestCase):
 
             self.assertEqual(len(groups), 1)
             self.assertEqual(groups[0]["signal"], "Name + email")
+
+    def test_same_source_repetition_creates_worker_from_latest_and_archives_old_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            with orm_session(database) as session:
+                session.add_all([
+                    self._record("old", {"vendor_employee_id": "E-100", "first_name": "Ada", "last_name": "Old"}, source_record_key="E-100", source_file="old.xlsx", created_at_utc="2026-08-01T00:00:00+00:00"),
+                    self._record("new", {"vendor_employee_id": "E-100", "first_name": "Ada", "last_name": "New"}, source_record_key="E-100", source_file="new.xlsx", created_at_utc="2026-08-02T00:00:00+00:00"),
+                ])
+
+            service = EmployeeService(database)
+            result = service.resolve_source_duplicate("old", "admin")
+
+            self.assertEqual(result["current_record_id"], "new")
+            self.assertEqual(len(service.list_workers()), 1)
+            history = service.get_worker(result["worker_id"])
+            self.assertEqual(len(history["source_observations"]), 2)
+            self.assertEqual({item["source_file"] for item in history["source_observations"]}, {"old.xlsx", "new.xlsx"})
+            self.assertGreaterEqual(len(history["lineage"]), 6)
+            with orm_session(database) as session:
+                old = session.get(IngestionRecordModel, "old")
+                new = session.get(IngestionRecordModel, "new")
+                self.assertEqual(old.observation_state, "SUPERSEDED")
+                self.assertEqual(new.observation_state, "CURRENT")
+                self.assertEqual(new.matched_worker_id, result["worker_id"])
 
     def test_source_file_filter_isolates_review_worklist(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -56,22 +56,75 @@
       bootstrap.Toast.getOrCreateInstance(toast, { delay: 3500 }).show();
     }
 
-    document.querySelectorAll('form[method="post"], form[method="POST"]').forEach(function (form) {
-      form.addEventListener('submit', function () {
+    function showLoading(message) {
+      if (document.querySelector('.transaction-loading')) return;
+      var overlay = document.createElement('div');
+      overlay.className = 'transaction-loading';
+      overlay.setAttribute('role', 'status');
+      overlay.setAttribute('aria-live', 'polite');
+      overlay.innerHTML = '<div class="transaction-loading-card"><span class="spinner-border" aria-hidden="true"></span><div><strong>Procesando consulta</strong><small>' + message + '</small></div></div>';
+      document.body.appendChild(overlay);
+    }
+    function showConfirmation(message, onConfirm) {
+      var overlay = document.createElement('div');
+      overlay.className = 'iam-confirmation';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-labelledby', 'iamConfirmationTitle');
+      var card = document.createElement('div');
+      card.className = 'iam-confirmation-card';
+      var icon = document.createElement('div');
+      icon.className = 'iam-confirmation-icon';
+      icon.textContent = '!';
+      var title = document.createElement('h2');
+      title.id = 'iamConfirmationTitle';
+      title.textContent = 'Confirmar creación masiva';
+      var body = document.createElement('p');
+      body.textContent = message;
+      var actions = document.createElement('div');
+      actions.className = 'iam-confirmation-actions';
+      var cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'btn btn-outline-secondary';
+      cancel.textContent = 'Cancelar';
+      var confirm = document.createElement('button');
+      confirm.type = 'button';
+      confirm.className = 'btn btn-danger';
+      confirm.textContent = 'Crear empleados';
+      actions.append(cancel, confirm);
+      card.append(icon, title, body, actions);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      cancel.focus();
+      function close() { overlay.remove(); }
+      cancel.addEventListener('click', close);
+      overlay.addEventListener('click', function (event) { if (event.target === overlay) close(); });
+      confirm.addEventListener('click', function () { close(); onConfirm(); });
+    }
+    document.querySelectorAll('form[method="post"], form[method="POST"], form[data-loading="true"]').forEach(function (form) {
+      form.addEventListener('submit', function (event) {
         if (form.dataset.loadingHandled === 'true' || form.dataset.noLoader === 'true') return;
+        var confirmation = form.querySelector('[data-confirm]');
+        if (confirmation && form.dataset.confirmed !== 'true') {
+          event.preventDefault();
+          showConfirmation(confirmation.dataset.confirm, function () { form.dataset.confirmed = 'true'; form.requestSubmit(); });
+          return;
+        }
         form.dataset.loadingHandled = 'true';
         var action = (form.getAttribute('action') || '').toLowerCase();
         var message = form.dataset.loadingMessage || 'Guardando cambios y actualizando el workspace…';
         if (action.indexOf('publish') !== -1) message = 'Publicando snapshot SQLite, creando respaldo y notificando al equipo…';
         else if (action.indexOf('approval') !== -1 || action.indexOf('decision') !== -1) message = 'Guardando decisión y aplicando el cambio local…';
         else if (form.enctype === 'multipart/form-data') message = 'Cargando y validando el archivo…';
-        var overlay = document.createElement('div');
-        overlay.className = 'transaction-loading';
-        overlay.setAttribute('role', 'status');
-        overlay.setAttribute('aria-live', 'polite');
-        overlay.innerHTML = '<div class="transaction-loading-card"><span class="spinner-border" aria-hidden="true"></span><div><strong>Procesando transacción</strong><small>' + message + '</small></div></div>';
-        document.body.appendChild(overlay);
+        showLoading(message);
         form.querySelectorAll('button, input[type="submit"]').forEach(function (control) { control.disabled = true; });
+      });
+    });
+    document.querySelectorAll('a[data-loading="true"]').forEach(function (link) {
+      link.addEventListener('click', function () {
+        if (link.dataset.loadingHandled === 'true') return;
+        link.dataset.loadingHandled = 'true';
+        showLoading(link.dataset.loadingMessage || 'Consultando todos los registros relacionados…');
       });
     });
   });

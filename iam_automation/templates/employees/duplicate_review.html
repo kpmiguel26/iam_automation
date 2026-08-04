@@ -10,6 +10,7 @@
     <span class="badge text-bg-warning">{{ review.group.classification|replace('_', ' ')|title }}</span>
   </div>
   <div class="alert alert-info mt-4">The selected values are applied to the local SQLite runtime and recorded in the employee history. Publishing SQLite is a separate step used to share the result with other teams.</div>
+  {% if review.same_source %}<section class="surface p-4 mt-3 border-primary-subtle"><div class="section-heading"><div><p class="eyebrow mb-1">Recommended resolution</p><h2 class="h5 mb-1">Keep the latest source observation</h2><p class="small text-secondary mb-0">The newest file becomes the current source profile. Older rows remain immutable historical evidence.</p></div><span class="badge text-bg-success">{{ review.latest_source_file }}</span></div><form method="post" class="d-flex justify-content-end mt-3"><input type="hidden" name="action" value="use_latest"><button class="btn btn-primary" type="submit">Use latest and create canonical employee</button></form></section>{% endif %}
   <form method="post">
     <section class="surface p-4 mt-3">
       <div class="section-heading"><div><p class="eyebrow mb-1">Matching evidence</p><h2 class="h5 mb-0">{{ review.group.signal }}: {{ review.group.value }}</h2></div><span class="small text-secondary">{{ review.records|length }} source record(s)</span></div>
