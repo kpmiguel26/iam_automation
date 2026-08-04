@@ -13,6 +13,10 @@
   </div>
   <section class="surface p-4 mt-4">
     <div class="alert alert-info small mb-4">Every approved import or administrative change creates an immutable snapshot in SQLite. The newest event is shown first; source evidence and previous versions remain available for audit.</div>
+    <section class="source-history-panel mb-4">
+      <div class="section-heading"><div><p class="eyebrow mb-1">Source evidence</p><h2 class="h5 mb-0">All observations for this employee</h2></div><span class="small text-secondary">{{ source_observations|length }} file row(s)</span></div>
+      <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>Source</th><th>File</th><th>Source record</th><th>State</th><th>Observed data</th></tr></thead><tbody>{% for observation in source_observations %}<tr><td>{{ observation.source_system|replace('_', ' ')|title }}</td><td><strong>{{ observation.source_file }}</strong><div class="small text-secondary">{{ observation.created_at_utc|human_datetime }}</div></td><td><code>{{ observation.source_record_key }}</code></td><td><span class="badge {% if observation.observation_state == 'CURRENT' %}text-bg-success{% elif observation.observation_state == 'SUPERSEDED' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ observation.observation_state|replace('_', ' ')|title }}</span></td><td><details><summary class="small">View {{ observation.payload|length }} field(s)</summary><pre class="request-json mt-2 mb-0">{{ observation.payload|tojson(indent=2) }}</pre></details></td></tr>{% else %}<tr><td colspan="5" class="text-secondary">No source observations are linked yet.</td></tr>{% endfor %}</tbody></table></div>
+    </section>
     {% include "employees/_history_timeline.html" %}
   </section>
 </div>

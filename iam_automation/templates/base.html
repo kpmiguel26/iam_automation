@@ -56,7 +56,16 @@
       bootstrap.Toast.getOrCreateInstance(toast, { delay: 3500 }).show();
     }
 
-    document.querySelectorAll('form[method="post"], form[method="POST"]').forEach(function (form) {
+    function showLoading(message) {
+      if (document.querySelector('.transaction-loading')) return;
+      var overlay = document.createElement('div');
+      overlay.className = 'transaction-loading';
+      overlay.setAttribute('role', 'status');
+      overlay.setAttribute('aria-live', 'polite');
+      overlay.innerHTML = '<div class="transaction-loading-card"><span class="spinner-border" aria-hidden="true"></span><div><strong>Procesando consulta</strong><small>' + message + '</small></div></div>';
+      document.body.appendChild(overlay);
+    }
+    document.querySelectorAll('form[method="post"], form[method="POST"], form[data-loading="true"]').forEach(function (form) {
       form.addEventListener('submit', function () {
         if (form.dataset.loadingHandled === 'true' || form.dataset.noLoader === 'true') return;
         form.dataset.loadingHandled = 'true';
@@ -65,13 +74,15 @@
         if (action.indexOf('publish') !== -1) message = 'Publicando snapshot SQLite, creando respaldo y notificando al equipo…';
         else if (action.indexOf('approval') !== -1 || action.indexOf('decision') !== -1) message = 'Guardando decisión y aplicando el cambio local…';
         else if (form.enctype === 'multipart/form-data') message = 'Cargando y validando el archivo…';
-        var overlay = document.createElement('div');
-        overlay.className = 'transaction-loading';
-        overlay.setAttribute('role', 'status');
-        overlay.setAttribute('aria-live', 'polite');
-        overlay.innerHTML = '<div class="transaction-loading-card"><span class="spinner-border" aria-hidden="true"></span><div><strong>Procesando transacción</strong><small>' + message + '</small></div></div>';
-        document.body.appendChild(overlay);
+        showLoading(message);
         form.querySelectorAll('button, input[type="submit"]').forEach(function (control) { control.disabled = true; });
+      });
+    });
+    document.querySelectorAll('a[data-loading="true"]').forEach(function (link) {
+      link.addEventListener('click', function () {
+        if (link.dataset.loadingHandled === 'true') return;
+        link.dataset.loadingHandled = 'true';
+        showLoading(link.dataset.loadingMessage || 'Consultando todos los registros relacionados…');
       });
     });
   });

@@ -23,6 +23,7 @@ from ..infrastructure.sqlite.orm import (
     orm_session,
 )
 from .publication_state import mark_publication_pending
+from .source_reconciliation import ensure_source_identifiers, find_worker_matches
 from .worker_history_service import record_worker_version
 
 
@@ -125,25 +126,7 @@ class AccessNowIngestionService:
 
     @staticmethod
     def _find_match_detail(session, payload: dict[str, str]) -> tuple[list[str], str]:
-        for identifier_type, value in (("ACCESSNOW_EMPLOYEE_ID", payload.get("accessnow_employee_id", "")), ("ACCESSNOW_NUID", payload.get("accessnow_nuid", ""))):
-            normalized = str(value or "").strip().casefold()
-            if not normalized:
-                continue
-            workers = set(session.scalars(select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.source_system == SOURCE_SYSTEM, WorkerIdentifierModel.identifier_type == identifier_type, WorkerIdentifierModel.normalized_value == normalized, WorkerIdentifierModel.active.is_(True))).all())
-            if workers:
-                return sorted(workers), "Exact AccessNow identifier match"
-        email = str(payload.get("email") or "").strip().casefold()
-        if email:
-            matches = session.scalars(select(WorkerModel.worker_id).where(func.lower(WorkerModel.canonical_email) == email, WorkerModel.superseded_by_worker_id.is_(None))).all()
-            if matches:
-                return sorted(set(matches)), "Canonical email match"
-        first = str(payload.get("first_name") or "").strip().casefold()
-        last = str(payload.get("last_name") or "").strip().casefold()
-        if first and last:
-            matches = session.scalars(select(WorkerModel.worker_id).where(func.lower(WorkerModel.first_name) == first, func.lower(WorkerModel.last_name) == last, WorkerModel.superseded_by_worker_id.is_(None))).all()
-            if matches:
-                return sorted(set(matches)), "Canonical name match"
-        return [], "No canonical match"
+        return find_worker_matches(session, SOURCE_SYSTEM, payload)
 
     @staticmethod
     def _read_rows(path: Path, content: bytes) -> list[tuple[int, dict[str, object]]]:
@@ -281,11 +264,4 @@ class AccessNowIngestionService:
 
     @staticmethod
     def _add_identifiers(session, worker_id: str, payload: dict[str, str], now: str) -> None:
-        for identifier_type, value in (("ACCESSNOW_EMPLOYEE_ID", payload.get("accessnow_employee_id", "")), ("ACCESSNOW_NUID", payload.get("accessnow_nuid", "")), ("ACCESSNOW_MANAGER_NUID", payload.get("manager_nuid", "")), ("ACCESSNOW_SPONSOR_NUID", payload.get("sponsor_nuid", ""))):
-            value = str(value or "").strip()
-            if not value:
-                continue
-            normalized = value.casefold()
-            existing = session.scalar(select(WorkerIdentifierModel).where(WorkerIdentifierModel.source_system == SOURCE_SYSTEM, WorkerIdentifierModel.identifier_type == identifier_type, WorkerIdentifierModel.normalized_value == normalized))
-            if existing is None:
-                session.add(WorkerIdentifierModel(identifier_id=str(uuid.uuid4()), worker_id=worker_id, source_system=SOURCE_SYSTEM, identifier_type=identifier_type, identifier_value=value, normalized_value=normalized, confidence="HIGH", created_at_utc=now))
+        ensure_source_identifiers(session, worker_id, SOURCE_SYSTEM, payload, now)

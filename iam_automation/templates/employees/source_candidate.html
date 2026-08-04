@@ -6,26 +6,15 @@
   {% if message %}<div class="alert alert-success mt-3">{{ message }}</div>{% endif %}
   {% if error %}<div class="alert alert-danger mt-3">{{ error }}</div>{% endif %}
   <div class="page-heading mt-3">
-    <div><p class="eyebrow">New employee candidate</p><h1>{{ preview.worker_name or 'Unnamed candidate' }}</h1><p class="text-secondary mb-0">No canonical worker match was found. Review the source payload before creating a worker.</p></div>
+    <div><p class="eyebrow">Canonical employee dossier</p><h1>{{ preview.worker_name or 'Unnamed candidate' }}</h1><p class="text-secondary mb-0">Review every appearance across imported sources before creating or linking the canonical employee.</p></div>
     <span class="badge text-bg-warning">{{ preview.match_status|replace('_', ' ')|title }}</span>
   </div>
 
   <div class="alert alert-warning mt-4"><strong>Decision required.</strong> This source record will not create an employee automatically. An administrator may apply it now; other users must submit an approval request.</div>
 
-  <section class="surface p-4 mt-3">
-    <div class="section-heading"><div><p class="eyebrow mb-1">Source evidence</p><h2 class="h5 mb-0">Incoming employee data</h2></div><span class="small text-secondary">{{ preview.source_system|replace('_', ' ')|title }}</span></div>
-    <dl class="row small mt-3 mb-0">
-      <dt class="col-sm-3 text-secondary">File</dt><dd class="col-sm-9">{{ preview.source_file }}</dd>
-      <dt class="col-sm-3 text-secondary">Source record</dt><dd class="col-sm-9"><code>{{ preview.source_record_key }}</code></dd>
-      <dt class="col-sm-3 text-secondary">Match reason</dt><dd class="col-sm-9">{{ preview.match_reason or 'No exact canonical identifier match.' }}</dd>
-    </dl>
-  </section>
+  <section class="surface p-4 mt-3"><div class="section-heading"><div><p class="eyebrow mb-1">Consolidated evidence</p><h2 class="h5 mb-0">{{ preview.source_count }} source(s) · {{ preview.file_count }} file(s) · {{ preview.records|length }} appearance(s)</h2></div></div><div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>Source</th><th>File / row</th><th>Identifier</th><th>State</th><th>Match</th></tr></thead><tbody>{% for record in preview.records %}<tr><td><strong>{{ record.source_system|replace('_', ' ')|title }}</strong></td><td>{{ record.source_file }}<div class="small text-secondary">Row {{ record.row_number }}</div></td><td><code>{{ record.source_record_key }}</code></td><td><span class="badge {% if record.observation_state == 'SUPERSEDED' %}text-bg-secondary{% elif record.observation_state == 'CURRENT' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ record.observation_state|replace('_', ' ')|title }}</span></td><td>{{ record.match_status|replace('_', ' ')|title }}</td></tr>{% endfor %}</tbody></table></div></section>
 
-  <section class="surface p-4 mt-3">
-    <div class="table-responsive"><table class="table table-sm align-middle mb-0 source-comparison-table"><thead><tr><th>Field</th><th>Incoming value</th><th>Review note</th></tr></thead><tbody>
-      {% for field, value in preview.payload.items() %}<tr><td><strong>{{ field|replace('_', ' ')|title }}</strong></td><td class="text-danger fw-semibold">{{ value or 'Not provided' }}</td><td>{% if not value %}<span class="badge text-bg-danger">Missing</span>{% else %}<span class="small text-secondary">New candidate value</span>{% endif %}</td></tr>{% endfor %}
-    </tbody></table></div>
-  </section>
+  {% for record in preview.records %}<section class="surface p-4 mt-3"><div class="section-heading"><div><p class="eyebrow mb-1">{{ record.source_system|replace('_', ' ')|title }} · {{ record.source_file }} · row {{ record.row_number }}</p><h2 class="h5 mb-0">Payload completo</h2></div><span class="badge text-bg-light"><code>{{ record.source_record_key }}</code></span></div><div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0 source-comparison-table"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>{% for field, value in record.payload.items() %}<tr><td><strong>{{ field|replace('_', ' ')|title }}</strong></td><td>{{ value or 'Not provided' }}</td></tr>{% endfor %}</tbody></table></div></section>{% endfor %}
 
   <section class="surface p-4 mt-3"><form method="post" action="{{ url_for('employees.request_source_candidate', record_id=preview.record_id) }}"><label class="form-label" for="candidateReason">Business reason</label><textarea id="candidateReason" class="form-control" name="reason" rows="3" required placeholder="Explain why this candidate should be created"></textarea><div class="d-flex justify-content-end gap-2 flex-wrap mt-3"><button class="btn btn-outline-primary" type="submit">Submit for approval</button>{% if can_apply %}<button class="btn btn-primary" type="submit" formaction="{{ url_for('employees.apply_source_candidate', record_id=preview.record_id) }}">Create employee now</button>{% endif %}</div></form></section>
 </div>
