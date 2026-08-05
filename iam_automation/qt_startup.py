@@ -12,12 +12,40 @@ from .webapp import launch_local_webapp_process, stop_local_webapp, webapp_pid_p
 try:  # Optional until the desktop/web UI dependencies are installed.
     from PySide6.QtCore import Qt, QThread, Signal
     from PySide6.QtGui import QIcon, QPixmap
-    from PySide6.QtWidgets import QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
+    from PySide6.QtWidgets import QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QProgressBar, QScrollArea, QVBoxLayout, QWidget
 except ModuleNotFoundError:  # pragma: no cover - exercised when optional UI deps are absent
     QApplication = None  # type: ignore[assignment,misc]
     QFileDialog = None  # type: ignore[assignment,misc]
     Qt = QIcon = QPixmap = QThread = Signal = None  # type: ignore[assignment,misc]
-    QApplication = QFileDialog = QFrame = QHBoxLayout = QLabel = QLineEdit = QPlainTextEdit = QPushButton = QScrollArea = QVBoxLayout = QWidget = None  # type: ignore[assignment,misc]
+    QApplication = QFileDialog = QFrame = QHBoxLayout = QLabel = QLineEdit = QPlainTextEdit = QPushButton = QProgressBar = QScrollArea = QVBoxLayout = QWidget = None  # type: ignore[assignment,misc]
+
+
+if QThread is not None:
+    class PreflightWorker(QThread):
+        completed = Signal(object)
+        failed = Signal(str)
+
+        def __init__(self, controller: StartupController, operation: str, path: Path | None = None):
+            super().__init__()
+            self.controller = controller
+            self.operation = operation
+            self.path = path
+
+        def run(self) -> None:
+            try:
+                if self.operation == "discover":
+                    result = self.controller.discover_sharepoint()
+                elif self.operation == "select" and self.path is not None:
+                    result = self.controller.select_sharepoint_path(self.path)
+                elif self.operation == "retry":
+                    result = self.controller.retry()
+                elif self.operation == "validate":
+                    result = self.controller.validate_environment()
+                else:
+                    raise RuntimeError("Unknown preflight operation.")
+                self.completed.emit(result)
+            except Exception as exc:  # pragma: no cover - depends on local SharePoint/OneDrive state
+                self.failed.emit(str(exc))
 
 
 class StartupWindow:
@@ -48,6 +76,8 @@ class StartupWindow:
             QLabel#statusLabel { background: #fff4d6; border: 1px solid #f0d58c; border-radius: 8px; color: #75540b; font-size: 14px; font-weight: 600; padding: 11px 14px; }
             QLabel#statusLabel[ready="true"] { background: #e5f6ed; border-color: #a8dfc0; color: #17653c; }
             QLabel#statusLabel[error="true"] { background: #fde9e7; border-color: #efb1ab; color: #9d2f2a; }
+            QProgressBar#preflightProgress { background: #e9eef5; border: 0; border-radius: 3px; height: 6px; }
+            QProgressBar#preflightProgress::chunk { background: #087f83; border-radius: 3px; }
             QLineEdit, QPlainTextEdit { background: white; border: 1px solid #d7dfec; border-radius: 7px; padding: 8px; }
             QLineEdit:focus, QPlainTextEdit:focus { border: 1px solid #2e74c9; }
             QScrollArea { background: white; border: 1px solid #d7dfec; border-radius: 7px; }
@@ -69,6 +99,11 @@ class StartupWindow:
         self.status_label = QLabel()
         self.status_label.setObjectName("statusLabel")
         self.status_label.setWordWrap(True)
+        self.preflight_progress = QProgressBar()
+        self.preflight_progress.setObjectName("preflightProgress")
+        self.preflight_progress.setRange(0, 0)
+        self.preflight_progress.setTextVisible(False)
+        self.preflight_progress.setVisible(False)
         self.details_label = QLabel()
         self.details_label.setWordWrap(True)
         self.details_scroll = QScrollArea()
@@ -96,6 +131,8 @@ class StartupWindow:
         self.stop_button.setEnabled(False)
         self.webapp_url: str | None = None
         self.webapp_process = None
+        self.preflight_worker = None
+        self.preflight_callback = None
         self.closing = False
         layout = QVBoxLayout(self.widget)
         layout.setContentsMargins(24, 22, 24, 20)
@@ -136,6 +173,7 @@ class StartupWindow:
         path_row.addWidget(self.browse_button)
         layout.addLayout(path_row)
         layout.addWidget(self.status_label)
+        layout.addWidget(self.preflight_progress)
 
         details_label = QLabel("VALIDATION DETAILS")
         details_label.setObjectName("sectionLabel")
@@ -186,18 +224,53 @@ class StartupWindow:
         style.unpolish(self.status_label)
         style.polish(self.status_label)
 
-    def discover(self) -> PreflightResult:
-        result = self.controller.discover_sharepoint()
+    def _set_preflight_busy(self, busy: bool, message: str = "") -> None:
+        self.preflight_progress.setVisible(busy)
+        self.browse_button.setEnabled(not busy)
+        self.retry_button.setEnabled(not busy)
+        self.start_button.setEnabled(not busy and bool(self.controller.result and self.controller.result.ok) and self.webapp_url is None)
+        if busy and message:
+            self._set_status(message)
+
+    def _run_preflight(self, operation: str, *, path: Path | None = None, callback: Callable[[PreflightResult], None] | None = None) -> None:
+        if self.preflight_worker is not None or PreflightWorker is None:
+            return
+        self.preflight_callback = callback
+        labels = {"discover": "CHECKING: Discovering the synchronized workspace...", "select": "CHECKING: Validating the selected workspace...", "retry": "CHECKING: Retrying environment validation...", "validate": "CHECKING: Validating SharePoint, databases and local folders..."}
+        self._set_preflight_busy(True, labels.get(operation, "CHECKING: Validating environment..."))
+        worker = PreflightWorker(self.controller, operation, path)
+        self.preflight_worker = worker
+        worker.completed.connect(self._preflight_completed)
+        worker.failed.connect(self._preflight_failed)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _preflight_completed(self, result: PreflightResult) -> None:
+        callback = self.preflight_callback
+        self.preflight_callback = None
+        self.preflight_worker = None
+        self._set_preflight_busy(False)
         self.apply_result(result)
-        return result
+        if callback:
+            callback(result)
+
+    def _preflight_failed(self, message: str) -> None:
+        self.preflight_callback = None
+        self.preflight_worker = None
+        self._set_preflight_busy(False)
+        self._set_status(f"PREFLIGHT_ERROR: {message}", error=True)
+        self._log(f"[PREFLIGHT] {message}")
+
+    def discover(self) -> None:
+        self._run_preflight("discover")
 
     def browse(self) -> None:
         selected = QFileDialog.getExistingDirectory(self.widget, "Select SharePoint synchronized folder")
         if selected:
-            self.apply_result(self.controller.select_sharepoint_path(Path(selected)))
+            self._run_preflight("select", path=Path(selected))
 
     def retry(self) -> None:
-        self.apply_result(self.controller.retry())
+        self._run_preflight("retry")
 
     def mark_webapp_started(self, process, url: str) -> None:
         self.webapp_process = process
@@ -273,8 +346,9 @@ class StartupWindow:
         self._log(f"[BROWSER] Opened {self.webapp_url}")
 
     def continue_to_login(self) -> None:
-        result = self.controller.validate_environment()
-        self.apply_result(result)
+        self._run_preflight("validate", callback=self._continue_after_validation)
+
+    def _continue_after_validation(self, result: PreflightResult) -> None:
         if not result.ok:
             return
         try:

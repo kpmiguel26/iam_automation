@@ -205,6 +205,7 @@
         overlay.innerHTML = '<div class="transaction-loading-card"><span class="spinner-border" aria-hidden="true"></span><div><strong>Processing request</strong><small>' + message + '</small></div></div>';
         document.body.appendChild(overlay);
       }
+      window.showLoading = showLoading;
       function showConfirmation(message, onConfirm) {
         var overlay = document.createElement('div');
         overlay.className = 'iam-confirmation';

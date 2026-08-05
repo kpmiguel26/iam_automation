@@ -9,7 +9,7 @@
     <a class="btn btn-outline-primary" href="{{ url_for('reports.reports_home') }}">Back to Reports</a>
   </div>
 
-  <form method="post" class="surface p-4 mt-4" id="reportStudioForm">
+  <form method="post" class="surface p-4 mt-4" id="reportStudioForm" data-loading-message="Running the report query and refreshing the preview…">
     <div class="report-template-library mb-4">
       <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
         <div><p class="eyebrow mb-1">Query library</p><h2 class="h5 mb-1">Saved report templates</h2><p class="small text-secondary mb-0">Organize your queries into folders and share the useful ones with the team.</p></div>
@@ -41,7 +41,7 @@
               <div class="accordion-body p-2">
                 <div class="list-group list-group-flush">
                   {% for key, label in sources %}
-                  <label class="list-group-item list-group-item-action d-flex gap-2 align-items-start py-2"><input class="form-check-input mt-1" type="radio" id="report-source-{{ loop.index }}" name="source" value="{{ key }}"{% if key == selected_source %} checked{% endif %} onchange="this.form.submit()"><span><strong>{{ label }}</strong><br><span class="small text-secondary">{% if key == 'ALL' %}All fields and canonical source coverage.{% elif key == 'CANONICAL' %}One row per current canonical employee.{% else %}Fields available from {{ label }}.{% endif %}</span></label>
+                  <label class="list-group-item list-group-item-action d-flex gap-2 align-items-start py-2"><input class="form-check-input mt-1" type="radio" id="report-source-{{ loop.index }}" name="source" value="{{ key }}"{% if key == selected_source %} checked{% endif %} onchange="this.form.requestSubmit()"><span><strong>{{ label }}</strong><br><span class="small text-secondary">{% if key == 'ALL' %}All fields and canonical source coverage.{% elif key == 'CANONICAL' %}One row per current canonical employee.{% else %}Fields available from {{ label }}.{% endif %}</span></label>
                   {% endfor %}
                 </div>
               </div>
@@ -160,7 +160,11 @@
   });
   if (loadTemplateButton) {
     loadTemplateButton.addEventListener('click', function () {
-      if (templateSelect.value) window.location.href = '{{ url_for("reports.report_studio") }}?template_id=' + encodeURIComponent(templateSelect.value);
+      if (templateSelect.value) {
+        loadTemplateButton.disabled = true;
+        if (window.showLoading) window.showLoading('Loading the saved query and refreshing Report Studio…');
+        window.location.href = '{{ url_for("reports.report_studio") }}?template_id=' + encodeURIComponent(templateSelect.value);
+      }
     });
   }
   if (saveTemplateButton) {
