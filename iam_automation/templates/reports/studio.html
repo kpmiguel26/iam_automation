@@ -25,7 +25,12 @@
         </div>
         <div class="col-xl-8">
           <div class="report-template-picker surface-subtle p-3 h-100">
-            <div class="d-flex flex-wrap align-items-end gap-2"><div class="flex-grow-1"><label class="form-label fw-semibold mb-1" for="reportTemplateSelect">Choose a saved query</label><select class="form-select form-select-sm" id="reportTemplateSelect"><option value="">Choose a saved template...</option>{% for template in templates %}<option value="{{ template.template_id }}" data-folder-id="{{ template.folder_id }}"{% if template.template_id == active_template_id %} selected{% endif %}>{{ template.name }}{% if template.shared %} · Shared{% endif %}</option>{% endfor %}</select></div><button type="button" class="btn btn-outline-secondary btn-sm" id="loadReportTemplate">Load template</button></div>
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2"><div><label class="form-label fw-semibold mb-0" for="reportTemplateAccordion">Choose a saved query</label><div class="small text-secondary">Open a folder to select a template.</div></div><button type="button" class="btn btn-outline-secondary btn-sm" id="loadReportTemplate" disabled>Load template</button></div>
+            <select class="d-none" id="reportTemplateSelect"><option value="">Choose a saved template...</option>{% for template in templates %}<option value="{{ template.template_id }}" data-folder-id="{{ template.folder_id }}"{% if template.template_id == active_template_id %} selected{% endif %}>{{ template.name }}{% if template.shared %} · Shared{% endif %}</option>{% endfor %}</select>
+            <div class="accordion report-template-accordion" id="reportTemplateAccordion">
+              {% for folder in template_folders %}<div class="accordion-item report-template-accordion-item" data-folder-id="{{ folder.folder_id }}"><h2 class="accordion-header"><button class="accordion-button{% if not loop.first %} collapsed{% endif %} py-2" type="button" data-bs-toggle="collapse" data-bs-target="#report-template-folder-{{ loop.index }}" aria-expanded="{{ 'true' if loop.first else 'false' }}"><span class="report-template-folder-icon me-2">▰</span><span><strong>{{ folder.name }}</strong><small class="d-block text-secondary">{{ templates|selectattr('folder_id', 'equalto', folder.folder_id)|list|length }} template(s){% if folder.shared %} · Shared{% endif %}</small></span></button></h2><div id="report-template-folder-{{ loop.index }}" class="accordion-collapse collapse{% if loop.first %} show{% endif %}"><div class="accordion-body p-2">{% for template in templates if template.folder_id == folder.folder_id %}<button type="button" class="report-template-entry{% if template.template_id == active_template_id %} active{% endif %}" data-template-id="{{ template.template_id }}"><span class="report-template-entry-icon">✦</span><span><strong>{{ template.name }}</strong><small>{{ 'Shared template' if template.shared else 'Personal template' }}</small></span></button>{% else %}<span class="small text-secondary px-2">No templates in this folder yet.</span>{% endfor %}</div></div></div>{% endfor %}
+              <div class="accordion-item report-template-accordion-item" data-folder-id=""><h2 class="accordion-header"><button class="accordion-button{% if template_folders %} collapsed{% endif %} py-2" type="button" data-bs-toggle="collapse" data-bs-target="#report-template-unfiled" aria-expanded="{{ 'false' if template_folders else 'true' }}"><span class="report-template-folder-icon me-2">⌁</span><span><strong>Unfiled templates</strong><small class="d-block text-secondary">{{ templates|selectattr('folder_id', 'equalto', '')|list|length }} template(s)</small></span></button></h2><div id="report-template-unfiled" class="accordion-collapse collapse{% if not template_folders %} show{% endif %}"><div class="accordion-body p-2">{% for template in templates if not template.folder_id %}<button type="button" class="report-template-entry{% if template.template_id == active_template_id %} active{% endif %}" data-template-id="{{ template.template_id }}"><span class="report-template-entry-icon">✦</span><span><strong>{{ template.name }}</strong><small>{{ 'Shared template' if template.shared else 'Personal template' }}</small></span></button>{% else %}<span class="small text-secondary px-2">No unfiled templates.</span>{% endfor %}</div></div></div>
+            </div>
             <div class="border-top mt-3 pt-3"><label class="form-label fw-semibold mb-1" for="reportTemplateName">Save current query</label><div class="row g-2"><div class="col-md-5"><input class="form-control form-control-sm" id="reportTemplateName" placeholder="Template name"></div><div class="col-md-4"><select class="form-select form-select-sm" id="reportTemplateFolder"><option value="">No folder</option>{% for folder in template_folders %}<option value="{{ folder.folder_id }}">{{ folder.name }}</option>{% endfor %}</select></div><div class="col-md-3 d-flex align-items-center"><label class="small d-flex align-items-center gap-2"><input type="checkbox" id="reportTemplateShared"> Share template</label></div></div><button type="button" class="btn btn-primary btn-sm mt-2" id="saveReportTemplate">Save template</button></div>
           </div>
         </div>
@@ -150,6 +155,7 @@
   const folderRail = document.getElementById('reportTemplateFolders');
   const applyFolderFilter = function (folderId, activeButton) {
     document.querySelectorAll('.report-template-folder').forEach(function (button) { button.classList.toggle('active', button === activeButton); });
+    document.querySelectorAll('.report-template-accordion-item').forEach(function (item) { item.hidden = folderId !== '' && item.dataset.folderId !== folderId; });
     if (templateSelect) {
       Array.from(templateSelect.options).forEach(function (option) { option.hidden = Boolean(option.value) && folderId !== '' && option.dataset.folderId !== folderId; });
       if (templateSelect.selectedOptions[0] && templateSelect.selectedOptions[0].hidden) templateSelect.value = '';
@@ -158,6 +164,14 @@
   document.querySelectorAll('.report-template-folder').forEach(function (button) {
     button.addEventListener('click', function () { applyFolderFilter(button.dataset.folderFilter || '', button); });
   });
+  document.querySelectorAll('.report-template-entry').forEach(function (entry) {
+    entry.addEventListener('click', function () {
+      document.querySelectorAll('.report-template-entry').forEach(function (item) { item.classList.toggle('active', item === entry); });
+      templateSelect.value = entry.dataset.templateId;
+      loadTemplateButton.disabled = false;
+    });
+  });
+  if (templateSelect && templateSelect.value && loadTemplateButton) loadTemplateButton.disabled = false;
   if (loadTemplateButton) {
     loadTemplateButton.addEventListener('click', function () {
       if (templateSelect.value) {
