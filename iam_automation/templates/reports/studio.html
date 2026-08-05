@@ -98,7 +98,7 @@
       </div>
       <label class="report-global-search" for="reportGlobalSearch"><span>Search:</span><input class="form-control" id="reportGlobalSearch" type="search" placeholder="Search report..."></label>
     </div>
-    {% if preview.fields %}<div class="table-responsive"><table class="table table-hover align-middle mb-0" id="reportPreviewTable"><thead><tr>{% for field in preview.fields %}<th data-field-key="{{ field.key }}"><span class="report-column-heading">{{ field.label }}</span></th>{% endfor %}</tr></thead><tbody>{% for row in preview.rows %}<tr>{% for field in preview.fields %}{% set value = row[field.key] %}<td>{% if field.data_type == 'boolean' %}{% if value %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="text-secondary">No</span>{% endif %}{% else %}{{ value or '—' }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div><div class="small text-secondary mt-2" id="reportFilterStatus">Use Search or the filters above the table to filter, sort and export the preview.</div>{% else %}<div class="report-preview-empty"><span class="report-preview-empty-icon">▤</span><strong>Preview not loaded</strong><span>Select your columns and filters, then choose <em>Preview report</em> to query the workspace.</span></div>{% endif %}
+    {% if preview.fields %}<div class="table-responsive"><table class="table table-hover align-middle mb-0" id="reportPreviewTable"><thead><tr>{% for field in preview.fields %}<th data-field-key="{{ field.key }}" data-field-type="{{ field.data_type }}"><span class="report-column-heading">{{ field.label }}</span></th>{% endfor %}</tr></thead><tbody>{% for row in preview.rows %}<tr>{% for field in preview.fields %}{% set value = row[field.key] %}<td data-field-type="{{ field.data_type }}" data-raw-value="{{ value or '' }}">{% if field.data_type == 'boolean' %}{% if value %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="text-secondary">No</span>{% endif %}{% else %}{{ value or '—' }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div><div class="small text-secondary mt-2" id="reportFilterStatus">Use Search or the filters above the table to filter, sort and export the preview.</div>{% else %}<div class="report-preview-empty"><span class="report-preview-empty-icon">▤</span><strong>Preview not loaded</strong><span>Select your columns and filters, then choose <em>Preview report</em> to query the workspace.</span></div>{% endif %}
   </section>
   <p class="small text-secondary mt-3 mb-0">This is a read-only preview. Use the table controls to search, filter, sort, paginate or export the selected result.</p>
 </div>
@@ -257,17 +257,97 @@
   }
 
   if (document.getElementById('reportPreviewTable')) {
+    const reportTable = document.getElementById('reportPreviewTable');
+    const formatReportDate = function (value) {
+      const text = String(value || '').trim();
+      if (!text || text === '—') return '—';
+      const isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (isoDate) return isoDate.slice(1).join('-');
+      const parsed = new Date(text);
+      return Number.isNaN(parsed.getTime()) ? text : parsed.toISOString().slice(0, 10);
+    };
+    reportTable.querySelectorAll('tbody td[data-field-type="date"]').forEach(function (cell) {
+      const rawValue = cell.dataset.rawValue || cell.textContent.trim();
+      cell.dataset.order = rawValue;
+      cell.textContent = formatReportDate(rawValue);
+    });
+    const dateColumnIndexes = Array.from(reportTable.querySelectorAll('thead th')).reduce(function (indexes, header, index) {
+      if (header.dataset.fieldType === 'date') indexes.push(index);
+      return indexes;
+    }, []);
+    const exportOptions = {
+      columns: ':visible',
+      modifier: { search: 'applied', order: 'applied' },
+      format: {
+        header: function (data) { return data.replace(/<[^>]*>/g, '').trim(); },
+        body: function (data, row, column, node) {
+          if (node && node.dataset && node.dataset.fieldType === 'date') return formatReportDate(node.dataset.rawValue || data);
+          return data.replace(/<[^>]*>/g, '').trim();
+        }
+      }
+    };
+    const excelColumnName = function (index) {
+      let name = '';
+      for (let value = index + 1; value > 0; value = Math.floor((value - 1) / 26)) name = String.fromCharCode(65 + ((value - 1) % 26)) + name;
+      return name;
+    };
+    const excelDateSerial = function (value) {
+      const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!match) return null;
+      return Math.round((Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) - Date.UTC(1899, 11, 30)) / 86400000);
+    };
+    const customizeReportExcel = function (xlsx) {
+      const styles = xlsx.xl['styles.xml'];
+      const cellFormats = styles.getElementsByTagName('cellXfs')[0];
+      const dateStyleIndex = Number(cellFormats.getAttribute('count'));
+      const dateFormat = styles.createElement('numFmt');
+      dateFormat.setAttribute('numFmtId', '170');
+      dateFormat.setAttribute('formatCode', 'yyyy-mm-dd');
+      styles.getElementsByTagName('numFmts')[0].appendChild(dateFormat);
+      styles.getElementsByTagName('numFmts')[0].setAttribute('count', String(Number(styles.getElementsByTagName('numFmts')[0].getAttribute('count')) + 1));
+      const dateCellFormat = styles.createElement('xf');
+      dateCellFormat.setAttribute('numFmtId', '170');
+      dateCellFormat.setAttribute('fontId', '0');
+      dateCellFormat.setAttribute('fillId', '0');
+      dateCellFormat.setAttribute('borderId', '0');
+      dateCellFormat.setAttribute('applyNumberFormat', '1');
+      dateCellFormat.setAttribute('xfId', '0');
+      cellFormats.appendChild(dateCellFormat);
+      cellFormats.setAttribute('count', String(dateStyleIndex + 1));
+      const dateColumns = new Set(dateColumnIndexes.map(excelColumnName));
+      xlsx.xl.worksheets['sheet1.xml'].getElementsByTagName('c');
+      Array.from(xlsx.xl.worksheets['sheet1.xml'].getElementsByTagName('c')).forEach(function (cell) {
+        const reference = cell.getAttribute('r') || '';
+        const column = reference.replace(/\d/g, '');
+        const row = Number(reference.replace(/\D/g, ''));
+        if (row < 3 || !dateColumns.has(column)) return;
+        const textNode = cell.getElementsByTagName('t')[0];
+        const serial = excelDateSerial(textNode ? textNode.textContent : '');
+        if (serial === null) return;
+        cell.setAttribute('t', 'n');
+        cell.setAttribute('s', String(dateStyleIndex));
+        while (cell.firstChild) cell.removeChild(cell.firstChild);
+        const valueNode = cell.ownerDocument.createElement('v');
+        valueNode.textContent = String(serial);
+        cell.appendChild(valueNode);
+      });
+    };
     const table = new DataTable('#reportPreviewTable', {
       pageLength: 25,
       lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]],
       order: [],
       autoWidth: true,
       layout: {
-        topStart: { buttons: ['copy', 'csv', 'excel'] },
+        topStart: { buttons: [
+          { extend: 'copyHtml5', className: 'buttons-copy', title: 'Report Studio - Employee Report', exportOptions: exportOptions },
+          { extend: 'csvHtml5', className: 'buttons-csv', filename: 'report-studio-employee-report', bom: true, exportOptions: exportOptions },
+          { extend: 'excelHtml5', className: 'buttons-excel', title: 'Report Studio - Employee Report', filename: 'report-studio-employee-report', sheetName: 'Employee Report', autoFilter: true, customize: customizeReportExcel, exportOptions: exportOptions }
+        ] },
         topEnd: null,
         bottomStart: 'info',
         bottomEnd: 'paging'
       },
+      columnDefs: dateColumnIndexes.map(function (index) { return { targets: index, type: 'date' }; }),
       initComplete: function () {
         const api = this.api();
         const globalSearch = document.getElementById('reportGlobalSearch');
