@@ -31,6 +31,7 @@ from .interfaces.web.user_routes import create_identity_blueprint, create_user_b
 from .interfaces.web.request_routes import create_request_blueprint
 from .interfaces.web.bug_report_routes import create_bug_report_blueprint
 from .interfaces.web.employee_routes import create_employee_blueprint
+from .interfaces.web.report_routes import create_report_blueprint
 from .startup import PreflightResult
 
 try:
@@ -129,6 +130,7 @@ def create_app(
         app.register_blueprint(create_request_blueprint(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path, audit_path=preflight_result.settings.audit_folder_path))
     app.register_blueprint(create_bug_report_blueprint(runtime_path, preflight_result.settings.sharepoint_root_path))
     app.register_blueprint(create_employee_blueprint(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path if preflight_result.settings else None, audit_path=preflight_result.settings.audit_folder_path if preflight_result.settings else None))
+    app.register_blueprint(create_report_blueprint(runtime_path, preflight_result.settings.sharepoint_root_path))
 
     @app.before_request
     def enforce_session_revocation():

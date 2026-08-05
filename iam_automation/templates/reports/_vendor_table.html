@@ -1,0 +1,18 @@
+<div class="table-responsive">
+  <table class="table table-hover align-middle mb-0">
+    <thead><tr><th>Vendor</th><th>Employees</th><th>Engagements</th><th>Active</th><th>Pending / inactive</th><th>Open discrepancies</th></tr></thead>
+    <tbody>
+    {% for vendor in report.vendors %}
+    <tr>
+      <td><a class="fw-semibold text-decoration-none" href="{{ url_for('employees.employee_directory', vendor=vendor.vendor_name) }}">{{ vendor.vendor_name }}</a></td>
+      <td>{{ vendor.employee_count }}</td>
+      <td>{{ vendor.engagement_count }}</td>
+      <td><span class="status-pill status-active"><span></span>{{ vendor.active_count }}</span></td>
+      <td>{{ vendor.pending_inactive_count }}</td>
+      <td>{% if vendor.open_discrepancy_count %}<span class="badge text-bg-warning">{{ vendor.open_discrepancy_count }}</span>{% else %}<span class="small text-success">0</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr class="table-light fw-semibold"><td>Total / unique employees</td><td>{{ report.total_employees }}</td><td>{{ report.total_vendor_engagements }}</td><td>{{ report.active_employees }}</td><td>{{ report.pending_inactive_employees }}</td><td>{{ report.open_discrepancies }}</td></tr></tfoot>
+  </table>
+</div>

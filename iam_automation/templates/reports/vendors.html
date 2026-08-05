@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Vendor Report{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <div class="page-heading"><div><p class="eyebrow">Report library</p><h1>Vendor report</h1><p class="text-secondary mb-0">Employees and engagements grouped across all recorded vendor relationships.</p></div><a class="btn btn-outline-primary" href="{{ url_for('reports.reports_home') }}">Back to Reports</a></div>
+  <section class="surface p-4 mt-4"><div class="section-heading mb-3"><div><p class="eyebrow mb-1">Vendor distribution</p><h2 class="h5 mb-0">Employees by vendor</h2><p class="small text-secondary mb-0">Employees are counted uniquely within each vendor. A worker may appear under more than one vendor when historical engagements exist.</p></div><span class="small text-secondary">Cut {{ report.as_of_utc|human_datetime }}</span></div>
+    {% if report.vendors %}{% include "reports/_vendor_table.html" %}{% else %}<div class="empty-state"><div class="empty-state-icon">&#128202;</div><strong>No vendor data is available yet.</strong><div class="small text-secondary mt-2">Approved employee engagements will appear here when they are available in the canonical workspace.</div></div>{% endif %}
+  </section>
+  <p class="small text-secondary mt-3 mb-0">Vendor counts use all recorded engagements for canonical employees; workers superseded by a merge are excluded.</p>
+</div>
+{% endblock %}
