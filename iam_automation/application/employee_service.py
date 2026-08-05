@@ -62,12 +62,12 @@ class EmployeeService:
             return records
         return [record for record in records if self._source_file_name(record.source_file) == selected_file]
 
-    def list_workers(self, search: str = "", status: str = "ALL", vendor: str = "ALL", source: str = "ALL", engagement: str = "") -> list[EmployeeSummary]:
+    def list_workers(self, search: str = "", status: str = "ALL", vendor: str = "ALL", source: str = "ALL", engagement: str = "", review: str = "") -> list[EmployeeSummary]:
         """Return the full directory for internal callers and small datasets."""
-        workers, _ = self.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, page=1, per_page=None)
+        workers, _ = self.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, page=1, per_page=None)
         return workers
 
-    def list_workers_page(self, *, search: str = "", status: str = "ALL", vendor: str = "ALL", source: str = "ALL", engagement: str = "", page: int = 1, per_page: int | None = 25) -> tuple[list[EmployeeSummary], int]:
+    def list_workers_page(self, *, search: str = "", status: str = "ALL", vendor: str = "ALL", source: str = "ALL", engagement: str = "", review: str = "", page: int = 1, per_page: int | None = 25) -> tuple[list[EmployeeSummary], int]:
         """Query only one directory page; filtering stays in SQLite."""
         search = search.strip()
         engagement = engagement.strip()
@@ -76,12 +76,18 @@ class EmployeeService:
             per_page = max(1, min(int(per_page), 100))
         with orm_session(self.database_path) as session:
             filters = []
-            if status != "ALL":
+            if status == "NON_ACTIVE":
+                filters.append(WorkerModel.status != "ACTIVE")
+            elif status != "ALL":
                 filters.append(WorkerModel.status == status)
-            if vendor != "ALL":
+            if vendor == "NONE":
+                filters.append(~select(WorkerEngagementModel.worker_id).where(WorkerEngagementModel.worker_id == WorkerModel.worker_id, func.trim(WorkerEngagementModel.vendor_name) != "").exists())
+            elif vendor != "ALL":
                 filters.append(select(WorkerEngagementModel.worker_id).where(WorkerEngagementModel.worker_id == WorkerModel.worker_id, WorkerEngagementModel.vendor_name == vendor).exists())
             if source != "ALL":
                 filters.append(select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.worker_id == WorkerModel.worker_id, WorkerIdentifierModel.source_system == source, WorkerIdentifierModel.active.is_(True)).exists())
+            if review == "OPEN":
+                filters.append(select(WorkerDiscrepancyModel.worker_id).where(WorkerDiscrepancyModel.worker_id == WorkerModel.worker_id, WorkerDiscrepancyModel.status == "OPEN").exists())
             if engagement:
                 engagement_pattern = f"%{engagement}%"
                 filters.append(select(WorkerEngagementModel.worker_id).where(

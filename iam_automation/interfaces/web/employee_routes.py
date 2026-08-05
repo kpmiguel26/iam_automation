@@ -34,19 +34,21 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         vendor = request.args.get("vendor", "ALL")
         source = request.args.get("source", "ALL")
         engagement = request.args.get("engagement", "")
+        review = request.args.get("review", "")
+        show_all = request.args.get("all", "") == "1"
         try:
             requested_page = max(1, int(request.args.get("page", "1")))
         except ValueError:
             requested_page = 1
         page = requested_page
         statuses, vendors, sources = service.filter_values()
-        has_query = bool(search.strip() or engagement.strip() or status != "ALL" or vendor != "ALL" or source != "ALL")
-        workers, total_workers = (service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, page=page, per_page=25) if has_query else ([], 0))
+        has_query = bool(show_all or search.strip() or engagement.strip() or review or status != "ALL" or vendor != "ALL" or source != "ALL")
+        workers, total_workers = (service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, page=page, per_page=25) if has_query else ([], 0))
         page_count = max(1, (total_workers + 24) // 25)
         page = min(page, page_count)
         if has_query and page != requested_page:
-            workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, page=page, per_page=25)
-        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=service.pending_source_update_count())
+            workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, page=page, per_page=25)
+        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=service.pending_source_update_count())
 
     @blueprint.get("/source-updates")
     @authenticated
