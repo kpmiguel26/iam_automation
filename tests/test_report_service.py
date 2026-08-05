@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from iam_automation.application.report_service import ReportService
+from iam_automation.application.report_template_service import ReportTemplateService
 from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.user_service import UserService
 from iam_automation.database.runtime_schema import initialize_runtime_database
@@ -23,6 +24,21 @@ from iam_automation.startup import PreflightResult, StartupSettings, StartupStat
 
 
 class ReportServiceTests(unittest.TestCase):
+    def test_report_template_folders_scope_private_and_shared_templates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = ReportTemplateService(Path(tmp))
+            private_folder = service.save_folder(name="My Queries", created_by="alice")
+            shared_folder = service.save_folder(name="Team Queries", created_by="alice", shared=True)
+            service.save(name="Private", definition={"columns": []}, created_by="alice", folder_id=private_folder.folder_id)
+            shared = service.save(name="Shared", definition={"columns": []}, created_by="alice", folder_id=shared_folder.folder_id, shared=True)
+
+            self.assertEqual({item.name for item in service.list_for_user("alice")}, {"Private", "Shared"})
+            self.assertEqual([item.name for item in service.list_for_user("bob")], ["Shared"])
+            self.assertEqual([item.name for item in service.list_folders("bob")], ["Team Queries"])
+            private = next(item for item in service.list_for_user("alice") if item.name == "Private")
+            self.assertIsNone(service.get_for_user(private.template_id, "bob"))
+            self.assertEqual(service.get_for_user(shared.template_id, "bob").name, "Shared")
+
     def test_studio_field_catalog_is_limited_by_source_and_all_unlocks_catalog(self):
         service = ReportService(Path("/missing/runtime.sqlite"))
         roster_keys = {field.key for field in service.field_catalog("ROSTER_LOCK")}
@@ -296,6 +312,17 @@ class ReportServiceTests(unittest.TestCase):
             loaded_template = client.get(f"/reports/studio?template_id={template_id}")
             self.assertEqual(loaded_template.status_code, 200)
             self.assertIn(b"Active employees", loaded_template.data)
+            folder_response = client.post("/reports/studio/folders", json={"name": "My team queries", "shared": True})
+            self.assertEqual(folder_response.status_code, 200)
+            folder_id = folder_response.get_json()["folder_id"]
+            shared_template = client.post("/reports/studio/templates", json={
+                "name": "Shared active employees",
+                "folder_id": folder_id,
+                "shared": True,
+                "definition": {"sources": ["CANONICAL"], "columns": ["employee.display_name"], "filters": [], "sort": [], "limit": None},
+            })
+            self.assertEqual(shared_template.status_code, 200)
+            self.assertIn(b"Shared active employees", client.get("/reports/studio").data)
             self.assertIn(b"vendor/datatables/js/dataTables.min.js", studio_response.data)
             self.assertIn(b"vendor/datatables/js/jquery.min.js", studio_response.data)
             self.assertIn(b"vendor/datatables/js/buttons.html5.min.js", studio_response.data)

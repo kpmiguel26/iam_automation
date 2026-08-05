@@ -52,7 +52,8 @@ def create_report_blueprint(database_path: Path, sharepoint_root: Path | None = 
     @authenticated
     def report_studio():
         form = request.form if request.method == "POST" else request.args
-        saved_template = template_service.get(request.args.get("template_id", "")) if template_service and request.method == "GET" else None
+        username = str(session.get("iam_user", ""))
+        saved_template = template_service.get_for_user(request.args.get("template_id", ""), username) if template_service and request.method == "GET" else None
         definition = saved_template.definition if saved_template else {}
         source = str(definition.get("sources", [form.get("source", "ALL")])[0] if definition.get("sources") else form.get("source", "ALL"))
         selected_columns = list(definition.get("columns", [])) if saved_template else (form.getlist("columns") if hasattr(form, "getlist") else [])
@@ -108,7 +109,8 @@ def create_report_blueprint(database_path: Path, sharepoint_root: Path | None = 
             sort_direction=sort_direction,
             limit=limit,
             filters_json=json.dumps(submitted_filters),
-            templates=template_service.list() if template_service else [],
+            templates=template_service.list_for_user(username) if template_service else [],
+            template_folders=template_service.list_folders(username) if template_service else [],
             active_template_id=saved_template.template_id if saved_template else "",
         )
 
@@ -133,9 +135,34 @@ def create_report_blueprint(database_path: Path, sharepoint_root: Path | None = 
                 definition = json.loads(definition)
             if not isinstance(definition, dict):
                 raise ValueError("Invalid report definition.")
-            template = template_service.save(name=name, definition=definition, created_by=str(session.get("iam_user", "")))
+            username = str(session.get("iam_user", ""))
+            folder_id = str(payload.get("folder_id", ""))
+            if folder_id and template_service.get_folder_for_user(folder_id, username) is None:
+                raise ValueError("The selected folder is not available to this user.")
+            template = template_service.save(
+                name=name,
+                definition=definition,
+                created_by=username,
+                folder_id=folder_id,
+                shared=str(payload.get("shared", "")).lower() in {"1", "true", "yes", "on"} if not isinstance(payload.get("shared"), bool) else payload.get("shared"),
+            )
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             return jsonify({"error": str(exc)}), 400
-        return jsonify({"template_id": template.template_id, "name": template.name})
+        return jsonify({"template_id": template.template_id, "name": template.name, "folder_id": template.folder_id, "shared": template.shared})
+
+    @blueprint.post("/studio/folders")
+    @authenticated
+    def save_report_template_folder():
+        if template_service is None:
+            return jsonify({"error": "SharePoint storage is not configured."}), 503
+        payload = request.get_json(silent=True) or request.form
+        try:
+            shared = payload.get("shared", False)
+            if not isinstance(shared, bool):
+                shared = str(shared).lower() in {"1", "true", "yes", "on"}
+            folder = template_service.save_folder(name=str(payload.get("name", "")), created_by=str(session.get("iam_user", "")), shared=shared)
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"folder_id": folder.folder_id, "name": folder.name, "shared": folder.shared})
 
     return blueprint
