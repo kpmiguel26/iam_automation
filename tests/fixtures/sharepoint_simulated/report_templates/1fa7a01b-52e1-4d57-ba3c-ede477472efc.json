@@ -1,0 +1,46 @@
+{
+  "created_at_utc": "2026-08-05T19:01:56.381047+00:00",
+  "created_by": "migue",
+  "definition": {
+    "columns": [
+      "employee.display_name",
+      "employee.email",
+      "employee.worker_id",
+      "employee.status",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.buyer_reference",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.first_name",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.last_name",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.lob",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.npn",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.resident_license_number",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.resident_license_state",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.sow_worker_role",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.statement_of_work",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.supplier_reference",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.taxonomy",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.work_order_id",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker_end_date",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker_id",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker_primary_contact",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker_start_date",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker_status"
+    ],
+    "filters": [
+      {
+        "field": "employee.status",
+        "operator": "in",
+        "value": [
+          "ACTIVE"
+        ]
+      }
+    ],
+    "limit": null,
+    "sort": [],
+    "sources": [
+      "ALL"
+    ]
+  },
+  "name": "fieldglass active employee",
+  "template_id": "1fa7a01b-52e1-4d57-ba3c-ede477472efc"
+}

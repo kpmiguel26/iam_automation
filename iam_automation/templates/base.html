@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,127 +8,267 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=static_version) }}">
 </head>
+
 <body>
-<header class="kp-header">
-  <div class="container-fluid px-4 px-lg-5 d-flex align-items-center gap-4 kp-header-main">
-    <a href="{{ url_for('dashboard') }}"><img src="{{ url_for('static', filename='kaiser_permanente_logo.png') }}" alt="Kaiser Permanente" class="kp-logo"></a>
-    <span class="kp-product-name">IAM Automation</span>
-    <span class="ms-auto kp-header-label">Local workspace</span>
+  <header class="kp-header">
+    <div class="container-fluid px-4 px-lg-5 d-flex align-items-center gap-4 kp-header-main">
+      <a href="{{ url_for('dashboard') }}"><img src="{{ url_for('static', filename='kaiser_permanente_logo.png') }}"
+          alt="Kaiser Permanente" class="kp-logo"></a>
+      <span class="kp-product-name">IAM Automation</span>
+      <span class="ms-auto kp-header-label">Local workspace</span>
+      {% if session.get('iam_user') %}
+      <div class="dropdown">
+        <button class="btn notification-button" data-bs-toggle="dropdown" aria-expanded="false"
+          aria-label="Open notifications" title="Notifications"><span class="nav-symbol">●</span>{% if
+          unread_notification_count %}<span class="notification-badge">{{ unread_notification_count }}</span>{% endif
+          %}</button>
+        <div class="dropdown-menu dropdown-menu-end notification-menu shadow-sm p-0">
+          <div class="notification-menu-header"><strong>Notifications</strong><a
+              href="{{ url_for('notifications_page') }}">View all</a></div>
+          {% for item in recent_notifications %}<a class="notification-preview"
+            href="{{ url_for('notification_open', notification_id=item.notification_id) }}"><span
+              class="notification-severity severity-{{ item.severity|lower }}"></span><span><strong>{{ item.title
+                }}</strong><small>{{ item.message }}</small></span></a>{% else %}<div class="notification-empty">You are
+            all caught up.</div>{% endfor %}
+        </div>
+      </div>
+      <div class="dropdown">
+        <button class="btn avatar-button dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><span
+            class="avatar">{{ session.get('iam_user', 'I')[:1]|upper }}</span><span class="d-none d-md-inline">{{
+            session.get('iam_user') }}</span></button>
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+          <li>
+            <h6 class="dropdown-header">{{ session.get('iam_user') }}</h6>
+          </li>
+          <li><span class="dropdown-item-text small text-secondary">{{ session.get('iam_roles', [])|join(', ') }}</span>
+          </li>
+          <li>
+            <hr class="dropdown-divider">
+          </li>
+          <li><a class="dropdown-item" href="{{ url_for('profile') }}">My profile</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('notifications_page') }}">Notifications</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('logout') }}">Sign out</a></li>
+        </ul>
+      </div>
+      {% endif %}
+    </div>
     {% if session.get('iam_user') %}
-    <div class="dropdown">
-      <button class="btn notification-button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Open notifications" title="Notifications"><span class="nav-symbol">●</span>{% if unread_notification_count %}<span class="notification-badge">{{ unread_notification_count }}</span>{% endif %}</button>
-      <div class="dropdown-menu dropdown-menu-end notification-menu shadow-sm p-0">
-        <div class="notification-menu-header"><strong>Notifications</strong><a href="{{ url_for('notifications_page') }}">View all</a></div>
-        {% for item in recent_notifications %}<a class="notification-preview" href="{{ url_for('notification_open', notification_id=item.notification_id) }}"><span class="notification-severity severity-{{ item.severity|lower }}"></span><span><strong>{{ item.title }}</strong><small>{{ item.message }}</small></span></a>{% else %}<div class="notification-empty">You are all caught up.</div>{% endfor %}
+    <nav class="office-nav" aria-label="Primary navigation">
+      <div class="container-fluid px-4 px-lg-5 office-nav-inner">
+        <div class="dropdown nav-menu-group"><button class="btn nav-menu-toggle dropdown-toggle"
+            data-bs-toggle="dropdown" aria-expanded="false"><span class="nav-group-label">Workspace</span></button>
+          <ul class="dropdown-menu shadow-sm">
+            <li><a class="dropdown-item" href="{{ url_for('dashboard') }}"><span class="nav-symbol">⌂</span>Overview</a>
+            </li>
+            <li><a class="dropdown-item" href="{{ url_for('requests.request_list') }}"><span
+                  class="nav-symbol">▤</span>My requests</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('testing_help') }}"><span class="nav-symbol">?</span>Testing
+                &amp; Help Center</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('employees_help') }}"><span
+                  class="nav-symbol">◎</span>Employees guide</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('bug_reports.index') }}"><span
+                  class="nav-symbol">!</span>Report a bug</a></li>
+          </ul>
+        </div>
+        <div class="dropdown nav-menu-group"><button class="btn nav-menu-toggle dropdown-toggle"
+            data-bs-toggle="dropdown" aria-expanded="false"><span class="nav-group-label">Operations</span></button>
+          <ul class="dropdown-menu shadow-sm">
+            <li><a class="dropdown-item" href="{{ url_for('employees.employee_directory') }}"><span
+                  class="nav-symbol">◎</span>Employees</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('reports.reports_home') }}"><span
+                  class="nav-symbol">▥</span>Reports</a></li>
+            <li>{% set can_review = session.get('iam_roles') and ((session.get('iam_roles')|reject('equalto',
+              'REQUESTER')|list)|length > 0) %}{% if can_review %}<a class="dropdown-item"
+                href="{{ url_for('requests.approval_queue') }}"><span class="nav-symbol">✓</span>Approval queue</a>{%
+              else %}<span class="dropdown-item disabled"><span class="nav-symbol">✓</span>Approval queue</span>{% endif
+              %}</li>{% if session.get('is_admin') %}<li><a class="dropdown-item"
+                href="{{ url_for('admin.import_center') }}"><span class="nav-symbol">⇩</span>Imports</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('admin.publication_queue') }}"><span
+                  class="nav-symbol">↑</span>Publication</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('admin.template_center') }}"><span
+                  class="nav-symbol">▤</span>Templates</a></li>{% endif %}
+          </ul>
+        </div>
+        <div class="dropdown nav-menu-group"><button class="btn nav-menu-toggle dropdown-toggle"
+            data-bs-toggle="dropdown" aria-expanded="false"><span class="nav-group-label">Report library</span></button>
+          <ul class="dropdown-menu shadow-sm">
+            <li><a class="dropdown-item" href="{{ url_for('reports.reports_home') }}"><span
+                  class="nav-symbol">▥</span>Reports home</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('reports.vendor_report') }}"><span
+                  class="nav-symbol">▤</span>Vendor report</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('reports.duplicate_report') }}"><span
+                  class="nav-symbol">⌕</span>Duplicate search</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('reports.new_hire_report') }}"><span
+                  class="nav-symbol">▣</span>New hire readiness</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('reports.report_studio') }}"><span
+                  class="nav-symbol">✦</span>Report Studio</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('employees.employee_directory', all='1') }}"><span
+                  class="nav-symbol">◎</span>Employee directory</a></li>
+          </ul>
+        </div>
+        {% if session.get('is_admin') %}<div class="dropdown nav-menu-group"><button
+            class="btn nav-menu-toggle dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><span
+              class="nav-group-label">Administration</span>{% if unread_notification_count %}<span class="nav-count">{{
+              unread_notification_count }}</span>{% endif %}</button>
+          <ul class="dropdown-menu shadow-sm">
+            <li><a class="dropdown-item" href="{{ url_for('admin.home') }}"><span class="nav-symbol">▦</span>Control
+                center</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('user_admin.users') }}"><span
+                  class="nav-symbol">♙</span>Application users</a></li>{% if 'APPLICATION_ADMIN' in
+            session.get('iam_roles', []) or 'MASTER_ADMIN' in session.get('iam_roles', []) %}<li><a
+                class="dropdown-item" href="{{ url_for('admin.governance_center') }}"><span
+                  class="nav-symbol">▣</span>Database administration</a></li>{% endif %}{% if 'MASTER_ADMIN' in
+            session.get('iam_roles', []) %}<li><a class="dropdown-item"
+                href="{{ url_for('master_admin.temporary_super_operator') }}"><span class="nav-symbol">⚡</span>Temporary
+                access</a></li>{% endif %}<li><a class="dropdown-item"
+                href="{{ url_for('identity_admin.identities') }}"><span class="nav-symbol">◎</span>Windows
+                traceability</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('admin.notification_center') }}"><span
+                  class="nav-symbol">●</span>Notifications</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('admin.delegation_center') }}"><span
+                  class="nav-symbol">↔</span>Delegations</a></li>
+          </ul>
+        </div>{% endif %}
+        {% if 'MASTER_ADMIN' in session.get('iam_roles', []) %}<div class="dropdown nav-menu-group"><button
+            class="btn nav-menu-toggle dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><span
+              class="nav-group-label">Governance</span></button>
+          <ul class="dropdown-menu shadow-sm">
+            <li><a class="dropdown-item" href="{{ url_for('admin.governance_center') }}"><span
+                  class="nav-symbol">▣</span>Database administration</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('master_admin.administrators') }}"><span
+                  class="nav-symbol">♙</span>Security admins</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('master_admin.settings') }}"><span
+                  class="nav-symbol">⚙</span>Global settings</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('master_admin.audit') }}"><span
+                  class="nav-symbol">≡</span>Audit center</a></li>
+          </ul>
+        </div>{% endif %}
+      </div>
+    </nav>
+    {% endif %}
+  </header>
+  {% if request.args.get('notice') %}<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080">
+    <div id="iamToast" class="toast align-items-center text-bg-{{ request.args.get('notice_type', 'info') }} border-0"
+      role="status" aria-live="polite" aria-atomic="true">
+      <div class="d-flex">
+        <div class="toast-body">{{ request.args.get('notice') }}</div><button type="button"
+          class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
       </div>
     </div>
-    <div class="dropdown">
-      <button class="btn avatar-button dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><span class="avatar">{{ session.get('iam_user', 'I')[:1]|upper }}</span><span class="d-none d-md-inline">{{ session.get('iam_user') }}</span></button>
-      <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-        <li><h6 class="dropdown-header">{{ session.get('iam_user') }}</h6></li><li><span class="dropdown-item-text small text-secondary">{{ session.get('iam_roles', [])|join(', ') }}</span></li><li><hr class="dropdown-divider"></li><li><a class="dropdown-item" href="{{ url_for('profile') }}">My profile</a></li><li><a class="dropdown-item" href="{{ url_for('notifications_page') }}">Notifications</a></li><li><a class="dropdown-item" href="{{ url_for('logout') }}">Sign out</a></li>
-      </ul>
+  </div>{% endif %}
+  {% if session.get('iam_user') and priority_notifications %}<section class="container-fluid px-4 px-lg-5 pt-3"
+    aria-label="Priority notifications">
+    <div class="priority-notification-panel">
+      <div class="priority-notification-heading"><span class="priority-notification-icon">!</span>
+        <div><strong>Important workspace updates</strong>
+          <div class="small">Review these notifications before continuing work.</div>
+        </div><a class="btn btn-sm btn-light" href="{{ url_for('notifications_page') }}">View all</a>
+      </div>
+      <div class="priority-notification-list">{% for item in priority_notifications %}<a
+          class="priority-notification-item"
+          href="{{ url_for('notification_open', notification_id=item.notification_id) }}"><span
+            class="priority-notification-dot severity-{{ item.severity|lower }}"></span><span><strong>{{ item.title
+              }}</strong><small>{{ item.message }}</small></span><span
+            class="priority-notification-arrow">→</span></a>{% endfor %}</div>
     </div>
-    {% endif %}
-  </div>
-  {% if session.get('iam_user') %}
-  <nav class="office-nav" aria-label="Primary navigation">
-    <div class="container-fluid px-4 px-lg-5 office-nav-inner">
-      <div class="dropdown nav-menu-group"><button class="btn nav-menu-toggle dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><span class="nav-group-label">Workspace</span></button><ul class="dropdown-menu shadow-sm"><li><a class="dropdown-item" href="{{ url_for('dashboard') }}"><span class="nav-symbol">⌂</span>Overview</a></li><li><a class="dropdown-item" href="{{ url_for('requests.request_list') }}"><span class="nav-symbol">▤</span>My requests</a></li><li><a class="dropdown-item" href="{{ url_for('testing_help') }}"><span class="nav-symbol">?</span>Testing &amp; Help Center</a></li><li><a class="dropdown-item" href="{{ url_for('employees_help') }}"><span class="nav-symbol">◎</span>Employees guide</a></li><li><a class="dropdown-item" href="{{ url_for('bug_reports.index') }}"><span class="nav-symbol">!</span>Report a bug</a></li></ul></div>
-      <div class="dropdown nav-menu-group"><button class="btn nav-menu-toggle dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><span class="nav-group-label">Operations</span></button><ul class="dropdown-menu shadow-sm"><li><a class="dropdown-item" href="{{ url_for('employees.employee_directory') }}"><span class="nav-symbol">◎</span>Employees</a></li><li>{% set can_review = session.get('iam_roles') and ((session.get('iam_roles')|reject('equalto', 'REQUESTER')|list)|length > 0) %}{% if can_review %}<a class="dropdown-item" href="{{ url_for('requests.approval_queue') }}"><span class="nav-symbol">✓</span>Approval queue</a>{% else %}<span class="dropdown-item disabled"><span class="nav-symbol">✓</span>Approval queue</span>{% endif %}</li>{% if session.get('is_admin') %}<li><a class="dropdown-item" href="{{ url_for('admin.import_center') }}"><span class="nav-symbol">⇩</span>Imports</a></li><li><a class="dropdown-item" href="{{ url_for('admin.publication_queue') }}"><span class="nav-symbol">↑</span>Publication</a></li><li><a class="dropdown-item" href="{{ url_for('admin.template_center') }}"><span class="nav-symbol">▤</span>Templates</a></li>{% endif %}</ul></div>
-      {% if session.get('is_admin') %}<div class="dropdown nav-menu-group"><button class="btn nav-menu-toggle dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><span class="nav-group-label">Administration</span>{% if unread_notification_count %}<span class="nav-count">{{ unread_notification_count }}</span>{% endif %}</button><ul class="dropdown-menu shadow-sm"><li><a class="dropdown-item" href="{{ url_for('admin.home') }}"><span class="nav-symbol">▦</span>Control center</a></li><li><a class="dropdown-item" href="{{ url_for('user_admin.users') }}"><span class="nav-symbol">♙</span>Application users</a></li>{% if 'APPLICATION_ADMIN' in session.get('iam_roles', []) or 'MASTER_ADMIN' in session.get('iam_roles', []) %}<li><a class="dropdown-item" href="{{ url_for('admin.governance_center') }}"><span class="nav-symbol">▣</span>Database administration</a></li>{% endif %}{% if 'MASTER_ADMIN' in session.get('iam_roles', []) %}<li><a class="dropdown-item" href="{{ url_for('master_admin.temporary_super_operator') }}"><span class="nav-symbol">⚡</span>Temporary access</a></li>{% endif %}<li><a class="dropdown-item" href="{{ url_for('identity_admin.identities') }}"><span class="nav-symbol">◎</span>Windows traceability</a></li><li><a class="dropdown-item" href="{{ url_for('admin.notification_center') }}"><span class="nav-symbol">●</span>Notifications</a></li><li><a class="dropdown-item" href="{{ url_for('admin.delegation_center') }}"><span class="nav-symbol">↔</span>Delegations</a></li></ul></div>{% endif %}
-      {% if 'MASTER_ADMIN' in session.get('iam_roles', []) %}<div class="dropdown nav-menu-group"><button class="btn nav-menu-toggle dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><span class="nav-group-label">Governance</span></button><ul class="dropdown-menu shadow-sm"><li><a class="dropdown-item" href="{{ url_for('admin.governance_center') }}"><span class="nav-symbol">▣</span>Database administration</a></li><li><a class="dropdown-item" href="{{ url_for('master_admin.administrators') }}"><span class="nav-symbol">♙</span>Security admins</a></li><li><a class="dropdown-item" href="{{ url_for('master_admin.settings') }}"><span class="nav-symbol">⚙</span>Global settings</a></li><li><a class="dropdown-item" href="{{ url_for('master_admin.audit') }}"><span class="nav-symbol">≡</span>Audit center</a></li></ul></div>{% endif %}
-    </div>
-  </nav>
-  {% endif %}
-</header>
-{% if request.args.get('notice') %}<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080"><div id="iamToast" class="toast align-items-center text-bg-{{ request.args.get('notice_type', 'info') }} border-0" role="status" aria-live="polite" aria-atomic="true"><div class="d-flex"><div class="toast-body">{{ request.args.get('notice') }}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div></div></div>{% endif %}
-{% if session.get('iam_user') and priority_notifications %}<section class="container-fluid px-4 px-lg-5 pt-3" aria-label="Priority notifications"><div class="priority-notification-panel"><div class="priority-notification-heading"><span class="priority-notification-icon">!</span><div><strong>Important workspace updates</strong><div class="small">Review these notifications before continuing work.</div></div><a class="btn btn-sm btn-light" href="{{ url_for('notifications_page') }}">View all</a></div><div class="priority-notification-list">{% for item in priority_notifications %}<a class="priority-notification-item" href="{{ url_for('notification_open', notification_id=item.notification_id) }}"><span class="priority-notification-dot severity-{{ item.severity|lower }}"></span><span><strong>{{ item.title }}</strong><small>{{ item.message }}</small></span><span class="priority-notification-arrow">→</span></a>{% endfor %}</div></div></section>{% endif %}
-{% if session.get('iam_user') %}<div class="container-fluid px-4 px-lg-5 pt-3"><div class="alert alert-warning py-2 mb-0 small"><strong>Development build:</strong> This workspace is under active testing. Please report bugs from the Workspace menu.</div></div>{% endif %}
-{% if session.get('is_admin') and publication_pending %}<div class="container-fluid px-4 px-lg-5 pt-3"><div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mb-0"><span><strong>Local changes are waiting for publication.</strong> User, role, or password changes are currently available only on this workstation.</span>{% if 'MASTER_ADMIN' in session.get('iam_roles', []) or 'APPLICATION_ADMIN' in session.get('iam_roles', []) %}<a class="btn btn-sm btn-warning" href="{{ url_for('admin.governance_center') }}">Open database administration</a>{% else %}<span class="small">An Application Admin or Master Admin must publish the runtime database.</span>{% endif %}</div></div>{% endif %}
-<main>{% block content %}{% endblock %}</main>
-<footer class="text-center text-secondary small py-4">Kaiser Permanente · IAM Automation · Local session</footer>
-{% block scripts %}{% endblock %}
-<script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
-<script src="{{ url_for('static', filename='js/utc-date-inputs.js') }}"></script>
-<script>
-  document.addEventListener('DOMContentLoaded', function () {
-    var toast = document.getElementById('iamToast');
-    if (toast && window.bootstrap) {
-      bootstrap.Toast.getOrCreateInstance(toast, { delay: 3500 }).show();
-    }
+  </section>{% endif %}
+  {% if session.get('iam_user') %}<div class="container-fluid px-4 px-lg-5 pt-3">
+    <div class="alert alert-warning py-2 mb-0 small"><strong>Development build:</strong> This workspace is under active
+      testing. Please report bugs from the Workspace menu.</div>
+  </div>{% endif %}
+  {% if session.get('is_admin') and publication_pending %}<div class="container-fluid px-4 px-lg-5 pt-3">
+    <div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mb-0"><span><strong>Local
+          changes are waiting for publication.</strong> User, role, or password changes are currently available only on
+        this workstation.</span>{% if 'MASTER_ADMIN' in session.get('iam_roles', []) or 'APPLICATION_ADMIN' in
+      session.get('iam_roles', []) %}<a class="btn btn-sm btn-warning"
+        href="{{ url_for('admin.governance_center') }}">Open database administration</a>{% else %}<span class="small">An
+        Application Admin or Master Admin must publish the runtime database.</span>{% endif %}</div>
+  </div>{% endif %}
+  <main>{% block content %}{% endblock %}</main>
+  <footer class="text-center text-secondary small py-4">Kaiser Permanente · IAM Automation · Local session</footer>
+  <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+  {% block scripts %}{% endblock %}
+  <script src="{{ url_for('static', filename='js/utc-date-inputs.js') }}"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var toast = document.getElementById('iamToast');
+      if (toast && window.bootstrap) {
+        bootstrap.Toast.getOrCreateInstance(toast, { delay: 3500 }).show();
+      }
 
-    function showLoading(message) {
-      if (document.querySelector('.transaction-loading')) return;
-      var overlay = document.createElement('div');
-      overlay.className = 'transaction-loading';
-      overlay.setAttribute('role', 'status');
-      overlay.setAttribute('aria-live', 'polite');
-      overlay.innerHTML = '<div class="transaction-loading-card"><span class="spinner-border" aria-hidden="true"></span><div><strong>Procesando consulta</strong><small>' + message + '</small></div></div>';
-      document.body.appendChild(overlay);
-    }
-    function showConfirmation(message, onConfirm) {
-      var overlay = document.createElement('div');
-      overlay.className = 'iam-confirmation';
-      overlay.setAttribute('role', 'dialog');
-      overlay.setAttribute('aria-modal', 'true');
-      overlay.setAttribute('aria-labelledby', 'iamConfirmationTitle');
-      var card = document.createElement('div');
-      card.className = 'iam-confirmation-card';
-      var icon = document.createElement('div');
-      icon.className = 'iam-confirmation-icon';
-      icon.textContent = '!';
-      var title = document.createElement('h2');
-      title.id = 'iamConfirmationTitle';
-      title.textContent = 'Confirmar creación masiva';
-      var body = document.createElement('p');
-      body.textContent = message;
-      var actions = document.createElement('div');
-      actions.className = 'iam-confirmation-actions';
-      var cancel = document.createElement('button');
-      cancel.type = 'button';
-      cancel.className = 'btn btn-outline-secondary';
-      cancel.textContent = 'Cancelar';
-      var confirm = document.createElement('button');
-      confirm.type = 'button';
-      confirm.className = 'btn btn-danger';
-      confirm.textContent = 'Crear empleados';
-      actions.append(cancel, confirm);
-      card.append(icon, title, body, actions);
-      overlay.appendChild(card);
-      document.body.appendChild(overlay);
-      cancel.focus();
-      function close() { overlay.remove(); }
-      cancel.addEventListener('click', close);
-      overlay.addEventListener('click', function (event) { if (event.target === overlay) close(); });
-      confirm.addEventListener('click', function () { close(); onConfirm(); });
-    }
-    document.querySelectorAll('form[method="post"], form[method="POST"], form[data-loading="true"]').forEach(function (form) {
-      form.addEventListener('submit', function (event) {
-        if (form.dataset.loadingHandled === 'true' || form.dataset.noLoader === 'true') return;
-        var confirmation = form.querySelector('[data-confirm]');
-        if (confirmation && form.dataset.confirmed !== 'true') {
-          event.preventDefault();
-          showConfirmation(confirmation.dataset.confirm, function () { form.dataset.confirmed = 'true'; form.requestSubmit(); });
-          return;
-        }
-        form.dataset.loadingHandled = 'true';
-        var action = (form.getAttribute('action') || '').toLowerCase();
-        var message = form.dataset.loadingMessage || 'Guardando cambios y actualizando el workspace…';
-        if (action.indexOf('publish') !== -1) message = 'Publicando snapshot SQLite, creando respaldo y notificando al equipo…';
-        else if (action.indexOf('approval') !== -1 || action.indexOf('decision') !== -1) message = 'Guardando decisión y aplicando el cambio local…';
-        else if (form.enctype === 'multipart/form-data') message = 'Cargando y validando el archivo…';
-        showLoading(message);
-        form.querySelectorAll('button, input[type="submit"]').forEach(function (control) { control.disabled = true; });
+      function showLoading(message) {
+        if (document.querySelector('.transaction-loading')) return;
+        var overlay = document.createElement('div');
+        overlay.className = 'transaction-loading';
+        overlay.setAttribute('role', 'status');
+        overlay.setAttribute('aria-live', 'polite');
+        overlay.innerHTML = '<div class="transaction-loading-card"><span class="spinner-border" aria-hidden="true"></span><div><strong>Processing request</strong><small>' + message + '</small></div></div>';
+        document.body.appendChild(overlay);
+      }
+      function showConfirmation(message, onConfirm) {
+        var overlay = document.createElement('div');
+        overlay.className = 'iam-confirmation';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-labelledby', 'iamConfirmationTitle');
+        var card = document.createElement('div');
+        card.className = 'iam-confirmation-card';
+        var icon = document.createElement('div');
+        icon.className = 'iam-confirmation-icon';
+        icon.textContent = '!';
+        var title = document.createElement('h2');
+        title.id = 'iamConfirmationTitle';
+        title.textContent = 'Confirmar creación masiva';
+        var body = document.createElement('p');
+        body.textContent = message;
+        var actions = document.createElement('div');
+        actions.className = 'iam-confirmation-actions';
+        var cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'btn btn-outline-secondary';
+        cancel.textContent = 'Cancelar';
+        var confirm = document.createElement('button');
+        confirm.type = 'button';
+        confirm.className = 'btn btn-danger';
+        confirm.textContent = 'Crear empleados';
+        actions.append(cancel, confirm);
+        card.append(icon, title, body, actions);
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+        cancel.focus();
+        function close() { overlay.remove(); }
+        cancel.addEventListener('click', close);
+        overlay.addEventListener('click', function (event) { if (event.target === overlay) close(); });
+        confirm.addEventListener('click', function () { close(); onConfirm(); });
+      }
+      document.querySelectorAll('form[method="post"], form[method="POST"], form[data-loading="true"]').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+          if (form.dataset.loadingHandled === 'true' || form.dataset.noLoader === 'true') return;
+          var confirmation = form.querySelector('[data-confirm]');
+          if (confirmation && form.dataset.confirmed !== 'true') {
+            event.preventDefault();
+            showConfirmation(confirmation.dataset.confirm, function () { form.dataset.confirmed = 'true'; form.requestSubmit(); });
+            return;
+          }
+          form.dataset.loadingHandled = 'true';
+          var action = (form.getAttribute('action') || '').toLowerCase();
+          var message = form.dataset.loadingMessage || 'Saving changes and updating the workspace…';
+          if (action.indexOf('publish') !== -1) message = 'Publicando snapshot SQLite, creando respaldo y notificando al equipo…';
+          else if (action.indexOf('approval') !== -1 || action.indexOf('decision') !== -1) message = 'Guardando decisión y aplicando el cambio local…';
+          else if (form.enctype === 'multipart/form-data') message = 'Cargando y validando el archivo…';
+          showLoading(message);
+          form.querySelectorAll('button, input[type="submit"]').forEach(function (control) { control.disabled = true; });
+        });
+      });
+      document.querySelectorAll('a[data-loading="true"]').forEach(function (link) {
+        link.addEventListener('click', function () {
+          if (link.dataset.loadingHandled === 'true') return;
+          link.dataset.loadingHandled = 'true';
+          showLoading(link.dataset.loadingMessage || 'Loading all related records…');
+        });
       });
     });
-    document.querySelectorAll('a[data-loading="true"]').forEach(function (link) {
-      link.addEventListener('click', function () {
-        if (link.dataset.loadingHandled === 'true') return;
-        link.dataset.loadingHandled = 'true';
-        showLoading(link.dataset.loadingMessage || 'Consultando todos los registros relacionados…');
-      });
-    });
-  });
-</script>
+  </script>
 </body>
+
 </html>

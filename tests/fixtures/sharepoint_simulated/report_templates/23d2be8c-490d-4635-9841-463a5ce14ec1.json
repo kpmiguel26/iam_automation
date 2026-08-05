@@ -1,0 +1,78 @@
+{
+  "created_at_utc": "2026-08-05T19:08:13.010891+00:00",
+  "created_by": "migue",
+  "definition": {
+    "columns": [
+      "employee.display_name",
+      "employee.email",
+      "employee.worker_id",
+      "employee.status",
+      "raw.ROSTER_LOCK.country",
+      "raw.ROSTER_LOCK.email",
+      "raw.ROSTER_LOCK.employee_first_name",
+      "raw.ROSTER_LOCK.employee_last_name",
+      "raw.ROSTER_LOCK.fg_status",
+      "raw.ROSTER_LOCK.first_name",
+      "raw.ROSTER_LOCK.job_title",
+      "raw.ROSTER_LOCK.key_billable_function",
+      "raw.ROSTER_LOCK.last_name",
+      "raw.ROSTER_LOCK.npn",
+      "raw.ROSTER_LOCK.onboarding_date",
+      "raw.ROSTER_LOCK.production_start_date",
+      "raw.ROSTER_LOCK.program",
+      "raw.ROSTER_LOCK.project",
+      "raw.ROSTER_LOCK.resident_license_number",
+      "raw.ROSTER_LOCK.resident_license_state",
+      "raw.ROSTER_LOCK.site_location",
+      "raw.ROSTER_LOCK.status",
+      "raw.ROSTER_LOCK.submittion_date",
+      "raw.ROSTER_LOCK.supervisor_name",
+      "raw.ROSTER_LOCK.taxonomy_code",
+      "raw.ROSTER_LOCK.vendor_email_address",
+      "raw.ROSTER_LOCK.vendor_employee_id",
+      "raw.ROSTER_LOCK.vendor_name",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.buyer_reference",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.first_name",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.last_name",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.lob",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.npn",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.resident_license_number",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.resident_license_state",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.sow_worker_role",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.statement_of_work",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.supplier_reference",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.taxonomy",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.work_order_id",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker_end_date",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker_id",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker_primary_contact",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker_start_date",
+      "raw.RSR_SUPPLIER_WORKER_DETAILS.worker_status"
+    ],
+    "filters": [
+      {
+        "field": "employee.status",
+        "operator": "in",
+        "value": [
+          "ACTIVE"
+        ]
+      },
+      {
+        "field": "raw.ROSTER_LOCK.status",
+        "operator": "in",
+        "value": [
+          "Change role",
+          "New Hire"
+        ]
+      }
+    ],
+    "limit": null,
+    "sort": [],
+    "sources": [
+      "ALL"
+    ]
+  },
+  "name": "new hire and change role",
+  "template_id": "23d2be8c-490d-4635-9841-463a5ce14ec1"
+}

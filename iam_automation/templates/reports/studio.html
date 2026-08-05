@@ -1,0 +1,382 @@
+{% extends "base.html" %}
+{% block title %}Report Studio{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/datatables/css/dataTables.bootstrap5.min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/datatables/css/buttons.bootstrap5.min.css') }}">
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <div class="page-heading">
+    <div><p class="eyebrow">Report library</p><h1>Report Studio</h1><p class="text-secondary mb-0">Build a read-only employee report by choosing a source, columns, filters and sort order.</p></div>
+    <a class="btn btn-outline-primary" href="{{ url_for('reports.reports_home') }}">Back to Reports</a>
+  </div>
+
+  <form method="post" class="surface p-4 mt-4" id="reportStudioForm">
+    <div class="report-template-toolbar mb-4">
+      <div><label class="form-label fw-semibold mb-1" for="reportTemplateSelect">Saved query templates</label><select class="form-select form-select-sm" id="reportTemplateSelect"><option value="">Choose a saved template...</option>{% for template in templates %}<option value="{{ template.template_id }}"{% if template.template_id == active_template_id %} selected{% endif %}>{{ template.name }}</option>{% endfor %}</select></div>
+      <button type="button" class="btn btn-outline-secondary align-self-end" id="loadReportTemplate">Load template</button>
+      <div class="ms-auto"><label class="form-label fw-semibold mb-1" for="reportTemplateName">Save current query</label><div class="input-group input-group-sm"><input class="form-control" id="reportTemplateName" placeholder="Template name"><button type="button" class="btn btn-outline-primary" id="saveReportTemplate">Save template</button></div></div>
+    </div>
+    <div class="row g-4">
+      <div class="col-lg-3">
+        <label class="form-label fw-semibold" for="source">Source</label>
+        <div class="accordion" id="reportSourceAccordion">
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="report-source-heading"><button class="accordion-button py-2" type="button" data-bs-toggle="collapse" data-bs-target="#report-source-options" aria-expanded="true" aria-controls="report-source-options">Choose a data scope</button></h2>
+            <div id="report-source-options" class="accordion-collapse collapse show" aria-labelledby="report-source-heading">
+              <div class="accordion-body p-2">
+                <div class="list-group list-group-flush">
+                  {% for key, label in sources %}
+                  <label class="list-group-item list-group-item-action d-flex gap-2 align-items-start py-2"><input class="form-check-input mt-1" type="radio" id="report-source-{{ loop.index }}" name="source" value="{{ key }}"{% if key == selected_source %} checked{% endif %} onchange="this.form.submit()"><span><strong>{{ label }}</strong><br><span class="small text-secondary">{% if key == 'ALL' %}All fields and canonical source coverage.{% elif key == 'CANONICAL' %}One row per current canonical employee.{% else %}Fields available from {{ label }}.{% endif %}</span></label>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="form-text">Source selection is applied through the canonical worker identity.</div>
+      </div>
+      <div class="col-lg-9">
+        <label class="form-label fw-semibold">Columns</label>
+        <div class="form-text mb-2">Showing the fields available in the selected source. Choose All canonical data to unlock the complete catalog.</div>
+        <div class="accordion" id="reportFieldAccordion">
+          {% for group_label, group_fields in field_groups %}
+          {% set group_id = 'report-fields-' ~ loop.index %}
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="{{ group_id }}-heading">
+              <button class="accordion-button{% if not loop.first %} collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#{{ group_id }}" aria-expanded="{{ 'true' if loop.first else 'false' }}" aria-controls="{{ group_id }}">
+                {{ group_label }} <span class="badge text-bg-light ms-2">{{ group_fields|length }} fields</span>
+              </button>
+            </h2>
+            <div id="{{ group_id }}" class="accordion-collapse collapse{% if loop.first %} show{% endif %}" aria-labelledby="{{ group_id }}-heading" data-bs-parent="#reportFieldAccordion">
+              <div class="accordion-body">
+                <div class="d-flex justify-content-end mb-2"><button type="button" class="btn btn-sm btn-link p-0 select-field-group" data-group="{{ group_id }}">Select all</button></div>
+                <div class="row g-2">
+                  {% for field in group_fields %}
+                  <div class="col-md-4 col-xl-3"><label class="border rounded p-2 d-flex gap-2 align-items-start h-100 small"><input class="report-field-checkbox" data-field-group="{{ group_id }}" type="checkbox" name="columns" value="{{ field.key }}"{% if field.key in selected_columns %} checked{% endif %}><span><strong>{{ field.label }}</strong><br><span class="text-secondary">{{ field.data_type }}</span>{% if field.sensitive %}<br><span class="text-warning">Role-sensitive</span>{% endif %}</span></label></div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <label class="form-label fw-semibold" for="filter_field">Filter</label>
+        <div class="input-group">
+          <select class="form-select" id="filter_field" name="filter_field"><option value="">No filter</option>{% for field in fields if field.filterable %}<option value="{{ field.key }}"{% if field.key == filter_field %} selected{% endif %}>{{ field.label }}</option>{% endfor %}</select>
+          <select class="form-select" id="filter_operator" name="filter_operator" aria-label="Filter operator"><option value="equals"{% if filter_operator == 'equals' %} selected{% endif %}>equals</option><option value="contains"{% if filter_operator == 'contains' %} selected{% endif %}>contains</option><option value="is_empty"{% if filter_operator == 'is_empty' %} selected{% endif %}>is empty</option><option value="is_not_empty"{% if filter_operator == 'is_not_empty' %} selected{% endif %}>is not empty</option><option value="last_days"{% if filter_operator == 'last_days' %} selected{% endif %}>in last days</option><option value="greater_than"{% if filter_operator == 'greater_than' %} selected{% endif %}>greater than</option><option value="less_than"{% if filter_operator == 'less_than' %} selected{% endif %}>less than</option></select>
+          <input class="form-control" id="filter_value" name="filter_value" value="{{ filter_value }}" list="reportFilterValues" placeholder="Value"><datalist id="reportFilterValues"></datalist>
+        </div>
+        <div class="form-text">Leave the field or value empty to run an unfiltered preview.</div>
+      </div>
+      <div class="col-lg-4">
+        <label class="form-label fw-semibold" for="sort_field">Sort</label>
+        <div class="input-group"><select class="form-select" id="sort_field" name="sort_field"><option value="">Default order</option>{% for field in fields if field.sortable %}<option value="{{ field.key }}"{% if field.key == sort_field %} selected{% endif %}>{{ field.label }}</option>{% endfor %}</select><select class="form-select" name="sort_direction"><option value="desc"{% if sort_direction == 'desc' %} selected{% endif %}>Descending</option><option value="asc"{% if sort_direction == 'asc' %} selected{% endif %}>Ascending</option></select></div>
+      </div>
+      <div class="col-lg-3"><label class="form-label fw-semibold" for="limit">Rows to load</label><select class="form-select" id="limit" name="limit"><option value="all"{% if limit in ('all', '', '0') %} selected{% endif %}>All rows</option><option value="100"{% if limit == '100' %} selected{% endif %}>100 rows</option><option value="500"{% if limit == '500' %} selected{% endif %}>500 rows</option></select></div>
+    </div>
+    <input type="hidden" id="reportFiltersJson" name="filters_json" value="{{ filters_json }}">
+    <div class="report-column-filter-bar" id="reportColumnFilters" aria-label="Column filters"></div>
+    <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top"><span class="small text-secondary">Definitions are validated against the field catalog and never execute user SQL.</span><button class="btn btn-primary" type="submit">Preview report</button></div>
+  </form>
+
+  <section class="surface p-4 mt-4 report-preview-surface">
+    <div class="section-heading mb-3"><div><p class="eyebrow mb-1">Preview</p><h2 class="h5 mb-0">{{ preview.total_rows }} matching row(s)</h2></div><span class="small text-secondary">Current workspace snapshot</span></div>
+    <div class="report-table-toolbar">
+      <div class="btn-group report-action-group" role="group" aria-label="Report actions">
+        <button type="button" class="btn btn-outline-secondary" id="reportNewButton" disabled>New</button>
+        <button type="button" class="btn btn-outline-secondary" id="reportEditButton" disabled>Edit</button>
+        <button type="button" class="btn btn-outline-secondary" id="reportDeleteButton" disabled>Delete</button>
+        <div class="dropdown">
+          <button type="button" class="btn btn-outline-secondary dropdown-toggle rounded-0" data-bs-toggle="dropdown" aria-expanded="false">Export</button>
+          <ul class="dropdown-menu shadow-sm" id="reportExportMenu"><li><button class="dropdown-item" type="button" data-export="copy">Copy</button></li><li><button class="dropdown-item" type="button" data-export="csv">CSV</button></li><li><button class="dropdown-item" type="button" data-export="excel">Excel</button></li></ul>
+        </div>
+        <div class="dropdown">
+          <button type="button" class="btn btn-outline-secondary dropdown-toggle rounded-start-0" data-bs-toggle="dropdown" aria-expanded="false">View</button>
+          <ul class="dropdown-menu shadow-sm"><li><button class="dropdown-item report-page-size" type="button" data-page-size="10">10 rows</button></li><li><button class="dropdown-item report-page-size" type="button" data-page-size="25">25 rows</button></li><li><button class="dropdown-item report-page-size" type="button" data-page-size="50">50 rows</button></li></ul>
+        </div>
+      </div>
+      <label class="report-global-search" for="reportGlobalSearch"><span>Search:</span><input class="form-control" id="reportGlobalSearch" type="search" placeholder="Search report..."></label>
+    </div>
+    {% if preview.fields %}<div class="table-responsive"><table class="table table-hover align-middle mb-0" id="reportPreviewTable"><thead><tr>{% for field in preview.fields %}<th data-field-key="{{ field.key }}"><span class="report-column-heading">{{ field.label }}</span></th>{% endfor %}</tr></thead><tbody>{% for row in preview.rows %}<tr>{% for field in preview.fields %}{% set value = row[field.key] %}<td>{% if field.data_type == 'boolean' %}{% if value %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="text-secondary">No</span>{% endif %}{% else %}{{ value or '—' }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div><div class="small text-secondary mt-2" id="reportFilterStatus">Use Search or the filters above the table to filter, sort and export the preview.</div>{% else %}<div class="report-preview-empty"><span class="report-preview-empty-icon">▤</span><strong>Preview not loaded</strong><span>Select your columns and filters, then choose <em>Preview report</em> to query the workspace.</span></div>{% endif %}
+  </section>
+  <p class="small text-secondary mt-3 mb-0">This is a read-only preview. Use the table controls to search, filter, sort, paginate or export the selected result.</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/datatables/js/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/datatables/js/dataTables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/datatables/js/dataTables.bootstrap5.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/datatables/js/jszip.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/datatables/js/dataTables.buttons.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/datatables/js/buttons.bootstrap5.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/datatables/js/buttons.html5.min.js') }}"></script>
+<script>
+  document.querySelectorAll('.select-field-group').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const boxes = document.querySelectorAll('[data-field-group="' + button.dataset.group + '"]');
+      const shouldSelect = Array.from(boxes).some(function (box) { return !box.checked; });
+      boxes.forEach(function (box) { box.checked = shouldSelect; });
+      button.textContent = shouldSelect ? 'Clear all' : 'Select all';
+    });
+  });
+
+  const reportDefinition = {{ preview.definition|tojson }};
+  const loadTemplateButton = document.getElementById('loadReportTemplate');
+  const templateSelect = document.getElementById('reportTemplateSelect');
+  const saveTemplateButton = document.getElementById('saveReportTemplate');
+  const templateNameInput = document.getElementById('reportTemplateName');
+  if (loadTemplateButton) {
+    loadTemplateButton.addEventListener('click', function () {
+      if (templateSelect.value) window.location.href = '{{ url_for("reports.report_studio") }}?template_id=' + encodeURIComponent(templateSelect.value);
+    });
+  }
+  if (saveTemplateButton) {
+    saveTemplateButton.disabled = !reportDefinition.columns || !reportDefinition.columns.length;
+    saveTemplateButton.addEventListener('click', function () {
+      const name = templateNameInput.value.trim();
+      if (!name) { templateNameInput.focus(); return; }
+      saveTemplateButton.disabled = true;
+      fetch('{{ url_for("reports.save_report_template") }}', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name: name, definition: reportDefinition }) })
+        .then(function (response) { return response.json().then(function (payload) { if (!response.ok) throw new Error(payload.error || 'Unable to save template.'); return payload; }); })
+        .then(function (payload) { templateNameInput.value = ''; saveTemplateButton.textContent = 'Saved'; const option = new Option(payload.name, payload.template_id, true, true); templateSelect.add(option); setTimeout(function () { saveTemplateButton.textContent = 'Save template'; saveTemplateButton.disabled = false; }, 1200); })
+        .catch(function (error) { saveTemplateButton.textContent = error.message; setTimeout(function () { saveTemplateButton.textContent = 'Save template'; saveTemplateButton.disabled = false; }, 1800); });
+    });
+  }
+
+  const filterOperator = document.getElementById('filter_operator');
+  const filterField = document.getElementById('filter_field');
+  const filterValue = document.getElementById('filter_value');
+  let reportFilterOptions = {{ preview.filter_options|tojson }};
+  function updateFilterValueOptions() {
+    const datalist = document.getElementById('reportFilterValues');
+    if (!datalist || !filterField) return;
+    datalist.replaceChildren();
+    (reportFilterOptions[filterField.value] || []).forEach(function (value) {
+      const option = document.createElement('option');
+      option.value = value;
+      datalist.appendChild(option);
+    });
+  }
+  function updateFilterValueState() {
+    const emptyOperator = filterOperator && ['is_empty', 'is_not_empty'].includes(filterOperator.value);
+    if (filterValue) {
+      filterValue.disabled = emptyOperator;
+      filterValue.placeholder = emptyOperator ? 'No value required' : (filterOperator && filterOperator.value === 'last_days' ? 'Number of days' : 'Value');
+      if (emptyOperator) filterValue.value = '';
+    }
+  }
+  if (filterOperator) {
+    filterOperator.addEventListener('change', updateFilterValueState);
+    updateFilterValueState();
+  }
+  if (filterField) {
+    filterField.addEventListener('change', updateFilterValueOptions);
+    updateFilterValueOptions();
+  }
+
+  const previewTable = document.getElementById('reportPreviewTable');
+  const filterBar = document.getElementById('reportColumnFilters');
+  const filtersInput = document.getElementById('reportFiltersJson');
+  let filterLoadTimer;
+  let filterLoadController;
+  function selectedReportFields() {
+    return Array.from(document.querySelectorAll('.report-field-checkbox:checked')).map(function (checkbox) { return checkbox.value; });
+  }
+  function fieldLabel(fieldKey) {
+    const checkbox = document.querySelector('.report-field-checkbox[value="' + CSS.escape(fieldKey) + '"]');
+    return checkbox ? checkbox.closest('label').querySelector('strong').textContent : fieldKey;
+  }
+  function syncPrePreviewFilters() {
+    const filters = [];
+    filterBar.querySelectorAll('.report-column-filter-control').forEach(function (control) {
+      const values = Array.from(control.querySelectorAll('input:checked')).map(function (item) { return item.value; });
+      if (values.length) filters.push({ field: control.dataset.fieldKey, operator: 'in', value: values });
+    });
+    filtersInput.value = JSON.stringify(filters);
+  }
+  function renderPrePreviewFilters() {
+    filterBar.replaceChildren();
+    selectedReportFields().forEach(function (fieldKey) {
+      const control = document.createElement('div');
+      control.className = 'dropdown report-column-filter-control';
+      control.dataset.fieldKey = fieldKey;
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'btn btn-outline-secondary btn-sm dropdown-toggle';
+      toggle.dataset.bsToggle = 'dropdown';
+      toggle.dataset.bsAutoClose = 'outside';
+      toggle.textContent = 'Filter ' + fieldLabel(fieldKey);
+      const menu = document.createElement('div');
+      menu.className = 'dropdown-menu p-3 shadow-sm report-filter-menu';
+      const list = document.createElement('div');
+      list.className = 'report-value-list';
+      (reportFilterOptions[fieldKey] || []).forEach(function (value) {
+        const label = document.createElement('label');
+        label.className = 'report-value-option';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = value;
+        const text = document.createElement('span');
+        text.textContent = value || '—';
+        label.append(checkbox, text);
+        checkbox.addEventListener('change', function () {
+          const active = list.querySelectorAll('input:checked').length;
+          toggle.classList.toggle('btn-primary', active > 0);
+          toggle.classList.toggle('btn-outline-secondary', active === 0);
+          toggle.textContent = active ? 'Filter ' + fieldLabel(fieldKey) + ' (' + active + ')' : 'Filter ' + fieldLabel(fieldKey);
+          syncPrePreviewFilters();
+        });
+        list.appendChild(label);
+      });
+      menu.appendChild(list);
+      control.append(toggle, menu);
+      filterBar.appendChild(control);
+    });
+  }
+  function loadPrePreviewFilters() {
+    if (previewTable || !filterBar) return;
+    const fields = selectedReportFields();
+    if (!fields.length) { filterBar.replaceChildren(); return; }
+    filterBar.innerHTML = '<span class="report-filter-loading"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Loading column filters...</span>';
+    clearTimeout(filterLoadTimer);
+    if (filterLoadController) filterLoadController.abort();
+    filterLoadController = new AbortController();
+    filterLoadTimer = setTimeout(function () {
+      const params = new URLSearchParams({ source: document.querySelector('[name="source"]:checked')?.value || 'ALL' });
+      fields.forEach(function (field) { params.append('field', field); });
+      fetch('{{ url_for("reports.report_studio_filter_options") }}?' + params.toString(), { signal: filterLoadController.signal })
+        .then(function (response) { if (!response.ok) throw new Error('Filter options request failed'); return response.json(); })
+        .then(function (options) { reportFilterOptions = options; renderPrePreviewFilters(); })
+        .catch(function (error) { if (error.name !== 'AbortError') filterBar.innerHTML = '<span class="text-danger small">Unable to load column filters.</span>'; });
+    }, 250);
+  }
+  if (!previewTable) {
+    document.querySelectorAll('.report-field-checkbox').forEach(function (checkbox) { checkbox.addEventListener('change', loadPrePreviewFilters); });
+    loadPrePreviewFilters();
+  }
+
+  if (document.getElementById('reportPreviewTable')) {
+    const table = new DataTable('#reportPreviewTable', {
+      pageLength: 25,
+      lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]],
+      order: [],
+      autoWidth: true,
+      layout: {
+        topStart: { buttons: ['copy', 'csv', 'excel'] },
+        topEnd: null,
+        bottomStart: 'info',
+        bottomEnd: 'paging'
+      },
+      initComplete: function () {
+        const api = this.api();
+        const globalSearch = document.getElementById('reportGlobalSearch');
+        globalSearch.addEventListener('input', function () { api.search(globalSearch.value).draw(); });
+
+        document.querySelectorAll('[data-export]').forEach(function (button) {
+          button.addEventListener('click', function () { api.button('.buttons-' + button.dataset.export).trigger(); });
+        });
+        document.querySelectorAll('.report-page-size').forEach(function (button) {
+          button.addEventListener('click', function () { api.page.len(Number(button.dataset.pageSize)).draw(); });
+        });
+
+        const filterBar = document.getElementById('reportColumnFilters');
+        const submittedFilters = document.getElementById('reportFiltersJson');
+        const escapeRegex = function (value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
+        let initialFilters = [];
+        try { initialFilters = JSON.parse(submittedFilters.value || '[]'); } catch (error) { initialFilters = []; }
+        const syncSubmittedFilters = function () {
+          const filters = [];
+          filterBar.querySelectorAll('.report-column-filter-control').forEach(function (control) {
+            const values = Array.from(control.querySelectorAll('input[type="checkbox"]:checked')).map(function (item) { return item.value; });
+            if (values.length) filters.push({ field: control.dataset.fieldKey, operator: 'in', value: values });
+          });
+          submittedFilters.value = JSON.stringify(filters);
+        };
+        api.columns().every(function (index) {
+          const title = api.column(index).header().textContent.trim();
+          const fieldKey = api.column(index).header().dataset.fieldKey;
+          const control = document.createElement('div');
+          control.className = 'dropdown report-column-filter-control';
+          control.dataset.fieldKey = fieldKey;
+          const toggle = document.createElement('button');
+          toggle.type = 'button';
+          toggle.className = 'btn btn-outline-secondary btn-sm dropdown-toggle';
+          toggle.dataset.bsToggle = 'dropdown';
+          toggle.dataset.bsAutoClose = 'outside';
+          toggle.textContent = 'Filter ' + title;
+          toggle.setAttribute('aria-pressed', 'false');
+          const menu = document.createElement('div');
+          menu.className = 'dropdown-menu p-3 shadow-sm report-filter-menu';
+          const actions = document.createElement('div');
+          actions.className = 'd-flex justify-content-between gap-3 mb-2';
+          actions.innerHTML = '<button type="button" class="btn btn-link btn-sm p-0 report-filter-select-all">Select all</button><button type="button" class="btn btn-link btn-sm p-0 report-filter-clear">Clear</button>';
+          const valueSearch = document.createElement('input');
+          valueSearch.type = 'search';
+          valueSearch.className = 'form-control form-control-sm mb-2';
+          valueSearch.placeholder = 'Search values...';
+          const list = document.createElement('div');
+          list.className = 'report-value-list';
+          const values = new Set(reportFilterOptions[fieldKey] || []);
+          if (!values.size) api.column(index).data().each(function (value) { values.add(String(value).replace(/<[^>]*>/g, '').trim() || '—'); });
+          Array.from(values).sort(function (a, b) { return a.localeCompare(b); }).forEach(function (value) {
+            const label = document.createElement('label');
+            label.className = 'report-value-option';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = value;
+            const initialFilter = initialFilters.find(function (item) { return item.field === fieldKey && item.operator === 'in'; });
+            checkbox.checked = Boolean(initialFilter && Array.isArray(initialFilter.value) && initialFilter.value.includes(value));
+            const text = document.createElement('span');
+            text.textContent = value;
+            label.append(checkbox, text);
+            checkbox.addEventListener('change', function () {
+              const selected = Array.from(list.querySelectorAll('input:checked')).map(function (item) { return escapeRegex(item.value); });
+              api.column(index).search(selected.length ? selected.join('|') : '', { regex: true }).draw();
+              updateFilterState();
+              syncSubmittedFilters();
+            });
+            list.appendChild(label);
+          });
+          const updateFilterState = function () {
+            const total = list.querySelectorAll('input').length;
+            const selectedCount = list.querySelectorAll('input:checked').length;
+            const active = selectedCount > 0 && selectedCount < total;
+            toggle.classList.toggle('btn-primary', active);
+            toggle.classList.toggle('btn-outline-secondary', !active);
+            toggle.setAttribute('aria-pressed', active ? 'true' : 'false');
+            toggle.textContent = active ? 'Filter ' + title + ' (' + selectedCount + ')' : 'Filter ' + title;
+          };
+          updateFilterState();
+          valueSearch.addEventListener('input', function () {
+            const query = valueSearch.value.toLocaleLowerCase();
+            list.querySelectorAll('.report-value-option').forEach(function (option) { option.hidden = !option.textContent.toLocaleLowerCase().includes(query); });
+          });
+          const divider = document.createElement('hr');
+          divider.className = 'my-2';
+          const sortAscending = document.createElement('button');
+          sortAscending.type = 'button';
+          sortAscending.className = 'dropdown-item px-0';
+          sortAscending.textContent = '↥ Sort ascending';
+          sortAscending.addEventListener('click', function () { api.order([[index, 'asc']]).draw(); });
+          const sortDescending = document.createElement('button');
+          sortDescending.type = 'button';
+          sortDescending.className = 'dropdown-item px-0';
+          sortDescending.textContent = '↧ Sort descending';
+          sortDescending.addEventListener('click', function () { api.order([[index, 'desc']]).draw(); });
+          const clearSort = document.createElement('button');
+          clearSort.type = 'button';
+          clearSort.className = 'dropdown-item px-0';
+          clearSort.textContent = '≡ Clear sort';
+          clearSort.addEventListener('click', function () { api.order([]).draw(); });
+          actions.querySelector('.report-filter-select-all').addEventListener('click', function () { list.querySelectorAll('input').forEach(function (item) { item.checked = true; }); api.column(index).search('').draw(); updateFilterState(); syncSubmittedFilters(); });
+          actions.querySelector('.report-filter-clear').addEventListener('click', function () { list.querySelectorAll('input').forEach(function (item) { item.checked = false; }); api.column(index).search('').draw(); updateFilterState(); syncSubmittedFilters(); });
+          menu.append(actions, valueSearch, list, divider, sortAscending, sortDescending, clearSort);
+          control.append(toggle, menu);
+          filterBar.appendChild(control);
+        });
+      }
+    });
+  }
+</script>
+{% endblock %}

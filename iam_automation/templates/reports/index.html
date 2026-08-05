@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <div class="page-heading">
+    <div><p class="eyebrow">Workforce intelligence</p><h1>Reports</h1><p class="text-secondary mb-0">Start here to explore the canonical employee population, vendors and data quality signals.</p></div>
+    <span class="status-pill status-active"><span></span>Read-only reports</span>
+  </div>
+
+  <div class="row g-3 mt-4">
+    {% for label, value, detail, href in [
+      ('Total employees', report.total_employees, 'Canonical workers', url_for('employees.employee_directory', all='1')),
+      ('Active employees', report.active_employees, 'Current active status', url_for('employees.employee_directory', status='ACTIVE')),
+      ('Pending / inactive', report.pending_inactive_employees, 'Requires status review', url_for('employees.employee_directory', status='NON_ACTIVE')),
+      ('Vendors', report.total_vendors, 'Across all engagements', url_for('reports.vendor_report')),
+      ('Without vendor', report.employees_without_vendor, 'No vendor engagement', url_for('employees.employee_directory', vendor='NONE')),
+      ('Open discrepancies', report.open_discrepancies, 'Needs review', url_for('employees.employee_directory', review='OPEN'))
+    ] %}
+    <div class="col-6 col-md-4 col-xl-2"><a class="surface p-3 h-100 metric-card text-decoration-none" href="{{ href }}"><span class="section-label">{{ label }}</span><strong>{{ value }}</strong><span class="small text-secondary">{{ detail }}</span><span class="action-link mt-2">View details →</span></a></div>
+    {% endfor %}
+  </div>
+
+  <div class="section-heading mt-5"><div><p class="eyebrow mb-1">Report library</p><h2 class="h4 mb-0">Choose a report</h2></div></div>
+  <div class="row g-3 mt-1">
+    <div class="col-md-6 col-xl-4"><a class="surface p-4 h-100 action-card" href="{{ url_for('reports.vendor_report') }}"><span class="action-icon">▥</span><h3 class="h5">Vendor report</h3><p class="small text-secondary">Review employees, engagements, status and open discrepancies grouped by vendor.</p><span class="action-link">Open vendor report →</span></a></div>
+    <div class="col-md-6 col-xl-4"><a class="surface p-4 h-100 action-card" href="{{ url_for('reports.duplicate_report') }}"><span class="action-icon">⌕</span><h3 class="h5">Duplicate search</h3><p class="small text-secondary">Scan pending source records for repeated identifiers and strong name or email signals.</p><span class="action-link">Search duplicates →</span></a></div>
+    <div class="col-md-6 col-xl-4"><a class="surface p-4 h-100 action-card" href="{{ url_for('reports.new_hire_report') }}"><span class="action-icon">▣</span><h3 class="h5">New hire readiness</h3><p class="small text-secondary">Find recent Master Roster Lock starters missing Fieldglass/RSR or AccessNow coverage.</p><span class="action-link">Open readiness report →</span></a></div>
+    <div class="col-md-6 col-xl-4"><a class="surface p-4 h-100 action-card" href="{{ url_for('reports.report_studio') }}"><span class="action-icon">✦</span><h3 class="h5">Report Studio</h3><p class="small text-secondary">Choose fields and filters to preview your own read-only employee report.</p><span class="action-link">Build a report →</span></a></div>
+    <div class="col-md-6 col-xl-4"><a class="surface p-4 h-100 action-card" href="{{ url_for('employees.employee_directory', all='1') }}"><span class="action-icon">◎</span><h3 class="h5">Employee directory</h3><p class="small text-secondary">Search the canonical employee population by vendor, status, source and engagement.</p><span class="action-link">Open directory →</span></a></div>
+  </div>
+
+  <p class="small text-secondary mt-4 mb-0">Reports are read-only and use the current canonical SQLite workspace. The report menu above will grow as new operational reports are added.</p>
+</div>
+{% endblock %}

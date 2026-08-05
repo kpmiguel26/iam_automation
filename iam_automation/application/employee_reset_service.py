@@ -15,6 +15,7 @@ class EmployeeResetService:
     EMPLOYEE_TABLES = (
         "worker_profile_versions",
         "worker_merge_events",
+        "worker_source_profiles",
         "worker_source_lineage",
         "worker_discrepancies",
         "worker_engagements",
