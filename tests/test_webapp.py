@@ -23,7 +23,9 @@ class WebAppTests(unittest.TestCase):
         app = webapp.create_app(self.make_result(True), app_authenticator=lambda username, password: user)
         client = app.test_client()
         self.assertEqual(client.get("/login").status_code, 200)
-        response = client.post("/login", data={"username": "app-user", "password": "secret"}, follow_redirects=True)
+        with client.session_transaction() as session:
+            csrf_token = session["iam_csrf_token"]
+        response = client.post("/login", data={"username": "app-user", "password": "secret", "csrf_token": csrf_token}, follow_redirects=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Workspace overview", response.data)
         self.assertIn(b"DOMAIN\\user", response.data)
@@ -37,7 +39,9 @@ class WebAppTests(unittest.TestCase):
         app = webapp.create_app(self.make_result(True), app_authenticator=lambda username, password: user)
         client = app.test_client()
         self.assertEqual(client.get("/help/testing").status_code, 302)
-        client.post("/login", data={"username": "tester", "password": "secret"})
+        with client.session_transaction() as session:
+            csrf_token = session["iam_csrf_token"]
+        client.post("/login", data={"username": "tester", "password": "secret", "csrf_token": csrf_token})
         response = client.get("/help/testing")
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Testing &amp; Help Center", response.data)

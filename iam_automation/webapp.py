@@ -6,6 +6,8 @@ import logging
 import multiprocessing
 import os
 import queue
+import hmac
+import re
 import secrets
 import threading
 import webbrowser
@@ -95,6 +97,35 @@ def create_app(
     app.secret_key = secrets.token_urlsafe(32)
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+    csrf_session_key = "iam_csrf_token"
+
+    def csrf_token() -> str:
+        token = session.get(csrf_session_key)
+        if not token:
+            token = secrets.token_urlsafe(32)
+            session[csrf_session_key] = token
+        return str(token)
+
+    @app.before_request
+    def enforce_csrf():
+        token = csrf_token()
+        if request.method != "POST" or request.endpoint == "shutdown":
+            return None
+        submitted = request.form.get("csrf_token", "") or request.headers.get("X-CSRF-Token", "")
+        if not submitted or not hmac.compare_digest(str(submitted), token):
+            return {"status": "invalid_csrf_token", "message": "The form security token is missing or invalid."}, 400
+        return None
+
+    @app.after_request
+    def inject_csrf_fields(response):
+        if response.mimetype != "text/html":
+            return response
+        body = response.get_data(as_text=True)
+        field = f'<input type="hidden" name="csrf_token" value="{csrf_token()}">'
+        pattern = r'(<form\b(?=[^>]*\bmethod\s*=\s*["\']post["\'])[^>]*>)'
+        body = re.sub(pattern, rf"\1{field}", body, flags=re.IGNORECASE)
+        response.set_data(body)
+        return response
 
     @app.template_filter("human_datetime")
     def human_datetime(value: object) -> str:
@@ -156,6 +187,7 @@ def create_app(
         recent_notifications = unread_notifications[:5]
         priority_notifications = [item for item in unread_notifications if item.severity in {"CRITICAL", "ERROR", "WARNING"} or item.notification_type in {"FILE_DETECTED", "DATABASE_SNAPSHOT_PUBLISHED"}][:4]
         return {
+            "csrf_token": csrf_token(),
             "is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & {str(role).upper() for role in roles}),
             "unread_notification_count": unread_count,
             "recent_notifications": recent_notifications,

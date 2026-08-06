@@ -97,7 +97,9 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P1] SEC-001 — No hay protección CSRF en formularios mutantes
 
-**Evidencia:** existen múltiples `POST` en `iam_automation/interfaces/web`, pero las plantillas no incluyen token CSRF y `create_app()` no configura una validación equivalente. Ejemplos: `iam_automation/templates/admin/users.html`, `admin/governance.html`, `employees/source_updates.html`.
+**Estado:** corregido en `bugfix/technical-debt`; la aplicación crea un token por sesión, lo inyecta en formularios HTML y valida todos los `POST` de formulario. Los endpoints JSON requieren `X-CSRF-Token` si se consumen desde un navegador; el shutdown interno conserva su token de control independiente.
+
+**Evidencia:** `iam_automation/webapp.py` genera, compara con tiempo constante y rechaza tokens ausentes o inválidos con HTTP 400.
 
 **Impacto:** cualquier página visitada mientras existe una sesión puede intentar enviar acciones administrativas mediante el navegador. El riesgo es especialmente relevante para aprobar, publicar, restaurar, modificar usuarios o aplicar empleados.
 

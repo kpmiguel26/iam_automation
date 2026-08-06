@@ -303,7 +303,10 @@ class ReportServiceTests(unittest.TestCase):
             filter_options_response = client.get("/reports/studio/filter-options?source=CANONICAL&field=employee.status")
             self.assertEqual(filter_options_response.status_code, 200)
             self.assertIn(b"ACTIVE", filter_options_response.data)
-            saved_template = client.post("/reports/studio/templates", json={
+            with client.session_transaction() as flask_session:
+                csrf_token = flask_session["iam_csrf_token"]
+            csrf_headers = {"X-CSRF-Token": csrf_token}
+            saved_template = client.post("/reports/studio/templates", headers=csrf_headers, json={
                 "name": "Active employees",
                 "definition": {"sources": ["CANONICAL"], "columns": ["employee.display_name"], "filters": [], "sort": [], "limit": None},
             })
@@ -312,10 +315,10 @@ class ReportServiceTests(unittest.TestCase):
             loaded_template = client.get(f"/reports/studio?template_id={template_id}")
             self.assertEqual(loaded_template.status_code, 200)
             self.assertIn(b"Active employees", loaded_template.data)
-            folder_response = client.post("/reports/studio/folders", json={"name": "My team queries", "shared": True})
+            folder_response = client.post("/reports/studio/folders", headers=csrf_headers, json={"name": "My team queries", "shared": True})
             self.assertEqual(folder_response.status_code, 200)
             folder_id = folder_response.get_json()["folder_id"]
-            shared_template = client.post("/reports/studio/templates", json={
+            shared_template = client.post("/reports/studio/templates", headers=csrf_headers, json={
                 "name": "Shared active employees",
                 "folder_id": folder_id,
                 "shared": True,
@@ -326,7 +329,10 @@ class ReportServiceTests(unittest.TestCase):
             self.assertIn(b"vendor/datatables/js/dataTables.min.js", studio_response.data)
             self.assertIn(b"vendor/datatables/js/jquery.min.js", studio_response.data)
             self.assertIn(b"vendor/datatables/js/buttons.html5.min.js", studio_response.data)
+            with client.session_transaction() as flask_session:
+                csrf_token = flask_session["iam_csrf_token"]
             studio_preview = client.post("/reports/studio", data={
+                "csrf_token": csrf_token,
                 "source": "CANONICAL",
                 "columns": ["employee.display_name", "employee.status"],
                 "filter_field": "employee.display_name",
