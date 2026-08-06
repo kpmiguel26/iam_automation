@@ -25,6 +25,8 @@ from ..infrastructure.sqlite.orm import (
 from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches
 from .worker_history_service import record_worker_version
+from .stable_file_read import read_stable_bytes
+from .status_catalog import normalize_accessnow_status, status_rank
 
 
 SOURCE_SYSTEM = "ACCESSNOW"
@@ -55,7 +57,7 @@ class AccessNowIngestionService:
         paths = sorted(path for path in folder.iterdir() if path.is_file() and path.suffix.lower() in {".csv", ".xlsx"} and not path.name.startswith("."))
         if not paths:
             raise ValueError("The AccessNow folder has no CSV or XLSX files.")
-        contents = {path: path.read_bytes() for path in paths}
+        contents = {path: read_stable_bytes(path) for path in paths}
         source_checksum = hashlib.sha256(self.MERGE_SCHEMA_VERSION.encode() + b"\0" + b"".join(path.name.encode() + b"\0" + contents[path] for path in paths)).hexdigest()
         source_file = "; ".join(path.name for path in paths)
         with orm_session(self.database_path) as session:
@@ -82,8 +84,8 @@ class AccessNowIngestionService:
                     # must not discard email, dates, manager, or sponsor data
                     # supplied by the active report.
                     current_payload = current[2]
-                    current_rank = self._status_rank(current_payload.get("accessnow_status", ""))
-                    incoming_rank = self._status_rank(payload.get("accessnow_status", ""))
+                    current_rank = status_rank(current_payload.get("accessnow_status", ""))
+                    incoming_rank = status_rank(payload.get("accessnow_status", ""))
                     for field_name, incoming_value in payload.items():
                         if not current_payload.get(field_name) or (incoming_rank > current_rank and field_name in {"accessnow_status", "terminated_date"}):
                             current_payload[field_name] = incoming_value
@@ -93,8 +95,24 @@ class AccessNowIngestionService:
         staged = quarantined = 0
         seen: set[str] = set()
         with orm_session(self.database_path) as session:
+            existing_source_rows = {
+                (str(source_file), str(checksum), int(row_number))
+                for source_file, checksum, row_number in session.execute(
+                    select(IngestionRecordModel.source_file, IngestionRecordModel.source_checksum, IngestionRecordModel.row_number).where(
+                        IngestionRecordModel.source_system == SOURCE_SYSTEM,
+                        IngestionRecordModel.source_checksum == source_checksum,
+                    )
+                ).all()
+            }
             session.add(ImportBatchModel(batch_id=batch_id, filename=source_file, source_type=SOURCE_SYSTEM, status="PROCESSING", total_rows=total_rows, valid_rows=0, quarantine_rows=0, created_by="workspace-watcher", created_at_utc=now))
             for row_number, (path, original_row, payload) in enumerate(merged.values(), start=2):
+                source_row_key = (str(path), source_checksum, int(original_row))
+                if source_row_key in existing_source_rows:
+                    # A previous watcher run may have committed the rows but
+                    # failed before publishing the batch marker. The unique
+                    # source-row constraint makes retrying that folder fail;
+                    # retain the existing evidence and continue with new rows.
+                    continue
                 source_key = payload.get("accessnow_employee_id", "")
                 reason = self._validation_error(payload, source_key, seen)
                 if reason:
@@ -160,8 +178,7 @@ class AccessNowIngestionService:
             "kp_create_date": "created_date",
         }
         normalized = {aliases.get(key, key): value.strip() for key, value in values.items() if value.strip()}
-        status = normalized.get("accessnow_status", "").upper()
-        normalized["accessnow_status"] = "TERMINATED" if status in {"TERM", "TERMINATED", "TERMINATION"} else "ACTIVE" if status == "ACTIVE" else status
+        normalized["accessnow_status"] = cls._normalize_status(normalized.get("accessnow_status", ""))
         return normalized
 
     @staticmethod
@@ -173,8 +190,12 @@ class AccessNowIngestionService:
         return str(value or "").strip()
 
     @staticmethod
-    def _status_rank(status: str) -> int:
-        return 2 if status.upper() == "TERMINATED" else 1
+    def _normalize_status(value: object) -> str:
+        return normalize_accessnow_status(value)
+
+    @classmethod
+    def _status_rank(cls, status: str) -> int:
+        return status_rank(status)
 
     @staticmethod
     def _validation_error(payload: dict[str, str], source_key: str, seen: set[str]) -> str:
@@ -252,14 +273,15 @@ class AccessNowIngestionService:
 
     @staticmethod
     def _worker_status(payload: dict[str, str]) -> str:
-        return "TERMINATED" if payload.get("accessnow_status") == "TERMINATED" else "ACTIVE"
+        status = AccessNowIngestionService._normalize_status(payload.get("accessnow_status", ""))
+        return status if status in {"ACTIVE", "DEACTIVATED", "TERMINATED"} else "ACTIVE"
 
     @staticmethod
     def _apply_engagement(engagement: WorkerEngagementModel, payload: dict[str, str], now: str) -> None:
         for source, target in {"vendor_name": "vendor_name", "job_title": "job_title", "supervisor_name": "supervisor_name", "sponsor_name": "primary_contact_name", "onboarding_date": "onboarding_date", "production_start_date": "production_start_date"}.items():
             if payload.get(source):
                 setattr(engagement, target, payload[source])
-        engagement.status = "TERMINATED" if payload.get("accessnow_status") == "TERMINATED" else "ACTIVE"
+        engagement.status = AccessNowIngestionService._worker_status(payload)
         engagement.updated_at_utc = now
 
     @staticmethod

@@ -1,19 +1,78 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from sqlalchemy import select
 
 from iam_automation.application.employee_service import EmployeeService
+from iam_automation.application.accessnow_ingestion_service import AccessNowIngestionService
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, WorkerIdentifierModel, WorkerModel, orm_session
+from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, WorkerEngagementModel, WorkerIdentifierModel, WorkerModel, orm_session
 from iam_automation.application.source_reconciliation import ensure_source_identifiers, find_worker_matches
+from iam_automation.application.source_date import parse_source_date
+from iam_automation.application.status_catalog import normalize_accessnow_status
 
 
 class SourceUpdatesTests(unittest.TestCase):
+    def test_status_catalog_normalizes_accessnow_aliases(self):
+        self.assertEqual(normalize_accessnow_status("termination"), "TERMINATED")
+        self.assertEqual(normalize_accessnow_status("disabled"), "DEACTIVATED")
+
+    def test_rehire_alert_matching_uses_worker_and_source_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            access = self._record("access", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00")
+            access.matched_worker_id = "worker-1"
+            access.normalized_json = json.dumps({"accessnow_employee_id": "A-100", "accessnow_status": "TERMINATED", "terminated_date": "2026-08-03"})
+            roster = self._record("roster", "ROSTER_LOCK", "roster.xlsx", "A-100", "2026-08-10T00:00:00+00:00")
+            roster.matched_worker_id = "worker-1"
+            roster.normalized_json = json.dumps({"vendor_employee_id": "A-100", "onboarding_date": "2026-08-10"})
+            with orm_session(database) as session:
+                session.add(WorkerModel(worker_id="worker-1", display_name="Ada Lovelace", status="TERMINATED"))
+                session.add_all([access, roster])
+
+            self.assertEqual(len(EmployeeService(database).rehire_alerts()), 1)
+
+    def test_accessnow_status_normalization_preserves_deactivated(self):
+        self.assertEqual(AccessNowIngestionService._normalize({"Employee Status": "DEACTIVATED"})["accessnow_status"], "DEACTIVATED")
+        self.assertEqual(AccessNowIngestionService._worker_status({"accessnow_status": "DEACTIVATION"}), "DEACTIVATED")
+
+    def test_accessnow_deactivated_status_updates_worker_and_engagement(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            record = self._record("access", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00")
+            record.matched_worker_id = "worker-1"
+            record.match_status = "MATCHED"
+            record.normalized_json = json.dumps({
+                "accessnow_employee_id": "A-100",
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+                "accessnow_status": "DEACTIVATED",
+            })
+            with orm_session(database) as session:
+                session.add(WorkerModel(worker_id="worker-1", first_name="Ada", last_name="Lovelace", display_name="Ada Lovelace", status="ACTIVE"))
+                session.add(record)
+
+            result = AccessNowIngestionService(database).apply_approved_records(["access"], "qa")
+
+            self.assertEqual(result["processed"], 1)
+            with orm_session(database) as session:
+                worker = session.get(WorkerModel, "worker-1")
+                engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == "worker-1"))
+                self.assertEqual(worker.status, "DEACTIVATED")
+                self.assertEqual(engagement.status, "DEACTIVATED")
+
+    def test_source_date_parser_accepts_accessnow_timestamp(self):
+        self.assertEqual(parse_source_date("9/9/2025 6:7:0 AM PDT"), date(2025, 9, 9))
+        self.assertEqual(parse_source_date("2026-08-03T20:14:31+00:00"), date(2026, 8, 3))
+        self.assertIsNone(parse_source_date("not a date"))
+
     def _record(self, record_id: str, source: str, filename: str, key: str, created: str) -> IngestionRecordModel:
         payload = {"first_name": "Ada", "last_name": "Lovelace", "email": "ada@example.com", "vendor_employee_id": key}
         return IngestionRecordModel(
@@ -172,7 +231,7 @@ class SourceUpdatesTests(unittest.TestCase):
             access = self._record("access", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00")
             access.matched_worker_id = "worker-1"
             access.status = "APPLIED"
-            access.normalized_json = json.dumps({"accessnow_employee_id": "A-100", "first_name": "Ada", "last_name": "Lovelace", "accessnow_status": "TERMINATED", "terminated_date": "2026-08-03"})
+            access.normalized_json = json.dumps({"accessnow_employee_id": "A-100", "first_name": "Ada", "last_name": "Lovelace", "accessnow_status": "TERMINATED", "terminated_date": "8/3/2026 6:7:0 AM PDT"})
             roster = self._record("roster", "ROSTER_LOCK", "roster.xlsx", "A-100", "2026-08-10T00:00:00+00:00")
             roster.matched_worker_id = "worker-1"
             roster.normalized_json = json.dumps({"vendor_employee_id": "A-100", "first_name": "Ada", "last_name": "Lovelace", "onboarding_date": "2026-08-10"})
@@ -186,6 +245,19 @@ class SourceUpdatesTests(unittest.TestCase):
             self.assertEqual(alerts[0]["status"], "TERMINATED")
             self.assertEqual(alerts[0]["business_days_elapsed"], 5)
             self.assertEqual(alerts[0]["business_days_remaining"], 25)
+
+            result = EmployeeService(database).resolve_rehire_alert("roster", "admin", "Reviewed by management")
+            self.assertEqual(result["status"], "RESOLVED")
+            self.assertEqual(EmployeeService(database).rehire_alerts(), [])
+            with orm_session(database) as session:
+                self.assertEqual(session.get(WorkerModel, "worker-1").status, "TERMINATED")
+                self.assertEqual(session.get(IngestionRecordModel, "roster").observation_state, "RESOLVED")
+
+    def test_rehire_business_days_exclude_configured_holidays(self):
+        with patch.dict(os.environ, {"REHIRE_HOLIDAYS": "2026-07-06"}):
+            elapsed = EmployeeService._business_days_between(date(2026, 7, 3), date(2026, 7, 7))
+
+        self.assertEqual(elapsed, 1)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import sys
 from dataclasses import dataclass
 from enum import Enum
@@ -14,10 +15,13 @@ from .application.workspace_refresh_service import record_published_source_check
 from .identity import CurrentUser
 from .identity import computer_name, windows_username
 from .identity_discovery import record_windows_traceability, traceability_path
-from .runtime_sync import find_published_access_db, find_published_runtime_db, project_runtime_path, sync_runtime_snapshot
+from .runtime_sync import RuntimeDatabaseError, find_published_access_db, find_published_runtime_db, project_runtime_path, sync_runtime_snapshot
 from .settings_store import load_user_settings, save_user_settings, user_settings_path
 from .sharepoint_discovery import DiscoveryCandidate, discover_candidates
 from .workspace_layout import ensure_sharepoint_structure
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class StartupState(str, Enum):
@@ -178,8 +182,15 @@ class StartupController:
                     "status": "ok",
                     "message": f"Published SQLite validated and copied locally. SHA-256: {snapshot.checksum[:16]}...",
                 })
+            except RuntimeDatabaseError as exc:
+                resources.append({"key": "runtime_sync", "label": "Local runtime SQLite synchronization", "path": str(self.settings.local_runtime_db_path), "required": True, "status": "invalid", "message": f"SQLite validation failed: {exc}"})
+                ok = False
+            except OSError as exc:
+                resources.append({"key": "runtime_sync", "label": "Local runtime SQLite synchronization", "path": str(self.settings.local_runtime_db_path), "required": True, "status": "invalid", "message": f"Local runtime file operation failed: {exc}"})
+                ok = False
             except Exception as exc:
-                resources.append({"key": "runtime_sync", "label": "Local runtime SQLite synchronization", "path": str(self.settings.local_runtime_db_path), "required": True, "status": "invalid", "message": str(exc)})
+                LOGGER.exception("Unexpected runtime SQLite synchronization failure")
+                resources.append({"key": "runtime_sync", "label": "Local runtime SQLite synchronization", "path": str(self.settings.local_runtime_db_path), "required": True, "status": "invalid", "message": f"Unexpected synchronization failure ({type(exc).__name__}): {exc}"})
                 ok = False
         self.state = StartupState.READY if ok else (StartupState.ACCESS_UNAVAILABLE if self.settings.published_access_db_path.exists() is False else StartupState.INVALID_PATH)
         if ok:

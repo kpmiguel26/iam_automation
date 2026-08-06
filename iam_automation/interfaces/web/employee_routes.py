@@ -109,6 +109,20 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         except (OSError, ValueError, PermissionError) as exc:
             return redirect(url_for("employees.source_updates_overview", all_people="1", notice=str(exc), notice_type="danger"))
 
+    @blueprint.post("/source-updates/rehire-alert/<record_id>/resolve")
+    @authenticated
+    def resolve_rehire_alert(record_id: str):
+        current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
+        if not current_user.can_decide_requests:
+            return redirect(url_for("employees.source_updates_overview", error="Only an administrator can archive a rehire alert.", notice_type="danger"))
+        try:
+            reason = request.form.get("reason", "").strip()
+            result = service.resolve_rehire_alert(record_id, current_user.username, reason)
+            record_audit(audit_path, current_user.username, "REHIRE_ALERT_ARCHIVED", "ingestion_record", record_id, new_values={"result": result, "reason": reason})
+            return redirect(url_for("employees.source_updates_overview", notice="Rehire alert archived. Source evidence and employee status were not changed.", notice_type="success"))
+        except (OSError, ValueError, PermissionError) as exc:
+            return redirect(url_for("employees.source_updates_overview", error=str(exc), notice_type="danger"))
+
     @blueprint.route("/source-updates/duplicate/<record_id>", methods=["GET", "POST"])
     @authenticated
     def duplicate_review(record_id: str):
@@ -200,8 +214,6 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         preview = service.source_update_preview(worker_id)
         if preview is None:
             return render_template("errors/404.html"), 404
-        if service.rehire_alerts_for_worker(worker_id):
-            return redirect(url_for("employees.source_updates", worker_id=worker_id, error="Critical rehire alert: this employee is still within the 30-business-day rehire hold and cannot be submitted for approval.", notice_type="danger"))
         record_ids = sorted({str(update["record_id"]) for update in preview["updates"]})
         if not record_ids:
             return redirect(url_for("employees.source_updates", worker_id=worker_id, error="No pending source changes are available.", notice_type="warning"))

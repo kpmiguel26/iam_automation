@@ -49,7 +49,9 @@ class AdminControlTests(unittest.TestCase):
                 session["iam_user"] = operator.username
                 session["iam_roles"] = list(operator.roles)
             self.assertEqual(client.get("/admin/master/settings").status_code, 403)
-            self.assertEqual(client.post("/admin/governance/publish").status_code, 403)
+            with client.session_transaction() as session:
+                csrf_token = session["iam_csrf_token"]
+            self.assertEqual(client.post("/admin/governance/publish", headers={"X-CSRF-Token": csrf_token}).status_code, 403)
 
     def test_automatic_source_request_is_reviewed_only_in_source_updates(self):
         with tempfile.TemporaryDirectory() as tmp:

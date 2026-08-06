@@ -118,7 +118,7 @@ def load_request_file(path: Path) -> ChangeRequest:
         raise RequestValidationError(f"Request file is too large: {path.name}")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise RequestValidationError(f"Invalid JSON: {path.name}") from exc
     validate_request_dict(data)
     return ChangeRequest(**data)
@@ -229,7 +229,7 @@ def import_pending_requests(
             append_processed_registry(processed_registry_path, request, batch_id=batch_id, result="IMPORTED")
             processed_ids.add(request.request_id)
             summary["imported"].append({"path": str(target), "request_id": request.request_id})
-        except Exception as exc:
+        except (OSError, RequestValidationError, UnicodeError, json.JSONDecodeError) as exc:
             target = quarantine_folder / path.name
             shutil.move(str(path), str(target))
             summary["quarantined"].append({"path": str(target), "error": str(exc)})

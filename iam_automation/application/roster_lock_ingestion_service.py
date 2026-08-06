@@ -12,6 +12,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from ..infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, QuarantineRecordModel, orm_session
+from .stable_file_read import read_stable_bytes
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,7 @@ class RosterLockIngestionService:
         path = path.expanduser().resolve()
         if path.suffix.lower() != ".xlsx":
             raise ValueError("Roster Lock ingestion requires an XLSX workbook.")
-        content = path.read_bytes()
+        content = read_stable_bytes(path)
         checksum = hashlib.sha256(content).hexdigest()
         with orm_session(self.database_path) as session:
             existing = session.scalar(select(IngestionRecordModel).where(IngestionRecordModel.source_file == str(path), IngestionRecordModel.source_checksum == checksum))

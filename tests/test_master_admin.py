@@ -37,10 +37,13 @@ class MasterAdminTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
             client = self.client_for(database, CurrentUser("master", "pc", (ROLE_MASTER_ADMIN,)))
-            response = client.post("/admin/master/settings", data={"sla_create": "12", "sla_update": "8", "sla_deactivate": "4", "break_glass_enabled": "1"})
+            client.get("/admin/master/settings")
+            with client.session_transaction() as session:
+                csrf_token = session["iam_csrf_token"]
+            response = client.post("/admin/master/settings", data={"sla_create": "12", "sla_update": "8", "sla_deactivate": "4", "break_glass_enabled": "1", "csrf_token": csrf_token})
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(client.post("/admin/master/break-glass", data={"operation": "recover queue", "reason": ""}).status_code, 400)
-            self.assertEqual(client.post("/admin/master/break-glass", data={"operation": "recover queue", "reason": "Approved test recovery"}).status_code, 302)
+            self.assertEqual(client.post("/admin/master/break-glass", data={"operation": "recover queue", "reason": "", "csrf_token": csrf_token}).status_code, 400)
+            self.assertEqual(client.post("/admin/master/break-glass", data={"operation": "recover queue", "reason": "Approved test recovery", "csrf_token": csrf_token}).status_code, 302)
             self.assertEqual(client.get("/admin/master/audit").status_code, 200)
 
     def test_last_master_admin_cannot_lose_master_role(self):

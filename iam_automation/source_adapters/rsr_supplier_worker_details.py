@@ -22,6 +22,7 @@ from ..infrastructure.sqlite.orm import (
     WorkerSourceLineageModel,
     orm_session,
 )
+from ..application.stable_file_read import read_stable_bytes
 from ..application.worker_history_service import record_worker_version
 from ..application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 
@@ -66,7 +67,7 @@ class RsrSupplierWorkerDetailsAdapter:
 
     def ingest_file(self, path: Path, actor: str = "workspace-watcher") -> RsrIngestionResult:
         path = path.expanduser().resolve()
-        checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+        checksum = hashlib.sha256(read_stable_bytes(path)).hexdigest()
         with orm_session(self.database_path) as session:
             existing = session.scalar(select(IngestionRecordModel).where(IngestionRecordModel.source_file == str(path), IngestionRecordModel.source_checksum == checksum).limit(1))
             if existing:

@@ -17,11 +17,13 @@ from .notification_service import NotificationService
 from .roster_lock_ingestion_service import RosterLockIngestionService
 from .accessnow_ingestion_service import AccessNowIngestionService
 from .shared_request_service import SharedRequestService
+from .workspace_refresh_service import WORKSPACE_IO_LOCK, local_runtime_checksum_path, record_local_runtime_checksum
+from .stable_file_read import read_stable_bytes
 from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 
 
 LOGGER = logging.getLogger(__name__)
-_WRITE_LOCK = threading.RLock()
+EXPECTED_INGESTION_ERRORS = (OSError, PermissionError, ValueError, RuntimeError)
 
 
 @dataclass(frozen=True)
@@ -51,10 +53,18 @@ class FileWatchService:
         return watcher
 
     def scan_once(self) -> int:
-        observations = self._discover_files()
-        if not observations:
-            return 0
-        with _WRITE_LOCK:
+        # Refresh replaces the local SQLite file atomically. Hold the same
+        # process-wide lock across discovery and ingestion so a checksum/read,
+        # SQLite connection, and file replacement cannot overlap.
+        with WORKSPACE_IO_LOCK:
+            observations = self._discover_files()
+            if not observations:
+                return 0
+            # The watcher itself writes observations and notifications to the
+            # local runtime. Preserve a genuine user edit, but advance the
+            # sidecar after an automatic scan that started from a clean state.
+            sidecar = local_runtime_checksum_path(self.database_path)
+            watcher_started_clean = sidecar.is_file() and sidecar.read_text(encoding="utf-8").strip() == hashlib.sha256(self.database_path.read_bytes()).hexdigest()
             now = datetime.now(timezone.utc).isoformat()
             changed = self._changed_observations(observations)
             changed.sort(key=self._observation_priority)
@@ -89,9 +99,18 @@ class FileWatchService:
                         # employees were already updated.
                         review_requests.add(observation.path)
                     successful_ingestions.add(observation.path)
+                except EXPECTED_INGESTION_ERRORS as exc:
+                    # These are normal operational failures (partial sync,
+                    # invalid input, or an unavailable optional dependency).
+                    # Leave the observation uncommitted so the next scan retries it.
+                    LOGGER.warning("File processing will be retried for %s: %s", observation.path, exc)
+                    self._record_ingestion_failure(observation, exc, unexpected=False)
                 except Exception as exc:
-                    LOGGER.exception("File processing failed for %s", observation.path)
-                    self._record_ingestion_failure(observation, exc)
+                    # Keep the watcher alive at this process boundary, but make
+                    # programming/data-layer failures distinguishable from a
+                    # normal retry in the admin notification.
+                    LOGGER.exception("Unexpected file processing failure for %s", observation.path)
+                    self._record_ingestion_failure(observation, exc, unexpected=True)
 
             # The observation is committed only after ingestion succeeds. A transient
             # OneDrive or SQLite failure is therefore retried on the next poll.
@@ -119,6 +138,8 @@ class FileWatchService:
             # Roster Lock can reveal a rehire hold as soon as the source file
             # is staged. The deterministic notification is safe to repeat.
             self.notifications.notify_rehire_alerts(EmployeeService(self.database_path).rehire_alerts())
+            if watcher_started_clean:
+                record_local_runtime_checksum(self.database_path)
             return len(successful_ingestions)
 
     def _ensure_import_review_request(self, observation: FileObservation, result) -> None:
@@ -130,7 +151,7 @@ class FileWatchService:
         """
         batch_id = str(result.batch_id)
         source_path = Path(observation.path)
-        source_checksum = str(getattr(result, "source_checksum", "")) or hashlib.sha256(source_path.read_bytes()).hexdigest()
+        source_checksum = str(getattr(result, "source_checksum", "")) or hashlib.sha256(read_stable_bytes(source_path)).hexdigest()
         source_filename = str(getattr(result, "filename", source_path.name))
         shared = SharedRequestService(self.sharepoint_root)
         existing = shared.find_import_request(batch_id=batch_id, source_checksum=source_checksum)
@@ -192,7 +213,7 @@ class FileWatchService:
                 or previous.signature != observation.signature
             ]
 
-    def _record_ingestion_failure(self, observation: FileObservation, error: Exception) -> None:
+    def _record_ingestion_failure(self, observation: FileObservation, error: Exception, *, unexpected: bool) -> None:
         admins = self._active_admins()
         with orm_session(self.database_path) as session:
             for username in admins:
@@ -201,7 +222,7 @@ class FileWatchService:
                     recipient_username=username,
                     notification_type="INGESTION_ERROR",
                     severity="ERROR",
-                    title=f"{observation.file_kind.replace('_', ' ').title()} ingestion failed",
+                    title=f"{observation.file_kind.replace('_', ' ').title()} {'unexpected failure' if unexpected else 'ingestion failed'}",
                     message=f"The workbook could not be staged and will be retried: {type(error).__name__}: {error}",
                     entity_type="file",
                     entity_id=observation.path,
@@ -256,8 +277,11 @@ class FileWatchService:
             for pattern in patterns:
                 for path in root.glob(pattern):
                     if path.is_file() and not path.name.startswith("."):
-                        stat = path.stat()
-                        signature = hashlib.sha256(f"{stat.st_size}:{stat.st_mtime_ns}".encode()).hexdigest()
+                        # Metadata-only signatures miss in-place edits that
+                        # preserve size and timestamp resolution. The content
+                        # checksum is also the identity used by ingestion,
+                        # so the watcher and source pipeline now agree.
+                        signature = hashlib.sha256(read_stable_bytes(path)).hexdigest()
                         observations.append(FileObservation(str(path), kind, signature))
         return observations
 
@@ -271,6 +295,45 @@ class FileWatchService:
                 )
             ).all()
             return tuple(sorted({row.username for row in rows}))
+
+    def record_watcher_failure(self, error: Exception, consecutive_failures: int) -> None:
+        """Notify administrators when the watcher remains unhealthy."""
+        if consecutive_failures < 3:
+            return
+        fingerprint = hashlib.sha256(f"{type(error).__name__}:{error}".encode("utf-8")).hexdigest()
+        now = datetime.now(timezone.utc).isoformat()
+        admins = self._active_admins()
+        with orm_session(self.database_path) as session:
+            for username in admins:
+                notification_id = hashlib.sha256(f"watcher-cycle:{username}:{fingerprint}".encode("utf-8")).hexdigest()
+                notification = session.get(NotificationModel, notification_id)
+                if notification is None:
+                    session.add(NotificationModel(
+                        notification_id=notification_id,
+                        recipient_username=username,
+                        notification_type="WATCHER_CYCLE_FAILURE",
+                        severity="CRITICAL",
+                        title="File watcher is repeatedly failing",
+                        message=f"The watcher has failed {consecutive_failures} consecutive cycle(s) and will keep retrying: {type(error).__name__}: {error}",
+                        entity_type="file_watcher",
+                        entity_id="iam-file-watcher",
+                        target_route="/admin/imports",
+                        status="UNREAD",
+                        created_at_utc=now,
+                    ))
+                elif notification.status in {"RESOLVED", "EXPIRED"}:
+                    notification.status = "UNREAD"
+                    notification.read_at_utc = None
+
+    def record_watcher_recovery(self) -> None:
+        """Resolve open watcher failure notifications after a healthy cycle."""
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(select(NotificationModel).where(
+                NotificationModel.notification_type == "WATCHER_CYCLE_FAILURE",
+                NotificationModel.status.in_(("UNREAD", "READ")),
+            )).all()
+            for row in rows:
+                row.status = "RESOLVED"
 
     @staticmethod
     def _notification(username: str, observation: FileObservation):
@@ -318,11 +381,20 @@ class FileWatcher:
         self._thread.join(timeout=2)
 
     def _run(self) -> None:
+        consecutive_failures = 0
         while not self._stop.is_set():
             try:
                 self.service.scan_once()
-            except Exception:
+                if consecutive_failures:
+                    self.service.record_watcher_recovery()
+                consecutive_failures = 0
+            except Exception as exc:
                 # The watcher is a long-lived auxiliary process. A bad file, a
                 # transient OneDrive state, or a database contention must not kill it.
                 LOGGER.exception("File watcher cycle failed; retrying on next poll")
+                consecutive_failures += 1
+                try:
+                    self.service.record_watcher_failure(exc, consecutive_failures)
+                except Exception:
+                    LOGGER.exception("Could not record file watcher health notification")
             self._stop.wait(self.interval_seconds)

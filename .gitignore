@@ -9,6 +9,7 @@ dist/
 
 # SQLite sidecar files are temporary and must not be synchronized.
 runtime.sqlite
+runtime.sqlite.source-checksum
 *.sqlite-wal
 *.sqlite-shm
 *.sqlite.tmp-*

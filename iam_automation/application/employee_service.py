@@ -23,6 +23,9 @@ from ..infrastructure.sqlite.orm import (
 from .worker_history_service import record_worker_version, version_dict
 from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches
+from .business_calendar import business_days_between, configured_rehire_holidays
+from .source_date import parse_source_date
+from .status_catalog import is_inactive_source_status, normalize_accessnow_status
 
 
 @dataclass(frozen=True)
@@ -56,7 +59,7 @@ class EmployeeService:
         with orm_session(self.database_path) as session:
             records = session.scalars(select(IngestionRecordModel).where(
                 IngestionRecordModel.status.in_(pending_statuses),
-                IngestionRecordModel.observation_state != "SUPERSEDED",
+                IngestionRecordModel.observation_state.not_in(("SUPERSEDED", "RESOLVED")),
             )).all()
         if not selected_file:
             return records
@@ -147,43 +150,31 @@ class EmployeeService:
     @staticmethod
     def _alert_date(value: object) -> date | None:
         """Parse the date formats used by AccessNow and Roster Lock exports."""
-        text = str(value or "").strip()
-        if not text:
-            return None
-        for candidate in (text, text[:10]):
-            try:
-                return date.fromisoformat(candidate.replace("Z", "+00:00")[:10])
-            except ValueError:
-                continue
-        return None
+        return parse_source_date(value)
 
     @staticmethod
     def _business_days_between(start: date, end: date) -> int:
-        """Count weekdays after the status date through the proposed hire date."""
-        if end <= start:
-            return 0 if end == start else -1
-        current = start + timedelta(days=1)
-        total = 0
-        while current <= end:
-            if current.weekday() < 5:
-                total += 1
-            current += timedelta(days=1)
-        return total
+        """Count configured business days after status through proposed hire."""
+        return business_days_between(start, end, configured_rehire_holidays())
 
     def rehire_alerts(self, source_file: str = "") -> list[dict[str, object]]:
-        """Find pending Roster Lock rows inside the 30-business-day rehire hold."""
+        """Find pending Roster Lock rows inside the 30-business-day rehire hold.
+
+        Alerts are critical evidence for the approval workflow, not a reason
+        to discard or prevent submission of the management decision.
+        """
         pending_statuses = ("STAGED", "MATCHED", "CONFLICT", "UNMATCHED", "AMBIGUOUS", "LINKED", "CURRENT")
         selected_file = self._source_file_name(source_file) if source_file else ""
         with orm_session(self.database_path) as session:
             roster_rows = session.scalars(select(IngestionRecordModel).where(
                 IngestionRecordModel.source_system == "ROSTER_LOCK",
                 IngestionRecordModel.status.in_(pending_statuses),
-                IngestionRecordModel.observation_state != "SUPERSEDED",
+                IngestionRecordModel.observation_state.not_in(("SUPERSEDED", "RESOLVED")),
             ).order_by(IngestionRecordModel.created_at_utc.desc())).all()
             access_rows = session.scalars(select(IngestionRecordModel).where(
                 IngestionRecordModel.source_system == "ACCESSNOW",
                 IngestionRecordModel.status.in_(pending_statuses + ("APPLIED",)),
-                IngestionRecordModel.observation_state != "SUPERSEDED",
+                IngestionRecordModel.observation_state.not_in(("SUPERSEDED", "RESOLVED")),
             ).order_by(IngestionRecordModel.created_at_utc.desc())).all()
             workers = {worker.worker_id: worker.display_name for worker in session.scalars(select(WorkerModel)).all()}
 
@@ -193,11 +184,18 @@ class EmployeeService:
                     payload = json.loads(row.normalized_json or "{}")
                 except json.JSONDecodeError:
                     payload = {}
-                status = str(payload.get("accessnow_status") or "").strip().upper()
-                if status in {"TERM", "TERMINATION"}:
-                    status = "TERMINATED"
-                if status in {"TERMINATED", "DEACTIVATED", "DEACTIVATION"}:
+                status = normalize_accessnow_status(payload.get("accessnow_status"))
+                if is_inactive_source_status(status):
                     parsed_access.append((row, payload))
+
+            access_by_worker: dict[str, list[tuple[IngestionRecordModel, dict[str, object]]]] = {}
+            access_by_key: dict[str, list[tuple[IngestionRecordModel, dict[str, object]]]] = {}
+            for item in parsed_access:
+                access, payload = item
+                if access.matched_worker_id:
+                    access_by_worker.setdefault(access.matched_worker_id, []).append(item)
+                for key in self._candidate_keys(payload, access.source_record_key):
+                    access_by_key.setdefault(key, []).append(item)
 
             alerts: list[dict[str, object]] = []
             for roster in roster_rows:
@@ -208,15 +206,18 @@ class EmployeeService:
                 except json.JSONDecodeError:
                     roster_payload = {}
                 roster_keys = self._candidate_keys(roster_payload, roster.source_record_key)
-                matches = [item for item in parsed_access if (
-                    roster.matched_worker_id and item[0].matched_worker_id == roster.matched_worker_id
-                ) or roster_keys.intersection(self._candidate_keys(item[1], item[0].source_record_key))]
+                matches: list[tuple[IngestionRecordModel, dict[str, object]]] = []
+                if roster.matched_worker_id:
+                    matches.extend(access_by_worker.get(roster.matched_worker_id, ()))
+                for key in roster_keys:
+                    matches.extend(access_by_key.get(key, ()))
+                if len(matches) > 1:
+                    seen_access_ids: set[str] = set()
+                    matches = [item for item in matches if not (item[0].record_id in seen_access_ids or seen_access_ids.add(item[0].record_id))]
                 if not matches:
                     continue
                 access, access_payload = matches[0]
-                status = str(access_payload.get("accessnow_status") or "TERMINATED").strip().upper()
-                if status in {"TERM", "TERMINATION"}:
-                    status = "TERMINATED"
+                status = normalize_accessnow_status(access_payload.get("accessnow_status") or "TERMINATED")
                 termination_date = next((self._alert_date(access_payload.get(key)) for key in ("terminated_date", "deactivated_date", "termination_date", "end_date", "production_start_date") if self._alert_date(access_payload.get(key))), None)
                 roster_date = next((self._alert_date(roster_payload.get(key)) for key in ("onboarding_date", "worker_start_date", "start_date", "hire_date") if self._alert_date(roster_payload.get(key))), None)
                 termination_date = termination_date or self._alert_date(access.created_at_utc)
@@ -249,6 +250,27 @@ class EmployeeService:
 
     def rehire_alerts_for_worker(self, worker_id: str) -> list[dict[str, object]]:
         return [item for item in self.rehire_alerts() if str(item.get("worker_id", "")) == worker_id]
+
+    def resolve_rehire_alert(self, record_id: str, actor: str, reason: str) -> dict[str, str]:
+        """Archive a reviewed alert without changing source evidence or worker status."""
+        record_id = str(record_id).strip()
+        reason = str(reason).strip()
+        if not record_id:
+            raise ValueError("A Roster Lock record is required.")
+        if not reason:
+            raise ValueError("A reason is required to archive a rehire alert.")
+        now = datetime.now(timezone.utc).isoformat()
+        with orm_session(self.database_path) as session:
+            record = session.get(IngestionRecordModel, record_id)
+            if record is None or record.source_system != "ROSTER_LOCK":
+                raise ValueError("The rehire alert source record was not found.")
+            if record.observation_state == "RESOLVED":
+                return {"record_id": record_id, "status": "RESOLVED"}
+            record.observation_state = "RESOLVED"
+            record.last_seen_at_utc = now
+            session.commit()
+        mark_publication_pending(self.database_path, actor=actor, reason=f"Rehire alert archived: {reason}")
+        return {"record_id": record_id, "status": "RESOLVED"}
 
     @staticmethod
     def _source_label(source_system: str) -> str:
