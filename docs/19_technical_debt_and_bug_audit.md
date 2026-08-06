@@ -127,6 +127,8 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P2] DOC-001 — README referencia un script que no existe
 
+**Estado:** corregido en `bugfix/technical-debt`; se agregó `scripts/create_access_database.py`, con modo `--show-schema` para macOS y modo de inicialización real para Windows/Access ODBC.
+
 **Evidencia:** `README.md:23` y `README.md:92` invocan `scripts/create_access_database.py`, pero el archivo no existe en `scripts/`. El repositorio solo contiene `scripts/create_runtime_database.py` y utilidades relacionadas.
 
 **Impacto:** una ruta documentada de bootstrap falla inmediatamente y puede llevar a crear o modificar bases de forma manual.
