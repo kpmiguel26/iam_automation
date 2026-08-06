@@ -75,6 +75,8 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P1] NOTIFY-001 — Las alertas críticas de rehire no se reconcilian ni expiran
 
+**Estado:** corregido en `bugfix/technical-debt`; cada actualización reconcilia las notificaciones contra el conjunto actual de alerts, marca como `EXPIRED` las que ya no aplican y reactiva una alerta si reaparece.
+
 **Evidencia:** `iam_automation/application/notification_service.py:165-210` crea una notificación determinista, pero no asigna `expires_at_utc` ni cambia el estado cuando el alert deja de existir. `EmployeeService.rehire_alerts()` solo se recalcula durante ciertas visitas o ciclos del watcher.
 
 **Impacto:** una alerta puede seguir apareciendo en la banda superior después de que pasen los 30 días o después de que el Roster Lock sea superseded. El usuario puede ver un riesgo obsoleto y el contador de notificaciones no representa el estado actual.

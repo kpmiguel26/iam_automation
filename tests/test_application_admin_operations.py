@@ -17,6 +17,18 @@ from iam_automation.identity import CurrentUser, ROLE_REQUESTER
 
 
 class ApplicationAdminOperationsTests(unittest.TestCase):
+    def test_rehire_notifications_reconcile_when_alert_is_gone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            UserService(database).create_user("admin", "Admin", "secret", ["APPLICATION_ADMIN"])
+            service = NotificationService(database)
+            alert = {"alert_id": "roster:access", "worker_name": "Ada Lovelace", "status": "TERMINATED", "business_days_remaining": 10}
+            self.assertEqual(service.notify_rehire_alerts([alert]), 1)
+            self.assertEqual(service.notify_rehire_alerts([]), 0)
+            notifications = service.list_for_user("admin")
+            self.assertEqual(len(notifications), 1)
+            self.assertEqual(notifications[0].status, "EXPIRED")
+
     def test_notifications_can_expire_and_resolve(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")

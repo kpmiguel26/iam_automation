@@ -163,13 +163,22 @@ class NotificationService:
             return len(recipients)
 
     def notify_rehire_alerts(self, alerts: list[dict[str, object]]) -> int:
-        """Publish idempotent critical alerts for 30-business-day rehire holds."""
-        if not alerts:
-            return 0
+        """Reconcile critical rehire notifications with the current alert set."""
         role_names = ("REVIEWER", "APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR", "ADMINISTRATOR")
         now = datetime.now(timezone.utc).isoformat()
         created = 0
         with orm_session(self.database_path) as session:
+            active_alert_ids = {str(alert["alert_id"]) for alert in alerts}
+            stale = session.scalars(select(NotificationModel).where(
+                NotificationModel.notification_type == "REHIRE_30_DAY_ALERT",
+                NotificationModel.status.in_(("UNREAD", "READ")),
+            )).all()
+            for notification in stale:
+                if notification.entity_id not in active_alert_ids:
+                    notification.status = "EXPIRED"
+                    notification.read_at_utc = notification.read_at_utc or now
+            if not alerts:
+                return 0
             recipients = {row.username for row in session.scalars(
                 select(AppUserModel).join(UserRoleModel).where(
                     AppUserModel.active.is_(True),
@@ -179,11 +188,21 @@ class NotificationService:
             ).all()}
             for alert in alerts:
                 alert_id = str(alert["alert_id"])
+                remaining = int(alert.get("business_days_remaining", 0))
                 for username in recipients:
                     notification_id = hashlib.sha256(f"rehire-alert:{username.lower()}:{alert_id}".encode("utf-8")).hexdigest()
-                    if session.get(NotificationModel, notification_id) is not None:
+                    existing = session.get(NotificationModel, notification_id)
+                    if existing is not None and existing.status == "EXPIRED":
+                        existing.status = "UNREAD"
+                        existing.read_at_utc = None
+                        existing.expires_at_utc = None
+                        existing.message = (
+                            f"{alert.get('worker_name', 'Employee')} appears in Roster Lock while AccessNow shows "
+                            f"{str(alert.get('status', 'TERMINATED')).lower()}. The 30-business-day rehire hold "
+                            f"has not elapsed ({remaining} business day(s) remaining)."
+                        )
+                    elif existing is not None:
                         continue
-                    remaining = int(alert.get("business_days_remaining", 0))
                     session.add(NotificationModel(
                         notification_id=notification_id,
                         recipient_username=username,
