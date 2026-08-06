@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from iam_automation.runtime_sync import RuntimeDatabaseError, publish_runtime_snapshot, sync_runtime_snapshot
+from iam_automation.runtime_sync import RuntimeDatabaseError, publish_runtime_snapshot, repair_runtime_manifest, sync_runtime_snapshot
 
 
 def create_runtime(path: Path, value: str = "one") -> None:
@@ -63,6 +63,20 @@ class RuntimeSyncTests(unittest.TestCase):
             snapshot = publish_runtime_snapshot(local, published, actor="admin", expected_checksum=snapshot_checksum(published))
             self.assertTrue(snapshot.manifest_path.exists())
             self.assertTrue(any((published.parent / "backups").glob("*.sqlite")))
+
+    def test_manifest_repair_requires_integrity_and_restores_sync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            published = root / "database" / "snapshots" / "iam_runtime.sqlite"
+            published.parent.mkdir(parents=True)
+            create_runtime(published)
+            sync_runtime_snapshot(published, root / "first.sqlite")
+            manifest = published.with_name("iam_runtime.manifest.json")
+            manifest.write_text('{"sha256":"stale"}\n', encoding="utf-8")
+
+            repair_runtime_manifest(published)
+
+            self.assertEqual(sync_runtime_snapshot(published, root / "second.sqlite").checksum, snapshot_checksum(published))
 
 
 def snapshot_checksum(path: Path) -> str:

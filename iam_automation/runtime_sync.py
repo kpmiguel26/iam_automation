@@ -117,6 +117,30 @@ def _load_or_create_manifest(published_path: Path, manifest_path: Path) -> dict[
     return manifest
 
 
+def repair_runtime_manifest(published_path: Path, *, generated_by: str = "IAM Automation explicit manifest repair") -> Path:
+    """Rebuild a manifest only after the published SQLite passes integrity checks."""
+    published_path = published_path.expanduser().resolve()
+    manifest_path = runtime_manifest_path(published_path)
+    checkpoint_runtime_database(published_path)
+    validate_runtime_database(published_path)
+    previous: dict[str, Any] = {}
+    if manifest_path.is_file():
+        try:
+            previous = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            previous = {}
+    payload = {
+        "file": published_path.name,
+        "sha256": sha256_file(published_path),
+        "schema_version": str(previous.get("schema_version", "1.0.0")),
+        "published_at_utc": str(previous.get("published_at_utc", "")) or datetime.now(timezone.utc).isoformat(),
+        "generated_by": generated_by,
+        "repaired_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    _write_json_atomic(manifest_path, payload)
+    return manifest_path
+
+
 def sync_runtime_snapshot(published_path: Path, local_path: Path | None = None) -> RuntimeSnapshot:
     """Validate and atomically copy the published SQLite snapshot into the project root."""
     local = local_path or project_runtime_path()
