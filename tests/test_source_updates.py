@@ -9,13 +9,43 @@ from pathlib import Path
 from sqlalchemy import select
 
 from iam_automation.application.employee_service import EmployeeService
+from iam_automation.application.accessnow_ingestion_service import AccessNowIngestionService
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, WorkerIdentifierModel, WorkerModel, orm_session
+from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, WorkerEngagementModel, WorkerIdentifierModel, WorkerModel, orm_session
 from iam_automation.application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 from iam_automation.application.source_date import parse_source_date
 
 
 class SourceUpdatesTests(unittest.TestCase):
+    def test_accessnow_status_normalization_preserves_deactivated(self):
+        self.assertEqual(AccessNowIngestionService._normalize({"Employee Status": "DEACTIVATED"})["accessnow_status"], "DEACTIVATED")
+        self.assertEqual(AccessNowIngestionService._worker_status({"accessnow_status": "DEACTIVATION"}), "DEACTIVATED")
+
+    def test_accessnow_deactivated_status_updates_worker_and_engagement(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            record = self._record("access", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00")
+            record.matched_worker_id = "worker-1"
+            record.match_status = "MATCHED"
+            record.normalized_json = json.dumps({
+                "accessnow_employee_id": "A-100",
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+                "accessnow_status": "DEACTIVATED",
+            })
+            with orm_session(database) as session:
+                session.add(WorkerModel(worker_id="worker-1", first_name="Ada", last_name="Lovelace", display_name="Ada Lovelace", status="ACTIVE"))
+                session.add(record)
+
+            result = AccessNowIngestionService(database).apply_approved_records(["access"], "qa")
+
+            self.assertEqual(result["processed"], 1)
+            with orm_session(database) as session:
+                worker = session.get(WorkerModel, "worker-1")
+                engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == "worker-1"))
+                self.assertEqual(worker.status, "DEACTIVATED")
+                self.assertEqual(engagement.status, "DEACTIVATED")
+
     def test_source_date_parser_accepts_accessnow_timestamp(self):
         self.assertEqual(parse_source_date("9/9/2025 6:7:0 AM PDT"), date(2025, 9, 9))
         self.assertEqual(parse_source_date("2026-08-03T20:14:31+00:00"), date(2026, 8, 3))

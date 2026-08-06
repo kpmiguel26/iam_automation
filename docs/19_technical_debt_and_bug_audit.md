@@ -53,6 +53,8 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P1] REHIRE-002 — `DEACTIVATED` no se conserva en el estado canónico
 
+**Estado:** corregido en la rama `bugfix/technical-debt`; AccessNow normaliza aliases de desactivación, les da precedencia sobre `ACTIVE` y propaga el estado a employee y engagement. Regresión: `test_accessnow_deactivated_status_updates_worker_and_engagement`.
+
 **Evidencia:** `iam_automation/application/accessnow_ingestion_service.py:163-165` deja `DEACTIVATED` como texto, pero `:253-262` convierte todo lo que no sea `TERMINATED` en `ACTIVE`.
 
 **Impacto:** el alert puede detectar `DEACTIVATED` en el JSON, pero después de aplicar AccessNow el empleado y su engagement pueden quedar como `ACTIVE`. La fuente de verdad canónica contradice la evidencia de AccessNow y los filtros/reportes pueden tomar decisiones incorrectas.

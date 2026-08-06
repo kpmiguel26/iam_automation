@@ -160,8 +160,7 @@ class AccessNowIngestionService:
             "kp_create_date": "created_date",
         }
         normalized = {aliases.get(key, key): value.strip() for key, value in values.items() if value.strip()}
-        status = normalized.get("accessnow_status", "").upper()
-        normalized["accessnow_status"] = "TERMINATED" if status in {"TERM", "TERMINATED", "TERMINATION"} else "ACTIVE" if status == "ACTIVE" else status
+        normalized["accessnow_status"] = cls._normalize_status(normalized.get("accessnow_status", ""))
         return normalized
 
     @staticmethod
@@ -173,8 +172,23 @@ class AccessNowIngestionService:
         return str(value or "").strip()
 
     @staticmethod
-    def _status_rank(status: str) -> int:
-        return 2 if status.upper() == "TERMINATED" else 1
+    def _normalize_status(value: object) -> str:
+        status = str(value or "").strip().upper()
+        return {
+            "TERM": "TERMINATED",
+            "TERMINATED": "TERMINATED",
+            "TERMINATION": "TERMINATED",
+            "DEACT": "DEACTIVATED",
+            "DEACTIVATED": "DEACTIVATED",
+            "DEACTIVATION": "DEACTIVATED",
+            "DISABLED": "DEACTIVATED",
+            "INACTIVE": "DEACTIVATED",
+            "ACTIVE": "ACTIVE",
+        }.get(status, status)
+
+    @classmethod
+    def _status_rank(cls, status: str) -> int:
+        return {"ACTIVE": 1, "DEACTIVATED": 2, "TERMINATED": 3}.get(cls._normalize_status(status), 0)
 
     @staticmethod
     def _validation_error(payload: dict[str, str], source_key: str, seen: set[str]) -> str:
@@ -252,14 +266,15 @@ class AccessNowIngestionService:
 
     @staticmethod
     def _worker_status(payload: dict[str, str]) -> str:
-        return "TERMINATED" if payload.get("accessnow_status") == "TERMINATED" else "ACTIVE"
+        status = AccessNowIngestionService._normalize_status(payload.get("accessnow_status", ""))
+        return status if status in {"ACTIVE", "DEACTIVATED", "TERMINATED"} else "ACTIVE"
 
     @staticmethod
     def _apply_engagement(engagement: WorkerEngagementModel, payload: dict[str, str], now: str) -> None:
         for source, target in {"vendor_name": "vendor_name", "job_title": "job_title", "supervisor_name": "supervisor_name", "sponsor_name": "primary_contact_name", "onboarding_date": "onboarding_date", "production_start_date": "production_start_date"}.items():
             if payload.get(source):
                 setattr(engagement, target, payload[source])
-        engagement.status = "TERMINATED" if payload.get("accessnow_status") == "TERMINATED" else "ACTIVE"
+        engagement.status = AccessNowIngestionService._worker_status(payload)
         engagement.updated_at_utc = now
 
     @staticmethod
