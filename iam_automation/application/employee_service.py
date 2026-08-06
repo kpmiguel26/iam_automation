@@ -23,6 +23,7 @@ from ..infrastructure.sqlite.orm import (
 from .worker_history_service import record_worker_version, version_dict
 from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches
+from .source_date import parse_source_date
 
 
 @dataclass(frozen=True)
@@ -147,15 +148,7 @@ class EmployeeService:
     @staticmethod
     def _alert_date(value: object) -> date | None:
         """Parse the date formats used by AccessNow and Roster Lock exports."""
-        text = str(value or "").strip()
-        if not text:
-            return None
-        for candidate in (text, text[:10]):
-            try:
-                return date.fromisoformat(candidate.replace("Z", "+00:00")[:10])
-            except ValueError:
-                continue
-        return None
+        return parse_source_date(value)
 
     @staticmethod
     def _business_days_between(start: date, end: date) -> int:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import select
@@ -11,9 +12,15 @@ from iam_automation.application.employee_service import EmployeeService
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, WorkerIdentifierModel, WorkerModel, orm_session
 from iam_automation.application.source_reconciliation import ensure_source_identifiers, find_worker_matches
+from iam_automation.application.source_date import parse_source_date
 
 
 class SourceUpdatesTests(unittest.TestCase):
+    def test_source_date_parser_accepts_accessnow_timestamp(self):
+        self.assertEqual(parse_source_date("9/9/2025 6:7:0 AM PDT"), date(2025, 9, 9))
+        self.assertEqual(parse_source_date("2026-08-03T20:14:31+00:00"), date(2026, 8, 3))
+        self.assertIsNone(parse_source_date("not a date"))
+
     def _record(self, record_id: str, source: str, filename: str, key: str, created: str) -> IngestionRecordModel:
         payload = {"first_name": "Ada", "last_name": "Lovelace", "email": "ada@example.com", "vendor_employee_id": key}
         return IngestionRecordModel(
@@ -172,7 +179,7 @@ class SourceUpdatesTests(unittest.TestCase):
             access = self._record("access", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00")
             access.matched_worker_id = "worker-1"
             access.status = "APPLIED"
-            access.normalized_json = json.dumps({"accessnow_employee_id": "A-100", "first_name": "Ada", "last_name": "Lovelace", "accessnow_status": "TERMINATED", "terminated_date": "2026-08-03"})
+            access.normalized_json = json.dumps({"accessnow_employee_id": "A-100", "first_name": "Ada", "last_name": "Lovelace", "accessnow_status": "TERMINATED", "terminated_date": "8/3/2026 6:7:0 AM PDT"})
             roster = self._record("roster", "ROSTER_LOCK", "roster.xlsx", "A-100", "2026-08-10T00:00:00+00:00")
             roster.matched_worker_id = "worker-1"
             roster.normalized_json = json.dumps({"vendor_employee_id": "A-100", "first_name": "Ada", "last_name": "Lovelace", "onboarding_date": "2026-08-10"})
