@@ -26,6 +26,7 @@ from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches
 from .worker_history_service import record_worker_version
 from .stable_file_read import read_stable_bytes
+from .status_catalog import normalize_accessnow_status, status_rank
 
 
 SOURCE_SYSTEM = "ACCESSNOW"
@@ -83,8 +84,8 @@ class AccessNowIngestionService:
                     # must not discard email, dates, manager, or sponsor data
                     # supplied by the active report.
                     current_payload = current[2]
-                    current_rank = self._status_rank(current_payload.get("accessnow_status", ""))
-                    incoming_rank = self._status_rank(payload.get("accessnow_status", ""))
+                    current_rank = status_rank(current_payload.get("accessnow_status", ""))
+                    incoming_rank = status_rank(payload.get("accessnow_status", ""))
                     for field_name, incoming_value in payload.items():
                         if not current_payload.get(field_name) or (incoming_rank > current_rank and field_name in {"accessnow_status", "terminated_date"}):
                             current_payload[field_name] = incoming_value
@@ -190,22 +191,11 @@ class AccessNowIngestionService:
 
     @staticmethod
     def _normalize_status(value: object) -> str:
-        status = str(value or "").strip().upper()
-        return {
-            "TERM": "TERMINATED",
-            "TERMINATED": "TERMINATED",
-            "TERMINATION": "TERMINATED",
-            "DEACT": "DEACTIVATED",
-            "DEACTIVATED": "DEACTIVATED",
-            "DEACTIVATION": "DEACTIVATED",
-            "DISABLED": "DEACTIVATED",
-            "INACTIVE": "DEACTIVATED",
-            "ACTIVE": "ACTIVE",
-        }.get(status, status)
+        return normalize_accessnow_status(value)
 
     @classmethod
     def _status_rank(cls, status: str) -> int:
-        return {"ACTIVE": 1, "DEACTIVATED": 2, "TERMINATED": 3}.get(cls._normalize_status(status), 0)
+        return status_rank(status)
 
     @staticmethod
     def _validation_error(payload: dict[str, str], source_key: str, seen: set[str]) -> str:

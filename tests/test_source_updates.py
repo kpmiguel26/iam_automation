@@ -16,9 +16,14 @@ from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, WorkerEngagementModel, WorkerIdentifierModel, WorkerModel, orm_session
 from iam_automation.application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 from iam_automation.application.source_date import parse_source_date
+from iam_automation.application.status_catalog import normalize_accessnow_status
 
 
 class SourceUpdatesTests(unittest.TestCase):
+    def test_status_catalog_normalizes_accessnow_aliases(self):
+        self.assertEqual(normalize_accessnow_status("termination"), "TERMINATED")
+        self.assertEqual(normalize_accessnow_status("disabled"), "DEACTIVATED")
+
     def test_accessnow_status_normalization_preserves_deactivated(self):
         self.assertEqual(AccessNowIngestionService._normalize({"Employee Status": "DEACTIVATED"})["accessnow_status"], "DEACTIVATED")
         self.assertEqual(AccessNowIngestionService._worker_status({"accessnow_status": "DEACTIVATION"}), "DEACTIVATED")

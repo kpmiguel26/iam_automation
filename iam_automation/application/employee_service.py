@@ -25,6 +25,7 @@ from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches
 from .business_calendar import business_days_between, configured_rehire_holidays
 from .source_date import parse_source_date
+from .status_catalog import is_inactive_source_status, normalize_accessnow_status
 
 
 @dataclass(frozen=True)
@@ -183,10 +184,8 @@ class EmployeeService:
                     payload = json.loads(row.normalized_json or "{}")
                 except json.JSONDecodeError:
                     payload = {}
-                status = str(payload.get("accessnow_status") or "").strip().upper()
-                if status in {"TERM", "TERMINATION"}:
-                    status = "TERMINATED"
-                if status in {"TERMINATED", "DEACTIVATED", "DEACTIVATION"}:
+                status = normalize_accessnow_status(payload.get("accessnow_status"))
+                if is_inactive_source_status(status):
                     parsed_access.append((row, payload))
 
             alerts: list[dict[str, object]] = []
@@ -204,9 +203,7 @@ class EmployeeService:
                 if not matches:
                     continue
                 access, access_payload = matches[0]
-                status = str(access_payload.get("accessnow_status") or "TERMINATED").strip().upper()
-                if status in {"TERM", "TERMINATION"}:
-                    status = "TERMINATED"
+                status = normalize_accessnow_status(access_payload.get("accessnow_status") or "TERMINATED")
                 termination_date = next((self._alert_date(access_payload.get(key)) for key in ("terminated_date", "deactivated_date", "termination_date", "end_date", "production_start_date") if self._alert_date(access_payload.get(key))), None)
                 roster_date = next((self._alert_date(roster_payload.get(key)) for key in ("onboarding_date", "worker_start_date", "start_date", "hire_date") if self._alert_date(roster_payload.get(key))), None)
                 termination_date = termination_date or self._alert_date(access.created_at_utc)
