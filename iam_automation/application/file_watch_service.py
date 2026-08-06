@@ -296,6 +296,45 @@ class FileWatchService:
             ).all()
             return tuple(sorted({row.username for row in rows}))
 
+    def record_watcher_failure(self, error: Exception, consecutive_failures: int) -> None:
+        """Notify administrators when the watcher remains unhealthy."""
+        if consecutive_failures < 3:
+            return
+        fingerprint = hashlib.sha256(f"{type(error).__name__}:{error}".encode("utf-8")).hexdigest()
+        now = datetime.now(timezone.utc).isoformat()
+        admins = self._active_admins()
+        with orm_session(self.database_path) as session:
+            for username in admins:
+                notification_id = hashlib.sha256(f"watcher-cycle:{username}:{fingerprint}".encode("utf-8")).hexdigest()
+                notification = session.get(NotificationModel, notification_id)
+                if notification is None:
+                    session.add(NotificationModel(
+                        notification_id=notification_id,
+                        recipient_username=username,
+                        notification_type="WATCHER_CYCLE_FAILURE",
+                        severity="CRITICAL",
+                        title="File watcher is repeatedly failing",
+                        message=f"The watcher has failed {consecutive_failures} consecutive cycle(s) and will keep retrying: {type(error).__name__}: {error}",
+                        entity_type="file_watcher",
+                        entity_id="iam-file-watcher",
+                        target_route="/admin/imports",
+                        status="UNREAD",
+                        created_at_utc=now,
+                    ))
+                elif notification.status in {"RESOLVED", "EXPIRED"}:
+                    notification.status = "UNREAD"
+                    notification.read_at_utc = None
+
+    def record_watcher_recovery(self) -> None:
+        """Resolve open watcher failure notifications after a healthy cycle."""
+        with orm_session(self.database_path) as session:
+            rows = session.scalars(select(NotificationModel).where(
+                NotificationModel.notification_type == "WATCHER_CYCLE_FAILURE",
+                NotificationModel.status.in_(("UNREAD", "READ")),
+            )).all()
+            for row in rows:
+                row.status = "RESOLVED"
+
     @staticmethod
     def _notification(username: str, observation: FileObservation):
         from ..infrastructure.sqlite.orm import NotificationModel
@@ -342,11 +381,20 @@ class FileWatcher:
         self._thread.join(timeout=2)
 
     def _run(self) -> None:
+        consecutive_failures = 0
         while not self._stop.is_set():
             try:
                 self.service.scan_once()
-            except Exception:
+                if consecutive_failures:
+                    self.service.record_watcher_recovery()
+                consecutive_failures = 0
+            except Exception as exc:
                 # The watcher is a long-lived auxiliary process. A bad file, a
                 # transient OneDrive state, or a database contention must not kill it.
                 LOGGER.exception("File watcher cycle failed; retrying on next poll")
+                consecutive_failures += 1
+                try:
+                    self.service.record_watcher_failure(exc, consecutive_failures)
+                except Exception:
+                    LOGGER.exception("Could not record file watcher health notification")
             self._stop.wait(self.interval_seconds)

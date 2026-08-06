@@ -128,6 +128,18 @@ class ApplicationAdminOperationsTests(unittest.TestCase):
             self.assertEqual(len(notifications), 1)
             self.assertEqual(notifications[0].status, "READ")
 
+    def test_file_watcher_health_alert_resolves_after_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            UserService(database).create_user("admin", "Admin", "secret", ["APPLICATION_ADMIN"])
+            watcher = FileWatchService(database, Path(tmp))
+            watcher.record_watcher_failure(OSError("provider unavailable"), 3)
+            notification = watcher.notifications.list_for_user("admin")[0]
+            self.assertEqual(notification.notification_type, "WATCHER_CYCLE_FAILURE")
+            self.assertEqual(notification.severity, "CRITICAL")
+            watcher.record_watcher_recovery()
+            self.assertEqual(watcher.notifications.list_for_user("admin")[0].status, "RESOLVED")
+
     def test_file_watcher_detects_published_runtime_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)

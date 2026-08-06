@@ -139,7 +139,7 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P2] WATCH-001 — Excepciones del ciclo del watcher quedan fuera del flujo de recuperación
 
-**Estado:** corregido parcialmente en `bugfix/technical-debt`; los errores operativos esperados se separan de fallos inesperados y las notificaciones ahora los distinguen. El límite del hilo conserva una captura amplia intencional para que el watcher no muera por un fallo aislado.
+**Estado:** corregido en `bugfix/technical-debt`; además de separar errores operativos e inesperados, el límite del hilo cuenta fallos consecutivos, crea una alerta crítica después de tres ciclos y la resuelve automáticamente al recuperar un ciclo sano. La captura amplia permanece solo como barrera final del hilo.
 
 **Evidencia:** `iam_automation/application/file_watch_service.py:322-326` captura cualquier `Exception`, registra log y continúa.
 
