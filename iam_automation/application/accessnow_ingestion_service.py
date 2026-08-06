@@ -25,6 +25,7 @@ from ..infrastructure.sqlite.orm import (
 from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches
 from .worker_history_service import record_worker_version
+from .stable_file_read import read_stable_bytes
 
 
 SOURCE_SYSTEM = "ACCESSNOW"
@@ -55,7 +56,7 @@ class AccessNowIngestionService:
         paths = sorted(path for path in folder.iterdir() if path.is_file() and path.suffix.lower() in {".csv", ".xlsx"} and not path.name.startswith("."))
         if not paths:
             raise ValueError("The AccessNow folder has no CSV or XLSX files.")
-        contents = {path: path.read_bytes() for path in paths}
+        contents = {path: read_stable_bytes(path) for path in paths}
         source_checksum = hashlib.sha256(self.MERGE_SCHEMA_VERSION.encode() + b"\0" + b"".join(path.name.encode() + b"\0" + contents[path] for path in paths)).hexdigest()
         source_file = "; ".join(path.name for path in paths)
         with orm_session(self.database_path) as session:

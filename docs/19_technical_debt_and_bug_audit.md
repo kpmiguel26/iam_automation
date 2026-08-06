@@ -105,6 +105,8 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 **Nota adicional:** las escrituras automáticas del watcher actualizan el sidecar local únicamente si el runtime estaba limpio al comenzar el ciclo. Así no se vuelve a mostrar el mismo refresh como pendiente, pero tampoco se oculta una edición local real.
 
+**Robustez adicional:** las lecturas de CSV/XLSX y checksums del watcher ahora requieren que tamaño y `mtime` permanezcan estables durante la lectura; si el archivo sigue sincronizándose, se reintenta y luego se deja para el siguiente ciclo.
+
 ### [P1] SEC-001 — No hay protección CSRF en formularios mutantes
 
 **Estado:** corregido en `bugfix/technical-debt`; la aplicación crea un token por sesión, lo inyecta en formularios HTML y valida todos los `POST` de formulario. Los endpoints JSON requieren `X-CSRF-Token` si se consumen desde un navegador; el shutdown interno conserva su token de control independiente.

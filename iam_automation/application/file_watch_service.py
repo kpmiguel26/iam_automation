@@ -18,6 +18,7 @@ from .roster_lock_ingestion_service import RosterLockIngestionService
 from .accessnow_ingestion_service import AccessNowIngestionService
 from .shared_request_service import SharedRequestService
 from .workspace_refresh_service import WORKSPACE_IO_LOCK, local_runtime_checksum_path, record_local_runtime_checksum
+from .stable_file_read import read_stable_bytes
 from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 
 
@@ -150,7 +151,7 @@ class FileWatchService:
         """
         batch_id = str(result.batch_id)
         source_path = Path(observation.path)
-        source_checksum = str(getattr(result, "source_checksum", "")) or hashlib.sha256(source_path.read_bytes()).hexdigest()
+        source_checksum = str(getattr(result, "source_checksum", "")) or hashlib.sha256(read_stable_bytes(source_path)).hexdigest()
         source_filename = str(getattr(result, "filename", source_path.name))
         shared = SharedRequestService(self.sharepoint_root)
         existing = shared.find_import_request(batch_id=batch_id, source_checksum=source_checksum)
@@ -280,7 +281,7 @@ class FileWatchService:
                         # preserve size and timestamp resolution. The content
                         # checksum is also the identity used by ingestion,
                         # so the watcher and source pipeline now agree.
-                        signature = hashlib.sha256(path.read_bytes()).hexdigest()
+                        signature = hashlib.sha256(read_stable_bytes(path)).hexdigest()
                         observations.append(FileObservation(str(path), kind, signature))
         return observations
 
