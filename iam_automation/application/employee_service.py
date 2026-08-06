@@ -164,7 +164,11 @@ class EmployeeService:
         return total
 
     def rehire_alerts(self, source_file: str = "") -> list[dict[str, object]]:
-        """Find pending Roster Lock rows inside the 30-business-day rehire hold."""
+        """Find pending Roster Lock rows inside the 30-business-day rehire hold.
+
+        Alerts are critical evidence for the approval workflow, not a reason
+        to discard or prevent submission of the management decision.
+        """
         pending_statuses = ("STAGED", "MATCHED", "CONFLICT", "UNMATCHED", "AMBIGUOUS", "LINKED", "CURRENT")
         selected_file = self._source_file_name(source_file) if source_file else ""
         with orm_session(self.database_path) as session:

@@ -59,6 +59,8 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 **Impacto:** el alert puede detectar `DEACTIVATED` en el JSON, pero después de aplicar AccessNow el empleado y su engagement pueden quedar como `ACTIVE`. La fuente de verdad canónica contradice la evidencia de AccessNow y los filtros/reportes pueden tomar decisiones incorrectas.
 
+**Flujo corregido:** el alert de 30 días es una validación crítica no bloqueante para la primera fase. Management puede enviar el cambio a la cola de aprobación; el hold y la evidencia roja permanecen visibles. La escritura canónica solo ocurre si la segunda fase aprueba la solicitud; si se deniega, no se reactiva ni se crea el engagement.
+
 **Corrección recomendada:** definir un catálogo de estados (`ACTIVE`, `TERMINATED`, `DEACTIVATED`, etc.) y una función única de normalización usada por ingestión, alertas, reportes y UI. Añadir una prueba de aplicación de un registro `DEACTIVATED`.
 
 ### [P1] REHIRE-003 — El hold usa lunes-viernes, no días hábiles corporativos

@@ -200,8 +200,6 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         preview = service.source_update_preview(worker_id)
         if preview is None:
             return render_template("errors/404.html"), 404
-        if service.rehire_alerts_for_worker(worker_id):
-            return redirect(url_for("employees.source_updates", worker_id=worker_id, error="Critical rehire alert: this employee is still within the 30-business-day rehire hold and cannot be submitted for approval.", notice_type="danger"))
         record_ids = sorted({str(update["record_id"]) for update in preview["updates"]})
         if not record_ids:
             return redirect(url_for("employees.source_updates", worker_id=worker_id, error="No pending source changes are available.", notice_type="warning"))
