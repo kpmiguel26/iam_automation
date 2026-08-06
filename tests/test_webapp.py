@@ -60,7 +60,10 @@ class WebAppTests(unittest.TestCase):
         app = webapp.create_app(self.make_result(True))
         server = webapp.LocalWebAppServer(app)
         try:
-            url = server.start()
+            try:
+                url = server.start()
+            except PermissionError as exc:
+                self.skipTest(f"loopback sockets are unavailable in this environment: {exc}")
             self.assertTrue(url.startswith("http://127.0.0.1:"))
             self.assertGreater(server.port, 0)
         finally:

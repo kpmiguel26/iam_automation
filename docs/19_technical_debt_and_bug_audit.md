@@ -34,8 +34,7 @@ Resultado actual:
 
 Fallos observados:
 
-- `tests/test_application_admin_operations.py::test_file_watcher_detects_published_runtime_snapshot`: el test espera `Workspace database updated`, pero el código emite `New database snapshot published`.
-- `tests/test_webapp.py::test_local_server_uses_loopback_and_ephemeral_port`: el entorno aislado impide abrir el socket (`PermissionError: [Errno 1] Operation not permitted`). Debe ejecutarse en CI o entorno con loopback habilitado.
+- `tests/test_webapp.py::test_local_server_uses_loopback_and_ephemeral_port`: algunos entornos aislados impiden abrir el socket (`PermissionError: [Errno 1] Operation not permitted`); la prueba se omite únicamente en ese caso y debe ejecutarse en CI o entorno con loopback habilitado.
 
 Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agregada en `tests/test_source_updates.py`.
 
@@ -159,11 +158,13 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P2] TEST-001 — El suite no está verde y una expectativa quedó obsoleta
 
-**Evidencia:** `tests/test_application_admin_operations.py:130` espera un título antiguo; `iam_automation/application/file_watch_service.py:283` emite el nuevo título. Además, el test de Waitress requiere permisos de socket que no están disponibles en este entorno.
+**Estado:** corregido en `bugfix/technical-debt`; la expectativa usa el copy vigente y la prueba de Waitress se omite únicamente cuando el entorno niega loopback.
+
+**Evidencia:** `.venv/bin/python -m pytest -q` queda verde en entornos sin permisos de socket, reportando el test como `skipped` en lugar de ocultar un fallo funcional.
 
 **Impacto:** CI puede bloquear cambios por una expectativa que ya no representa el producto y por una prueba ambiental que no declara su requisito. Esto reduce confianza en el resultado global.
 
-**Corrección recomendada:** actualizar la expectativa si el nuevo copy es intencional; marcar el test de socket como prueba de integración condicionada o ejecutarlo en un job con loopback permitido. No ocultar ambos fallos bajo un “suite verde” falso.
+**Operación:** ejecutar la prueba en CI con loopback habilitado para validar el servidor real; en el sandbox local se conserva como prueba omitida por limitación ambiental.
 
 ### [P3] CODE-001 — Uso extendido de `except Exception` reduce la observabilidad
 
