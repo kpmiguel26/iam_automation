@@ -13,6 +13,11 @@ from .request_service import RequestService
 
 
 PUBLISHED_SOURCE_CHECKSUM_KEY = "published_source_checksum"
+LOCAL_RUNTIME_CHECKSUM_SUFFIX = ".source-checksum"
+
+
+def local_runtime_checksum_path(database_path: Path) -> Path:
+    return database_path.with_name(database_path.name + LOCAL_RUNTIME_CHECKSUM_SUFFIX)
 
 
 def record_published_source_checksum(database_path: Path, checksum: str) -> None:
@@ -32,6 +37,13 @@ def record_published_source_checksum(database_path: Path, checksum: str) -> None
         connection.commit()
     finally:
         connection.close()
+    # The SQLite metadata row records the published baseline, while this
+    # sidecar records the exact local bytes after that bookkeeping update.
+    # Comparing the sidecar to the current file detects later local edits.
+    sidecar = local_runtime_checksum_path(database_path)
+    temporary = sidecar.with_suffix(sidecar.suffix + ".tmp")
+    temporary.write_text(sha256_file(database_path) + "\n", encoding="utf-8")
+    temporary.replace(sidecar)
 
 
 def read_published_source_checksum(database_path: Path) -> str | None:
@@ -50,10 +62,11 @@ def read_published_source_checksum(database_path: Path) -> str | None:
 class WorkspaceVersion:
     published_checksum: str | None
     local_checksum: str | None
+    local_dirty: bool = False
 
     @property
     def update_available(self) -> bool:
-        return bool(self.published_checksum and self.local_checksum and self.published_checksum != self.local_checksum)
+        return bool(self.local_dirty or (self.published_checksum and self.local_checksum and self.published_checksum != self.local_checksum))
 
 
 class WorkspaceRefreshService:
@@ -65,12 +78,18 @@ class WorkspaceRefreshService:
     def version(self) -> WorkspaceVersion:
         published = sha256_file(self.published_runtime_path) if self.published_runtime_path.is_file() else None
         local = None
+        local_dirty = False
         if self.local_runtime_path.is_file():
             local = read_published_source_checksum(self.local_runtime_path)
             # Older runtimes have no marker until the next successful refresh.
             if local is None:
                 local = sha256_file(self.local_runtime_path)
-        return WorkspaceVersion(published, local)
+            else:
+                sidecar = local_runtime_checksum_path(self.local_runtime_path)
+                if sidecar.is_file():
+                    recorded = sidecar.read_text(encoding="utf-8").strip()
+                    local_dirty = recorded != sha256_file(self.local_runtime_path)
+        return WorkspaceVersion(published, local, local_dirty)
 
     def refresh(self, username: str) -> tuple[WorkspaceVersion, int]:
         pending_folder = self.sharepoint_root / "requests" / "pending"

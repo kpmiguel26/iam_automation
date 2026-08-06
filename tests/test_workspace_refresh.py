@@ -7,13 +7,34 @@ import json
 from pathlib import Path
 
 from iam_automation.application.request_service import RequestService
-from iam_automation.application.workspace_refresh_service import WorkspaceRefreshService
+from iam_automation.application.workspace_refresh_service import WorkspaceRefreshService, record_published_source_checksum
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.identity import CurrentUser, ROLE_REQUESTER
 from iam_automation.runtime_sync import runtime_manifest_path, sha256_file, sync_runtime_snapshot
 
 
 class WorkspaceRefreshTests(unittest.TestCase):
+    def test_version_detects_local_runtime_changes_after_refresh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            published = root / "database" / "snapshots" / "iam_runtime.sqlite"
+            published.parent.mkdir(parents=True)
+            initialize_runtime_database(published)
+            local = root / "runtime.sqlite"
+            snapshot = sync_runtime_snapshot(published, local)
+            record_published_source_checksum(local, snapshot.checksum)
+            service = WorkspaceRefreshService(local, published, root)
+            self.assertFalse(service.version().update_available)
+            connection = sqlite3.connect(local)
+            try:
+                connection.execute("INSERT INTO app_metadata (metadata_key, metadata_value, updated_at_utc) VALUES ('local_edit', 'yes', datetime('now'))")
+                connection.commit()
+            finally:
+                connection.close()
+            version = service.version()
+            self.assertTrue(version.local_dirty)
+            self.assertTrue(version.update_available)
+
     def test_refresh_preserves_local_pending_request_as_shared_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -101,6 +101,8 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P2] SYNC-001 — `WorkspaceVersion` no detecta modificaciones locales del SQLite
 
+**Estado:** corregido en `bugfix/technical-debt`; el runtime local conserva un checksum base en un sidecar fuera de Git y ahora reporta modificaciones locales posteriores a la sincronización mediante `local_dirty`.
+
 **Evidencia:** `iam_automation/application/workspace_refresh_service.py:65-76` usa el marcador `app_metadata.published_source_checksum` como `local_checksum`. Después de una edición local, el marcador puede seguir igual aunque el archivo SQLite haya cambiado.
 
 **Impacto:** el dashboard puede indicar que no hay diferencia entre la copia publicada y la local cuando sí existen cambios locales. La publicación pendiente se maneja por otro marker, pero los dos estados pueden divergir y confundir al operador.
