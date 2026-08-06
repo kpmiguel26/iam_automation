@@ -95,6 +95,14 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 **Corrección recomendada:** calcular SHA-256 del contenido para archivos pequeños/medianos, o usar checksum de contenido generado durante la ingestión como firma de observación. Mantener un mecanismo de debounce para no leer archivos todavía sincronizándose.
 
+### [P1] SYNC-003 — Refresh podía reemplazar SQLite mientras el watcher lo leía
+
+**Estado:** corregido en `bugfix/technical-debt`; `WorkspaceRefreshService`, `FileWatchService` y la lectura de versión comparten `WORKSPACE_IO_LOCK` durante operaciones de filesystem y SQLite.
+
+**Impacto:** un refresh concurrente con el watcher podía producir lecturas inconsistentes del runtime local o un crash nativo del proceso en macOS (`SIGBUS`/`FS pagein error`).
+
+**Regresión:** la suite completa debe ejecutarse en un entorno que permita abrir sockets; el flujo de aplicación pasa las pruebas de refresh y watcher.
+
 ### [P1] SEC-001 — No hay protección CSRF en formularios mutantes
 
 **Estado:** corregido en `bugfix/technical-debt`; la aplicación crea un token por sesión, lo inyecta en formularios HTML y valida todos los `POST` de formulario. Los endpoints JSON requieren `X-CSRF-Token` si se consumen desde un navegador; el shutdown interno conserva su token de control independiente.

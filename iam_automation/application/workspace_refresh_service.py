@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
+import threading
 
 from sqlalchemy import func, select
 
@@ -14,6 +15,7 @@ from .request_service import RequestService
 
 PUBLISHED_SOURCE_CHECKSUM_KEY = "published_source_checksum"
 LOCAL_RUNTIME_CHECKSUM_SUFFIX = ".source-checksum"
+WORKSPACE_IO_LOCK = threading.RLock()
 
 
 def local_runtime_checksum_path(database_path: Path) -> Path:
@@ -76,29 +78,31 @@ class WorkspaceRefreshService:
         self.sharepoint_root = sharepoint_root
 
     def version(self) -> WorkspaceVersion:
-        published = sha256_file(self.published_runtime_path) if self.published_runtime_path.is_file() else None
-        local = None
-        local_dirty = False
-        if self.local_runtime_path.is_file():
-            local = read_published_source_checksum(self.local_runtime_path)
-            # Older runtimes have no marker until the next successful refresh.
-            if local is None:
-                local = sha256_file(self.local_runtime_path)
-            else:
-                sidecar = local_runtime_checksum_path(self.local_runtime_path)
-                if sidecar.is_file():
-                    recorded = sidecar.read_text(encoding="utf-8").strip()
-                    local_dirty = recorded != sha256_file(self.local_runtime_path)
-        return WorkspaceVersion(published, local, local_dirty)
+        with WORKSPACE_IO_LOCK:
+            published = sha256_file(self.published_runtime_path) if self.published_runtime_path.is_file() else None
+            local = None
+            local_dirty = False
+            if self.local_runtime_path.is_file():
+                local = read_published_source_checksum(self.local_runtime_path)
+                # Older runtimes have no marker until the next successful refresh.
+                if local is None:
+                    local = sha256_file(self.local_runtime_path)
+                else:
+                    sidecar = local_runtime_checksum_path(self.local_runtime_path)
+                    if sidecar.is_file():
+                        recorded = sidecar.read_text(encoding="utf-8").strip()
+                        local_dirty = recorded != sha256_file(self.local_runtime_path)
+            return WorkspaceVersion(published, local, local_dirty)
 
     def refresh(self, username: str) -> tuple[WorkspaceVersion, int]:
-        pending_folder = self.sharepoint_root / "requests" / "pending"
-        exported = RequestService(self.local_runtime_path).export_pending_for_user(username, pending_folder)
-        with orm_session(self.local_runtime_path) as session:
-            pending_publications = int(session.scalar(select(func.count(PublicationQueueModel.publication_id)).where(PublicationQueueModel.status == "PENDING_PUBLICATION")) or 0)
-        if pending_publications:
-            raise RuntimeDatabaseError("Refresh is blocked while local publications are pending. Publish or resolve them first.")
-        snapshot = sync_runtime_snapshot(self.published_runtime_path, self.local_runtime_path)
-        initialize_runtime_database(snapshot.local_path)
-        record_published_source_checksum(snapshot.local_path, snapshot.checksum)
-        return self.version(), exported
+        with WORKSPACE_IO_LOCK:
+            pending_folder = self.sharepoint_root / "requests" / "pending"
+            exported = RequestService(self.local_runtime_path).export_pending_for_user(username, pending_folder)
+            with orm_session(self.local_runtime_path) as session:
+                pending_publications = int(session.scalar(select(func.count(PublicationQueueModel.publication_id)).where(PublicationQueueModel.status == "PENDING_PUBLICATION")) or 0)
+            if pending_publications:
+                raise RuntimeDatabaseError("Refresh is blocked while local publications are pending. Publish or resolve them first.")
+            snapshot = sync_runtime_snapshot(self.published_runtime_path, self.local_runtime_path)
+            initialize_runtime_database(snapshot.local_path)
+            record_published_source_checksum(snapshot.local_path, snapshot.checksum)
+            return self.version(), exported

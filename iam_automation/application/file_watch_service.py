@@ -17,11 +17,11 @@ from .notification_service import NotificationService
 from .roster_lock_ingestion_service import RosterLockIngestionService
 from .accessnow_ingestion_service import AccessNowIngestionService
 from .shared_request_service import SharedRequestService
+from .workspace_refresh_service import WORKSPACE_IO_LOCK
 from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 
 
 LOGGER = logging.getLogger(__name__)
-_WRITE_LOCK = threading.RLock()
 EXPECTED_INGESTION_ERRORS = (OSError, PermissionError, ValueError, RuntimeError)
 
 
@@ -52,10 +52,13 @@ class FileWatchService:
         return watcher
 
     def scan_once(self) -> int:
-        observations = self._discover_files()
-        if not observations:
-            return 0
-        with _WRITE_LOCK:
+        # Refresh replaces the local SQLite file atomically. Hold the same
+        # process-wide lock across discovery and ingestion so a checksum/read,
+        # SQLite connection, and file replacement cannot overlap.
+        with WORKSPACE_IO_LOCK:
+            observations = self._discover_files()
+            if not observations:
+                return 0
             now = datetime.now(timezone.utc).isoformat()
             changed = self._changed_observations(observations)
             changed.sort(key=self._observation_priority)
