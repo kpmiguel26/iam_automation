@@ -24,6 +24,21 @@ class SourceUpdatesTests(unittest.TestCase):
         self.assertEqual(normalize_accessnow_status("termination"), "TERMINATED")
         self.assertEqual(normalize_accessnow_status("disabled"), "DEACTIVATED")
 
+    def test_rehire_alert_matching_uses_worker_and_source_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            access = self._record("access", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00")
+            access.matched_worker_id = "worker-1"
+            access.normalized_json = json.dumps({"accessnow_employee_id": "A-100", "accessnow_status": "TERMINATED", "terminated_date": "2026-08-03"})
+            roster = self._record("roster", "ROSTER_LOCK", "roster.xlsx", "A-100", "2026-08-10T00:00:00+00:00")
+            roster.matched_worker_id = "worker-1"
+            roster.normalized_json = json.dumps({"vendor_employee_id": "A-100", "onboarding_date": "2026-08-10"})
+            with orm_session(database) as session:
+                session.add(WorkerModel(worker_id="worker-1", display_name="Ada Lovelace", status="TERMINATED"))
+                session.add_all([access, roster])
+
+            self.assertEqual(len(EmployeeService(database).rehire_alerts()), 1)
+
     def test_accessnow_status_normalization_preserves_deactivated(self):
         self.assertEqual(AccessNowIngestionService._normalize({"Employee Status": "DEACTIVATED"})["accessnow_status"], "DEACTIVATED")
         self.assertEqual(AccessNowIngestionService._worker_status({"accessnow_status": "DEACTIVATION"}), "DEACTIVATED")

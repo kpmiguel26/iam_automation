@@ -188,6 +188,15 @@ class EmployeeService:
                 if is_inactive_source_status(status):
                     parsed_access.append((row, payload))
 
+            access_by_worker: dict[str, list[tuple[IngestionRecordModel, dict[str, object]]]] = {}
+            access_by_key: dict[str, list[tuple[IngestionRecordModel, dict[str, object]]]] = {}
+            for item in parsed_access:
+                access, payload = item
+                if access.matched_worker_id:
+                    access_by_worker.setdefault(access.matched_worker_id, []).append(item)
+                for key in self._candidate_keys(payload, access.source_record_key):
+                    access_by_key.setdefault(key, []).append(item)
+
             alerts: list[dict[str, object]] = []
             for roster in roster_rows:
                 if selected_file and self._source_file_name(roster.source_file) != selected_file:
@@ -197,9 +206,14 @@ class EmployeeService:
                 except json.JSONDecodeError:
                     roster_payload = {}
                 roster_keys = self._candidate_keys(roster_payload, roster.source_record_key)
-                matches = [item for item in parsed_access if (
-                    roster.matched_worker_id and item[0].matched_worker_id == roster.matched_worker_id
-                ) or roster_keys.intersection(self._candidate_keys(item[1], item[0].source_record_key))]
+                matches: list[tuple[IngestionRecordModel, dict[str, object]]] = []
+                if roster.matched_worker_id:
+                    matches.extend(access_by_worker.get(roster.matched_worker_id, ()))
+                for key in roster_keys:
+                    matches.extend(access_by_key.get(key, ()))
+                if len(matches) > 1:
+                    seen_access_ids: set[str] = set()
+                    matches = [item for item in matches if not (item[0].record_id in seen_access_ids or seen_access_ids.add(item[0].record_id))]
                 if not matches:
                     continue
                 access, access_payload = matches[0]
