@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from sqlalchemy import select
 
@@ -230,6 +232,12 @@ class SourceUpdatesTests(unittest.TestCase):
             with orm_session(database) as session:
                 self.assertEqual(session.get(WorkerModel, "worker-1").status, "TERMINATED")
                 self.assertEqual(session.get(IngestionRecordModel, "roster").observation_state, "RESOLVED")
+
+    def test_rehire_business_days_exclude_configured_holidays(self):
+        with patch.dict(os.environ, {"REHIRE_HOLIDAYS": "2026-07-06"}):
+            elapsed = EmployeeService._business_days_between(date(2026, 7, 3), date(2026, 7, 7))
+
+        self.assertEqual(elapsed, 1)
 
 
 if __name__ == "__main__":

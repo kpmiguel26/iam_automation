@@ -23,6 +23,7 @@ from ..infrastructure.sqlite.orm import (
 from .worker_history_service import record_worker_version, version_dict
 from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches
+from .business_calendar import business_days_between, configured_rehire_holidays
 from .source_date import parse_source_date
 
 
@@ -152,16 +153,8 @@ class EmployeeService:
 
     @staticmethod
     def _business_days_between(start: date, end: date) -> int:
-        """Count weekdays after the status date through the proposed hire date."""
-        if end <= start:
-            return 0 if end == start else -1
-        current = start + timedelta(days=1)
-        total = 0
-        while current <= end:
-            if current.weekday() < 5:
-                total += 1
-            current += timedelta(days=1)
-        return total
+        """Count configured business days after status through proposed hire."""
+        return business_days_between(start, end, configured_rehire_holidays())
 
     def rehire_alerts(self, source_file: str = "") -> list[dict[str, object]]:
         """Find pending Roster Lock rows inside the 30-business-day rehire hold.

@@ -67,11 +67,13 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P1] REHIRE-003 — El hold usa lunes-viernes, no días hábiles corporativos
 
-**Evidencia:** `iam_automation/application/employee_service.py:160-171` excluye únicamente sábado y domingo.
+**Estado:** corregido en `bugfix/technical-debt`; el cálculo excluye fines de semana y acepta un calendario explícito mediante `REHIRE_HOLIDAYS`.
+
+**Evidencia:** `iam_automation/application/business_calendar.py` centraliza el cálculo y la lectura de fechas ISO configuradas.
 
 **Impacto:** el resultado puede diferir de la política real si existen feriados de Estados Unidos, Costa Rica u otra región operativa. Un caso puede bloquearse o liberarse uno o varios días antes de lo permitido.
 
-**Corrección recomendada:** configurar un calendario de feriados versionado por región o declarar explícitamente que la política significa “weekdays” y no “business days”. La decisión debe quedar auditada con el calendario usado.
+**Operación:** configurar `REHIRE_HOLIDAYS=2026-01-01,2026-07-04,2026-12-25` según la región aplicable. Si no se configura, el comportamiento es lunes-viernes; no se asumen feriados de Estados Unidos o Costa Rica sin una decisión operativa explícita.
 
 ### [P1] NOTIFY-001 — Las alertas críticas de rehire no se reconcilian ni expiran
 
