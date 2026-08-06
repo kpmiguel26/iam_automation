@@ -83,6 +83,8 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P1] DATA-001 — El watcher puede no detectar un archivo reemplazado
 
+**Estado:** corregido en `bugfix/technical-debt`; las observaciones ahora usan SHA-256 del contenido, evitando perder ediciones in-place con el mismo tamaño y timestamp.
+
 **Evidencia:** `iam_automation/application/file_watch_service.py:257-261` construye la firma usando únicamente tamaño y `st_mtime_ns`.
 
 **Impacto:** si OneDrive reemplaza el contenido conservando tamaño y timestamp de resolución similar, el cambio no se procesa. El sistema puede mantener evidencia y estados antiguos sin alerta.

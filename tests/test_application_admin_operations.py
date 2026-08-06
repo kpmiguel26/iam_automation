@@ -127,7 +127,7 @@ class ApplicationAdminOperationsTests(unittest.TestCase):
             watcher = FileWatchService(database, base)
             self.assertEqual(watcher.scan_once(), 1)
             notification = watcher.notifications.list_for_user("admin")[0]
-            self.assertEqual(notification.title, "Workspace database updated")
+            self.assertEqual(notification.title, "New database snapshot published")
             self.assertEqual(notification.target_route, "/dashboard")
 
     def test_roster_lock_ingestion_stages_rows_and_quarantines_invalid_rows(self):

@@ -256,8 +256,11 @@ class FileWatchService:
             for pattern in patterns:
                 for path in root.glob(pattern):
                     if path.is_file() and not path.name.startswith("."):
-                        stat = path.stat()
-                        signature = hashlib.sha256(f"{stat.st_size}:{stat.st_mtime_ns}".encode()).hexdigest()
+                        # Metadata-only signatures miss in-place edits that
+                        # preserve size and timestamp resolution. The content
+                        # checksum is also the identity used by ingestion,
+                        # so the watcher and source pipeline now agree.
+                        signature = hashlib.sha256(path.read_bytes()).hexdigest()
                         observations.append(FileObservation(str(path), kind, signature))
         return observations
 
