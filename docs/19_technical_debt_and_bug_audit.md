@@ -61,6 +61,8 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 **Flujo corregido:** el alert de 30 días es una validación crítica no bloqueante para la primera fase. Management puede enviar el cambio a la cola de aprobación; el hold y la evidencia roja permanecen visibles. La escritura canónica solo ocurre si la segunda fase aprueba la solicitud; si se deniega, no se reactiva ni se crea el engagement.
 
+**Flujo implementado:** Roster Lock se conserva como evidencia aunque el caso genere alerta. Un administrador puede archivar la alerta con motivo; esto marca la observación como `RESOLVED`, conserva el registro y no modifica el estado del empleado. Los cambios de estado canónico permanecen bajo el adaptador de AccessNow/ServiceNow.
+
 **Corrección recomendada:** definir un catálogo de estados (`ACTIVE`, `TERMINATED`, `DEACTIVATED`, etc.) y una función única de normalización usada por ingestión, alertas, reportes y UI. Añadir una prueba de aplicación de un registro `DEACTIVATED`.
 
 ### [P1] REHIRE-003 — El hold usa lunes-viernes, no días hábiles corporativos

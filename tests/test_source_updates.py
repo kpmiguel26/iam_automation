@@ -224,6 +224,13 @@ class SourceUpdatesTests(unittest.TestCase):
             self.assertEqual(alerts[0]["business_days_elapsed"], 5)
             self.assertEqual(alerts[0]["business_days_remaining"], 25)
 
+            result = EmployeeService(database).resolve_rehire_alert("roster", "admin", "Reviewed by management")
+            self.assertEqual(result["status"], "RESOLVED")
+            self.assertEqual(EmployeeService(database).rehire_alerts(), [])
+            with orm_session(database) as session:
+                self.assertEqual(session.get(WorkerModel, "worker-1").status, "TERMINATED")
+                self.assertEqual(session.get(IngestionRecordModel, "roster").observation_state, "RESOLVED")
+
 
 if __name__ == "__main__":
     unittest.main()

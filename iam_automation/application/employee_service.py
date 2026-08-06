@@ -57,7 +57,7 @@ class EmployeeService:
         with orm_session(self.database_path) as session:
             records = session.scalars(select(IngestionRecordModel).where(
                 IngestionRecordModel.status.in_(pending_statuses),
-                IngestionRecordModel.observation_state != "SUPERSEDED",
+                IngestionRecordModel.observation_state.not_in(("SUPERSEDED", "RESOLVED")),
             )).all()
         if not selected_file:
             return records
@@ -175,12 +175,12 @@ class EmployeeService:
             roster_rows = session.scalars(select(IngestionRecordModel).where(
                 IngestionRecordModel.source_system == "ROSTER_LOCK",
                 IngestionRecordModel.status.in_(pending_statuses),
-                IngestionRecordModel.observation_state != "SUPERSEDED",
+                IngestionRecordModel.observation_state.not_in(("SUPERSEDED", "RESOLVED")),
             ).order_by(IngestionRecordModel.created_at_utc.desc())).all()
             access_rows = session.scalars(select(IngestionRecordModel).where(
                 IngestionRecordModel.source_system == "ACCESSNOW",
                 IngestionRecordModel.status.in_(pending_statuses + ("APPLIED",)),
-                IngestionRecordModel.observation_state != "SUPERSEDED",
+                IngestionRecordModel.observation_state.not_in(("SUPERSEDED", "RESOLVED")),
             ).order_by(IngestionRecordModel.created_at_utc.desc())).all()
             workers = {worker.worker_id: worker.display_name for worker in session.scalars(select(WorkerModel)).all()}
 
@@ -246,6 +246,27 @@ class EmployeeService:
 
     def rehire_alerts_for_worker(self, worker_id: str) -> list[dict[str, object]]:
         return [item for item in self.rehire_alerts() if str(item.get("worker_id", "")) == worker_id]
+
+    def resolve_rehire_alert(self, record_id: str, actor: str, reason: str) -> dict[str, str]:
+        """Archive a reviewed alert without changing source evidence or worker status."""
+        record_id = str(record_id).strip()
+        reason = str(reason).strip()
+        if not record_id:
+            raise ValueError("A Roster Lock record is required.")
+        if not reason:
+            raise ValueError("A reason is required to archive a rehire alert.")
+        now = datetime.now(timezone.utc).isoformat()
+        with orm_session(self.database_path) as session:
+            record = session.get(IngestionRecordModel, record_id)
+            if record is None or record.source_system != "ROSTER_LOCK":
+                raise ValueError("The rehire alert source record was not found.")
+            if record.observation_state == "RESOLVED":
+                return {"record_id": record_id, "status": "RESOLVED"}
+            record.observation_state = "RESOLVED"
+            record.last_seen_at_utc = now
+            session.commit()
+        mark_publication_pending(self.database_path, actor=actor, reason=f"Rehire alert archived: {reason}")
+        return {"record_id": record_id, "status": "RESOLVED"}
 
     @staticmethod
     def _source_label(source_system: str) -> str:
