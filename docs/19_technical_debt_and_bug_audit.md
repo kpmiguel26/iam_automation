@@ -117,6 +117,8 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P2] WATCH-001 — Excepciones del ciclo del watcher quedan fuera del flujo de recuperación
 
+**Estado:** corregido parcialmente en `bugfix/technical-debt`; los errores operativos esperados se separan de fallos inesperados y las notificaciones ahora los distinguen. El límite del hilo conserva una captura amplia intencional para que el watcher no muera por un fallo aislado.
+
 **Evidencia:** `iam_automation/application/file_watch_service.py:322-326` captura cualquier `Exception`, registra log y continúa.
 
 **Impacto:** el proceso permanece vivo aunque haya fallos repetidos de SQLite, permisos, corrupción o una regresión de código. Sin métrica, contador de fallos ni alerta administrativa, el usuario puede creer que el workspace está sincronizando cuando no lo está.

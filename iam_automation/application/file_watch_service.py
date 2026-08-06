@@ -22,6 +22,7 @@ from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetai
 
 LOGGER = logging.getLogger(__name__)
 _WRITE_LOCK = threading.RLock()
+EXPECTED_INGESTION_ERRORS = (OSError, PermissionError, ValueError, RuntimeError)
 
 
 @dataclass(frozen=True)
@@ -89,9 +90,18 @@ class FileWatchService:
                         # employees were already updated.
                         review_requests.add(observation.path)
                     successful_ingestions.add(observation.path)
+                except EXPECTED_INGESTION_ERRORS as exc:
+                    # These are normal operational failures (partial sync,
+                    # invalid input, or an unavailable optional dependency).
+                    # Leave the observation uncommitted so the next scan retries it.
+                    LOGGER.warning("File processing will be retried for %s: %s", observation.path, exc)
+                    self._record_ingestion_failure(observation, exc, unexpected=False)
                 except Exception as exc:
-                    LOGGER.exception("File processing failed for %s", observation.path)
-                    self._record_ingestion_failure(observation, exc)
+                    # Keep the watcher alive at this process boundary, but make
+                    # programming/data-layer failures distinguishable from a
+                    # normal retry in the admin notification.
+                    LOGGER.exception("Unexpected file processing failure for %s", observation.path)
+                    self._record_ingestion_failure(observation, exc, unexpected=True)
 
             # The observation is committed only after ingestion succeeds. A transient
             # OneDrive or SQLite failure is therefore retried on the next poll.
@@ -192,7 +202,7 @@ class FileWatchService:
                 or previous.signature != observation.signature
             ]
 
-    def _record_ingestion_failure(self, observation: FileObservation, error: Exception) -> None:
+    def _record_ingestion_failure(self, observation: FileObservation, error: Exception, *, unexpected: bool) -> None:
         admins = self._active_admins()
         with orm_session(self.database_path) as session:
             for username in admins:
@@ -201,7 +211,7 @@ class FileWatchService:
                     recipient_username=username,
                     notification_type="INGESTION_ERROR",
                     severity="ERROR",
-                    title=f"{observation.file_kind.replace('_', ' ').title()} ingestion failed",
+                    title=f"{observation.file_kind.replace('_', ' ').title()} {'unexpected failure' if unexpected else 'ingestion failed'}",
                     message=f"The workbook could not be staged and will be retried: {type(error).__name__}: {error}",
                     entity_type="file",
                     entity_id=observation.path,
