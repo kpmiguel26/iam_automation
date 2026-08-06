@@ -109,6 +109,8 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P2] SYNC-002 — El manifest puede bloquear el arranque después de cambios válidos
 
+**Estado:** mejorado en `bugfix/technical-debt`; el preflight ahora distingue errores de validación SQLite, operaciones de archivo locales y fallos inesperados, mostrando una causa accionable en lugar de solo `invalid`.
+
 **Evidencia:** `iam_automation/runtime_sync.py:88-116` rechaza el snapshot si el hash del SQLite no coincide con el manifest. Durante la revisión se reprodujo exactamente: el snapshot publicado cambió y el manifest quedó con el hash anterior.
 
 **Impacto:** el preflight termina en `INVALID_PATH` y la aplicación no abre aunque el SQLite sea legible e íntegro. El diagnóstico original solo exponía “Local runtime SQLite synchronization: invalid”, sin resolver la causa en la interfaz.
