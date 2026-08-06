@@ -166,6 +166,27 @@ class SourceUpdatesTests(unittest.TestCase):
                 self.assertEqual(session.query(WorkerModel).count(), 1)
                 self.assertEqual(session.query(IngestionRecordModel).filter(IngestionRecordModel.matched_worker_id.is_not(None)).count(), 3)
 
+    def test_roster_lock_raises_rehire_alert_for_recent_accessnow_termination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            access = self._record("access", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00")
+            access.matched_worker_id = "worker-1"
+            access.status = "APPLIED"
+            access.normalized_json = json.dumps({"accessnow_employee_id": "A-100", "first_name": "Ada", "last_name": "Lovelace", "accessnow_status": "TERMINATED", "terminated_date": "2026-08-03"})
+            roster = self._record("roster", "ROSTER_LOCK", "roster.xlsx", "A-100", "2026-08-10T00:00:00+00:00")
+            roster.matched_worker_id = "worker-1"
+            roster.normalized_json = json.dumps({"vendor_employee_id": "A-100", "first_name": "Ada", "last_name": "Lovelace", "onboarding_date": "2026-08-10"})
+            with orm_session(database) as session:
+                session.add(WorkerModel(worker_id="worker-1", first_name="Ada", last_name="Lovelace", display_name="Ada Lovelace", status="TERMINATED"))
+                session.add_all([access, roster])
+
+            alerts = EmployeeService(database).rehire_alerts()
+
+            self.assertEqual(len(alerts), 1)
+            self.assertEqual(alerts[0]["status"], "TERMINATED")
+            self.assertEqual(alerts[0]["business_days_elapsed"], 5)
+            self.assertEqual(alerts[0]["business_days_remaining"], 25)
+
 
 if __name__ == "__main__":
     unittest.main()

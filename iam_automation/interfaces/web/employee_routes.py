@@ -48,7 +48,9 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         page = min(page, page_count)
         if has_query and page != requested_page:
             workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, page=page, per_page=25)
-        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=service.pending_source_update_count())
+        rehire_alerts = service.rehire_alerts()
+        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
+        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=service.pending_source_update_count(), rehire_alert_count=len(rehire_alerts))
 
     @blueprint.get("/source-updates")
     @authenticated
@@ -73,6 +75,8 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             records, total_records = service.list_source_records(source_system, source_file, page=page, per_page=50)
         duplicate_summary = service.source_duplicate_summary(source_file=source_file) if mode == "duplicates" else None
         people = service.list_source_people() if all_people else service.search_source_people(person_query) if person_query else []
+        rehire_alerts = service.rehire_alerts(source_file if source_system == "ROSTER_LOCK" else "")
+        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
         return render_template(
             "employees/source_updates_overview.html",
             sources=sources,
@@ -89,6 +93,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             person_query=person_query,
             people=people,
             all_people=all_people,
+            rehire_alerts=rehire_alerts,
         )
 
     @blueprint.post("/source-updates/create-all")
@@ -180,7 +185,9 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         if preview is None:
             return render_template("errors/404.html"), 404
         current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
-        return render_template("employees/source_updates.html", preview=preview, can_apply=current_user.can_decide_requests, message=request.args.get("notice"), error=request.args.get("error"))
+        rehire_alerts = [item for item in service.rehire_alerts() if str(item.get("worker_id", "")) == worker_id]
+        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
+        return render_template("employees/source_updates.html", preview=preview, rehire_alerts=rehire_alerts, can_apply=current_user.can_decide_requests, message=request.args.get("notice"), error=request.args.get("error"))
 
     @blueprint.post("/source-updates/<worker_id>/apply")
     @authenticated
@@ -188,9 +195,13 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
         if not current_user.can_decide_requests:
             return redirect(url_for("employees.source_updates", worker_id=worker_id, error="Only an administrator can apply source changes directly.", notice_type="danger"))
+        if service.rehire_alerts_for_worker(worker_id):
+            return redirect(url_for("employees.source_updates", worker_id=worker_id, error="Critical rehire alert: this employee is still within the 30-business-day rehire hold and cannot be applied.", notice_type="danger"))
         preview = service.source_update_preview(worker_id)
         if preview is None:
             return render_template("errors/404.html"), 404
+        if service.rehire_alerts_for_worker(worker_id):
+            return redirect(url_for("employees.source_updates", worker_id=worker_id, error="Critical rehire alert: this employee is still within the 30-business-day rehire hold and cannot be submitted for approval.", notice_type="danger"))
         record_ids = sorted({str(update["record_id"]) for update in preview["updates"]})
         if not record_ids:
             return redirect(url_for("employees.source_updates", worker_id=worker_id, error="No pending source changes are available.", notice_type="warning"))

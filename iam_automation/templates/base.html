@@ -158,7 +158,7 @@
   </div>{% endif %}
   {% if session.get('iam_user') and priority_notifications %}<section class="container-fluid px-4 px-lg-5 pt-3"
     aria-label="Priority notifications">
-    <div class="priority-notification-panel">
+    <div class="priority-notification-panel{% if priority_notifications|selectattr('severity', 'equalto', 'CRITICAL')|list %} priority-notification-critical{% endif %}">
       <div class="priority-notification-heading"><span class="priority-notification-icon">!</span>
         <div><strong>Important workspace updates</strong>
           <div class="small">Review these notifications before continuing work.</div>

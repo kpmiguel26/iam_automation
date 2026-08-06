@@ -116,6 +116,9 @@ class FileWatchService:
                             notification = self._notification(username, observation)
                             if session.get(NotificationModel, notification.notification_id) is None:
                                 session.add(notification)
+            # Roster Lock can reveal a rehire hold as soon as the source file
+            # is staged. The deterministic notification is safe to repeat.
+            self.notifications.notify_rehire_alerts(EmployeeService(self.database_path).rehire_alerts())
             return len(successful_ingestions)
 
     def _ensure_import_review_request(self, observation: FileObservation, result) -> None:

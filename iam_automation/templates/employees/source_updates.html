@@ -9,6 +9,12 @@
   </div>
   {% if message %}<div class="alert alert-success mt-3">{{ message }}</div>{% endif %}
   {% if error %}<div class="alert alert-danger mt-3">{{ error }}</div>{% endif %}
+  {% if rehire_alerts %}
+    <section class="rehire-alert-section mt-4" aria-labelledby="employee-rehire-alert-heading">
+      <div class="rehire-alert-heading"><div><p class="eyebrow mb-1">Critical validation</p><h2 id="employee-rehire-alert-heading" class="h5 mb-1">Rehire blocked</h2><p class="small mb-0">This employee cannot be reactivated or re-hired until the 30-business-day hold has elapsed.</p></div><span class="rehire-alert-count">{{ rehire_alerts|length }}</span></div>
+      <div class="rehire-alert-grid">{% for alert in rehire_alerts %}<article class="rehire-alert-card"><div class="rehire-alert-icon" aria-hidden="true">!</div><div class="rehire-alert-body"><h3 class="h6 mb-1">AccessNow: {{ alert.status|replace('_', ' ')|title }} · Roster Lock proposed hire</h3><p class="small mb-2">{{ alert.business_days_remaining }} business day(s) remaining in the rehire hold.</p><div class="rehire-alert-meta">Terminated/deactivated {{ alert.terminated_on }} · Proposed start {{ alert.proposed_start_on }} · {{ alert.source_file }}</div></div><span class="badge rehire-alert-badge">Critical</span></article>{% endfor %}</div>
+    </section>
+  {% endif %}
   {% if preview.updates %}
     <form method="post" action="{{ url_for('employees.request_source_updates', worker_id=preview.worker_id) }}">
     <div class="alert alert-warning mt-4">Red values are different from the canonical profile. Applying a change updates the selected source record; submitting for approval sends the comparison to an administrator.</div>
@@ -29,7 +35,7 @@
         </tbody></table></div>
       </section>
     {% endfor %}
-    <section class="surface p-4 mt-3"><label class="form-label" for="sourceUpdateReason">Business reason</label><textarea id="sourceUpdateReason" class="form-control" name="reason" rows="3" required placeholder="Explain why these source changes should be applied"></textarea><div class="small text-secondary mt-2">Select the fields that may overwrite the canonical profile. The local apply creates the history entry; publishing SQLite is only for sharing it.</div><div class="d-flex justify-content-end gap-2 flex-wrap mt-3"><button class="btn btn-outline-primary" type="submit">Submit for approval</button>{% if can_apply %}<button class="btn btn-primary" type="submit" formaction="{{ url_for('employees.apply_source_updates', worker_id=preview.worker_id) }}">Apply selected fields locally</button>{% endif %}</div></section>
+    <section class="surface p-4 mt-3"><label class="form-label" for="sourceUpdateReason">Business reason</label><textarea id="sourceUpdateReason" class="form-control" name="reason" rows="3" required placeholder="Explain why these source changes should be applied"></textarea><div class="small text-secondary mt-2">Select the fields that may overwrite the canonical profile. The local apply creates the history entry; publishing SQLite is only for sharing it.</div><div class="d-flex justify-content-end gap-2 flex-wrap mt-3">{% if rehire_alerts %}<button class="btn btn-danger" type="button" disabled title="Blocked until the 30-business-day rehire hold ends">Rehire hold active</button>{% else %}<button class="btn btn-outline-primary" type="submit">Submit for approval</button>{% if can_apply %}<button class="btn btn-primary" type="submit" formaction="{{ url_for('employees.apply_source_updates', worker_id=preview.worker_id) }}">Apply selected fields locally</button>{% endif %}{% endif %}</div></section>
     </form>
   {% else %}
     <section class="surface p-5 mt-4 text-center"><h2 class="h5">No new source changes found</h2><p class="text-secondary mb-0">The staged source records currently match this canonical employee.</p></section>

@@ -16,6 +16,7 @@ SHAREPOINT_FOLDERS = (
     "audit",
     "backups",
     "templates",
+    "generated_templates",
     "exports",
     "manifests",
     "bug_reports/open",

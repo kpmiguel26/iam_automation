@@ -162,6 +162,48 @@ class NotificationService:
                 ))
             return len(recipients)
 
+    def notify_rehire_alerts(self, alerts: list[dict[str, object]]) -> int:
+        """Publish idempotent critical alerts for 30-business-day rehire holds."""
+        if not alerts:
+            return 0
+        role_names = ("REVIEWER", "APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR", "ADMINISTRATOR")
+        now = datetime.now(timezone.utc).isoformat()
+        created = 0
+        with orm_session(self.database_path) as session:
+            recipients = {row.username for row in session.scalars(
+                select(AppUserModel).join(UserRoleModel).where(
+                    AppUserModel.active.is_(True),
+                    AppUserModel.status == "ACTIVE",
+                    UserRoleModel.role_name.in_(role_names),
+                )
+            ).all()}
+            for alert in alerts:
+                alert_id = str(alert["alert_id"])
+                for username in recipients:
+                    notification_id = hashlib.sha256(f"rehire-alert:{username.lower()}:{alert_id}".encode("utf-8")).hexdigest()
+                    if session.get(NotificationModel, notification_id) is not None:
+                        continue
+                    remaining = int(alert.get("business_days_remaining", 0))
+                    session.add(NotificationModel(
+                        notification_id=notification_id,
+                        recipient_username=username,
+                        notification_type="REHIRE_30_DAY_ALERT",
+                        severity="CRITICAL",
+                        title="Critical 30-day rehire alert",
+                        message=(
+                            f"{alert.get('worker_name', 'Employee')} appears in Roster Lock while AccessNow shows "
+                            f"{str(alert.get('status', 'TERMINATED')).lower()}. The 30-business-day rehire hold "
+                            f"has not elapsed ({remaining} business day(s) remaining)."
+                        ),
+                        entity_type="ingestion_record",
+                        entity_id=alert_id,
+                        target_route="/employees/source-updates",
+                        status="UNREAD",
+                        created_at_utc=now,
+                    ))
+                    created += 1
+        return created
+
     def mark_read(self, username: str, notification_id: str) -> None:
         with orm_session(self.database_path) as session:
             row = session.scalar(select(NotificationModel).where(
