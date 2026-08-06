@@ -35,6 +35,21 @@ class WorkspaceRefreshTests(unittest.TestCase):
             self.assertTrue(version.local_dirty)
             self.assertTrue(version.update_available)
 
+    def test_version_uses_published_manifest_checksum(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            published = root / "database" / "snapshots" / "iam_runtime.sqlite"
+            published.parent.mkdir(parents=True)
+            initialize_runtime_database(published)
+            local = root / "runtime.sqlite"
+            snapshot = sync_runtime_snapshot(published, local)
+            record_published_source_checksum(local, snapshot.checksum)
+
+            version = WorkspaceRefreshService(local, published, root).version()
+
+            self.assertEqual(version.published_checksum, snapshot.checksum)
+            self.assertFalse(version.update_available)
+
     def test_refresh_preserves_local_pending_request_as_shared_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

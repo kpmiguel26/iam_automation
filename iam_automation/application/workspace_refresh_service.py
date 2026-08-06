@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import json
 import sqlite3
 import threading
 
 from sqlalchemy import func, select
 
 from ..database import initialize_runtime_database
-from ..runtime_sync import RuntimeDatabaseError, sha256_file, sync_runtime_snapshot
+from ..runtime_sync import RuntimeDatabaseError, runtime_manifest_path, sha256_file, sync_runtime_snapshot
 from ..infrastructure.sqlite.orm import PublicationQueueModel, orm_session
 from .request_service import RequestService
 
@@ -16,6 +17,7 @@ from .request_service import RequestService
 PUBLISHED_SOURCE_CHECKSUM_KEY = "published_source_checksum"
 LOCAL_RUNTIME_CHECKSUM_SUFFIX = ".source-checksum"
 WORKSPACE_IO_LOCK = threading.RLock()
+_LOCAL_CHECKSUM_CACHE: dict[str, tuple[int, int, str]] = {}
 
 
 def local_runtime_checksum_path(database_path: Path) -> Path:
@@ -65,6 +67,28 @@ def read_published_source_checksum(database_path: Path) -> str | None:
         connection.close()
 
 
+def _published_manifest_checksum(database_path: Path) -> str | None:
+    manifest_path = runtime_manifest_path(database_path)
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    checksum = payload.get("sha256")
+    return str(checksum) if isinstance(checksum, str) and checksum else None
+
+
+def _cached_checksum(database_path: Path) -> str:
+    stat = database_path.stat()
+    key = str(database_path)
+    signature = (stat.st_size, stat.st_mtime_ns)
+    cached = _LOCAL_CHECKSUM_CACHE.get(key)
+    if cached and cached[:2] == signature:
+        return cached[2]
+    checksum = sha256_file(database_path)
+    _LOCAL_CHECKSUM_CACHE[key] = (signature[0], signature[1], checksum)
+    return checksum
+
+
 @dataclass(frozen=True)
 class WorkspaceVersion:
     published_checksum: str | None
@@ -84,19 +108,21 @@ class WorkspaceRefreshService:
 
     def version(self) -> WorkspaceVersion:
         with WORKSPACE_IO_LOCK:
-            published = sha256_file(self.published_runtime_path) if self.published_runtime_path.is_file() else None
+            published = _published_manifest_checksum(self.published_runtime_path) if self.published_runtime_path.is_file() else None
+            if published is None and self.published_runtime_path.is_file():
+                published = _cached_checksum(self.published_runtime_path)
             local = None
             local_dirty = False
             if self.local_runtime_path.is_file():
                 local = read_published_source_checksum(self.local_runtime_path)
                 # Older runtimes have no marker until the next successful refresh.
                 if local is None:
-                    local = sha256_file(self.local_runtime_path)
+                    local = _cached_checksum(self.local_runtime_path)
                 else:
                     sidecar = local_runtime_checksum_path(self.local_runtime_path)
                     if sidecar.is_file():
                         recorded = sidecar.read_text(encoding="utf-8").strip()
-                        local_dirty = recorded != sha256_file(self.local_runtime_path)
+                        local_dirty = recorded != _cached_checksum(self.local_runtime_path)
             return WorkspaceVersion(published, local, local_dirty)
 
     def refresh(self, username: str) -> tuple[WorkspaceVersion, int]:
