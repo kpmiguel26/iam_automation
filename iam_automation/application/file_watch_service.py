@@ -17,7 +17,7 @@ from .notification_service import NotificationService
 from .roster_lock_ingestion_service import RosterLockIngestionService
 from .accessnow_ingestion_service import AccessNowIngestionService
 from .shared_request_service import SharedRequestService
-from .workspace_refresh_service import WORKSPACE_IO_LOCK
+from .workspace_refresh_service import WORKSPACE_IO_LOCK, local_runtime_checksum_path, record_local_runtime_checksum
 from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 
 
@@ -59,6 +59,11 @@ class FileWatchService:
             observations = self._discover_files()
             if not observations:
                 return 0
+            # The watcher itself writes observations and notifications to the
+            # local runtime. Preserve a genuine user edit, but advance the
+            # sidecar after an automatic scan that started from a clean state.
+            sidecar = local_runtime_checksum_path(self.database_path)
+            watcher_started_clean = sidecar.is_file() and sidecar.read_text(encoding="utf-8").strip() == hashlib.sha256(self.database_path.read_bytes()).hexdigest()
             now = datetime.now(timezone.utc).isoformat()
             changed = self._changed_observations(observations)
             changed.sort(key=self._observation_priority)
@@ -132,6 +137,8 @@ class FileWatchService:
             # Roster Lock can reveal a rehire hold as soon as the source file
             # is staged. The deterministic notification is safe to repeat.
             self.notifications.notify_rehire_alerts(EmployeeService(self.database_path).rehire_alerts())
+            if watcher_started_clean:
+                record_local_runtime_checksum(self.database_path)
             return len(successful_ingestions)
 
     def _ensure_import_review_request(self, observation: FileObservation, result) -> None:

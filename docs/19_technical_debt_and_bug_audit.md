@@ -103,6 +103,8 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 **Regresión:** la suite completa debe ejecutarse en un entorno que permita abrir sockets; el flujo de aplicación pasa las pruebas de refresh y watcher.
 
+**Nota adicional:** las escrituras automáticas del watcher actualizan el sidecar local únicamente si el runtime estaba limpio al comenzar el ciclo. Así no se vuelve a mostrar el mismo refresh como pendiente, pero tampoco se oculta una edición local real.
+
 ### [P1] SEC-001 — No hay protección CSRF en formularios mutantes
 
 **Estado:** corregido en `bugfix/technical-debt`; la aplicación crea un token por sesión, lo inyecta en formularios HTML y valida todos los `POST` de formulario. Los endpoints JSON requieren `X-CSRF-Token` si se consumen desde un navegador; el shutdown interno conserva su token de control independiente.

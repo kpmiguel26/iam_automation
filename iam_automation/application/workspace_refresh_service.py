@@ -42,6 +42,11 @@ def record_published_source_checksum(database_path: Path, checksum: str) -> None
     # The SQLite metadata row records the published baseline, while this
     # sidecar records the exact local bytes after that bookkeeping update.
     # Comparing the sidecar to the current file detects later local edits.
+    record_local_runtime_checksum(database_path)
+
+
+def record_local_runtime_checksum(database_path: Path) -> None:
+    """Record the current local bytes after an expected internal write."""
     sidecar = local_runtime_checksum_path(database_path)
     temporary = sidecar.with_suffix(sidecar.suffix + ".tmp")
     temporary.write_text(sha256_file(database_path) + "\n", encoding="utf-8")
