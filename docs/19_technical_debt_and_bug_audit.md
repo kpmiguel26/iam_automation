@@ -168,7 +168,9 @@ Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agr
 
 ### [P3] CODE-001 — Uso extendido de `except Exception` reduce la observabilidad
 
-**Evidencia:** aparece en configuración, watcher, rutas administrativas, servicios de reportes, identidad y utilidades de archivos.
+**Estado:** reducido en `bugfix/technical-debt`; configuración TOML, lectura JSON y cuarentena de requests ahora capturan errores específicos. Las capturas amplias restantes están documentadas como límites de proceso/web, rollback transaccional o barrera de seguridad del watcher.
+
+**Evidencia:** las capturas de `config.py`, `settings_store.py` y `change_request.py` ya distinguen errores de filesystem, codificación, parseo y validación de dominio.
 
 **Impacto:** errores de datos, permisos y programación se transforman en mensajes genéricos o se silencian. La recuperación y el diagnóstico dependen del log local.
 

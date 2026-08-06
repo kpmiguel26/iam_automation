@@ -61,7 +61,7 @@ def _load_toml(path: Path) -> dict[str, Any]:
     try:
         with path.open("rb") as handle:
             data = tomllib.load(handle)
-    except Exception:
+    except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
 
