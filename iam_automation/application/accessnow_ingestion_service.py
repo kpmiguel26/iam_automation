@@ -93,8 +93,24 @@ class AccessNowIngestionService:
         staged = quarantined = 0
         seen: set[str] = set()
         with orm_session(self.database_path) as session:
+            existing_source_rows = {
+                (str(source_file), str(checksum), int(row_number))
+                for source_file, checksum, row_number in session.execute(
+                    select(IngestionRecordModel.source_file, IngestionRecordModel.source_checksum, IngestionRecordModel.row_number).where(
+                        IngestionRecordModel.source_system == SOURCE_SYSTEM,
+                        IngestionRecordModel.source_checksum == source_checksum,
+                    )
+                ).all()
+            }
             session.add(ImportBatchModel(batch_id=batch_id, filename=source_file, source_type=SOURCE_SYSTEM, status="PROCESSING", total_rows=total_rows, valid_rows=0, quarantine_rows=0, created_by="workspace-watcher", created_at_utc=now))
             for row_number, (path, original_row, payload) in enumerate(merged.values(), start=2):
+                source_row_key = (str(path), source_checksum, int(original_row))
+                if source_row_key in existing_source_rows:
+                    # A previous watcher run may have committed the rows but
+                    # failed before publishing the batch marker. The unique
+                    # source-row constraint makes retrying that folder fail;
+                    # retain the existing evidence and continue with new rows.
+                    continue
                 source_key = payload.get("accessnow_employee_id", "")
                 reason = self._validation_error(payload, source_key, seen)
                 if reason:
