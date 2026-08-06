@@ -107,7 +107,13 @@ class WorkspaceRefreshService:
         self.sharepoint_root = sharepoint_root
 
     def version(self) -> WorkspaceVersion:
-        with WORKSPACE_IO_LOCK:
+        acquired = WORKSPACE_IO_LOCK.acquire(timeout=0.25)
+        if not acquired:
+            # A large source ingestion may hold the lock for a while. Do not
+            # make login/dashboard wait behind it; the next status poll will
+            # observe the complete version after the writer releases it.
+            return self._version_without_lock()
+        try:
             published = _published_manifest_checksum(self.published_runtime_path) if self.published_runtime_path.is_file() else None
             if published is None and self.published_runtime_path.is_file():
                 published = _cached_checksum(self.published_runtime_path)
@@ -124,6 +130,19 @@ class WorkspaceRefreshService:
                         recorded = sidecar.read_text(encoding="utf-8").strip()
                         local_dirty = recorded != _cached_checksum(self.local_runtime_path)
             return WorkspaceVersion(published, local, local_dirty)
+        finally:
+            WORKSPACE_IO_LOCK.release()
+
+    def _version_without_lock(self) -> WorkspaceVersion:
+        """Return a safe lightweight status while the watcher owns the lock."""
+        published = _published_manifest_checksum(self.published_runtime_path) if self.published_runtime_path.is_file() else None
+        local = None
+        if self.local_runtime_path.is_file():
+            try:
+                local = read_published_source_checksum(self.local_runtime_path)
+            except (OSError, sqlite3.Error):
+                local = None
+        return WorkspaceVersion(published, local, False)
 
     def refresh(self, username: str) -> tuple[WorkspaceVersion, int]:
         with WORKSPACE_IO_LOCK:

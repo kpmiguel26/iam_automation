@@ -169,7 +169,7 @@ def create_app(
             if SessionService(runtime_path).is_revoked(str(session["iam_user"]), str(session["iam_session_started_at"])):
                 session.clear()
                 return redirect(url_for("login"))
-            current = next((user for user in UserService(runtime_path).list_users() if user.username.lower() == str(session["iam_user"]).lower()), None)
+            current = UserService(runtime_path).get_user(str(session["iam_user"]))
             if not current or not current.active or current.status != "ACTIVE":
                 session.clear()
                 return redirect(url_for("login"))

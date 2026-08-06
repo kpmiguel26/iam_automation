@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import tempfile
+import threading
 import unittest
 import json
 from pathlib import Path
@@ -49,6 +50,36 @@ class WorkspaceRefreshTests(unittest.TestCase):
 
             self.assertEqual(version.published_checksum, snapshot.checksum)
             self.assertFalse(version.update_available)
+
+    def test_version_does_not_wait_when_workspace_lock_is_busy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            published = root / "database" / "snapshots" / "iam_runtime.sqlite"
+            published.parent.mkdir(parents=True)
+            initialize_runtime_database(published)
+            local = root / "runtime.sqlite"
+            snapshot = sync_runtime_snapshot(published, local)
+            record_published_source_checksum(local, snapshot.checksum)
+            service = WorkspaceRefreshService(local, published, root)
+
+            from iam_automation.application.workspace_refresh_service import WORKSPACE_IO_LOCK
+            ready = threading.Event()
+            release = threading.Event()
+
+            def hold_workspace_lock():
+                WORKSPACE_IO_LOCK.acquire()
+                ready.set()
+                release.wait(2)
+                WORKSPACE_IO_LOCK.release()
+
+            holder = threading.Thread(target=hold_workspace_lock)
+            holder.start()
+            self.assertTrue(ready.wait(1))
+            version = service.version()
+            release.set()
+            holder.join(1)
+
+            self.assertEqual(version.published_checksum, snapshot.checksum)
 
     def test_refresh_preserves_local_pending_request_as_shared_json(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -22,6 +22,10 @@ class UserService:
     def list_users(self) -> list[ApplicationUser]:
         return self.repository.list_users()
 
+    def get_user(self, username: str) -> ApplicationUser | None:
+        """Load one account without scanning the complete user directory."""
+        return self.repository.get_user(username)
+
     def create_user(self, username: str, display_name: str, password: str, roles: list[str]) -> None:
         username = self._required(username, "Username")
         password = self._required(password, "Password")
