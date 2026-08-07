@@ -45,7 +45,7 @@ if QThread is not None:
                     raise RuntimeError("Unknown preflight operation.")
                 self.completed.emit(result)
             except Exception as exc:  # pragma: no cover - depends on local SharePoint/OneDrive state
-                self.failed.emit(str(exc))
+                self.failed.emit(f"{type(exc).__name__}: {exc}")
 
 
 class StartupWindow:
