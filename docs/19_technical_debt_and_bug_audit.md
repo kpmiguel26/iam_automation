@@ -182,6 +182,12 @@ La lectura del dashboard usa el checksum del manifest publicado y cachea el chec
 
 **Corrección recomendada:** capturar excepciones específicas en los límites de dominio, conservar una excepción raíz con contexto, y devolver códigos/estados operativos diferenciados para UI, auditoría y retry.
 
+### [P1] NOTIFY-002 — Las notificaciones leídas volvían a aparecer como no leídas
+
+**Estado:** corregido en `aef0a2c`. Las notificaciones idempotentes de solicitudes y source updates ya no usan `merge()` con `status="UNREAD"` sobre filas existentes. Al refrescar o re-publicar el mismo evento se conserva `READ` o `RESOLVED`.
+
+**Regresión:** `tests/test_application_admin_operations.py` cubre marcar una notificación como leída, re-publicar el mismo evento y verificar que el contador permanece en cero.
+
 ## Deuda de diseño y mantenibilidad
 
 - `EmployeeService` todavía concentra consultas, reconciliación, promoción y construcción de vistas. La política de rehire ya fue separada en `RehireAlertService`; queda separar presenters de UI y evidencia de fuentes.
