@@ -54,6 +54,30 @@ class ApplicationAdminOperationsTests(unittest.TestCase):
             self.assertEqual(statuses[first_id], "READ")
             self.assertEqual(statuses[second_id], "READ")
 
+    def test_republishing_request_review_does_not_reset_read_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            UserService(database).create_user("admin", "Admin", "secret", ["APPLICATION_ADMIN"])
+            service = NotificationService(database)
+            self.assertEqual(service.notify_request_reviewers("request-001", "CREATE_EMPLOYEE", "requester"), 1)
+            notification = service.list_for_user("admin")[0]
+            service.mark_read("admin", notification.notification_id)
+            service.notify_request_reviewers("request-001", "CREATE_EMPLOYEE", "requester")
+            self.assertEqual(service.unread_count("admin"), 0)
+            self.assertEqual(service.list_for_user("admin")[0].status, "READ")
+
+    def test_republishing_source_update_does_not_reset_read_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            UserService(database).create_user("admin", "Admin", "secret", ["APPLICATION_ADMIN"])
+            service = NotificationService(database)
+            self.assertEqual(service.notify_source_update_available("request-001", "IMPORT_ROSTER_LOCK", 2), 1)
+            notification = service.list_for_user("admin")[0]
+            service.mark_read("admin", notification.notification_id)
+            service.notify_source_update_available("request-001", "IMPORT_ROSTER_LOCK", 2)
+            self.assertEqual(service.unread_count("admin"), 0)
+            self.assertEqual(service.list_for_user("admin")[0].status, "READ")
+
     def test_expired_delegations_are_retained_for_administration(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")

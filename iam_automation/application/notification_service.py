@@ -112,19 +112,25 @@ class NotificationService:
                 notification_id = hashlib.sha256(
                     f"request-review:{username.lower()}:{request_id}".encode("utf-8")
                 ).hexdigest()
-                session.merge(NotificationModel(
-                    notification_id=notification_id,
-                    recipient_username=username,
-                    notification_type="REQUEST_REVIEW_REQUIRED",
-                    severity="WARNING",
-                    title="Request ready for review",
-                    message=message,
-                    entity_type="change_request",
-                    entity_id=request_id,
-                    target_route="/admin/approvals",
-                    status="UNREAD",
-                    created_at_utc=now,
-                ))
+                existing = session.get(NotificationModel, notification_id)
+                if existing is None:
+                    session.add(NotificationModel(
+                        notification_id=notification_id,
+                        recipient_username=username,
+                        notification_type="REQUEST_REVIEW_REQUIRED",
+                        severity="WARNING",
+                        title="Request ready for review",
+                        message=message,
+                        entity_type="change_request",
+                        entity_id=request_id,
+                        target_route="/admin/approvals",
+                        status="UNREAD",
+                        created_at_utc=now,
+                    ))
+                else:
+                    # Re-publishing the same shared request must not reset a
+                    # user's READ/RESOLVED decision back to UNREAD.
+                    existing.message = message
         return len(recipients)
 
     def notify_source_update_available(self, request_id: str, operation_type: str, record_count: int) -> int:
@@ -144,22 +150,27 @@ class NotificationService:
                 notification_id = hashlib.sha256(
                     f"source-update:{username.lower()}:{request_id}".encode("utf-8")
                 ).hexdigest()
-                session.merge(NotificationModel(
-                    notification_id=notification_id,
-                    recipient_username=username,
-                    notification_type="SOURCE_UPDATE_AVAILABLE",
-                    severity="WARNING",
-                    title="Source update ready for individual review",
-                    message=(
-                        f"{record_count} source record(s) from {operation_type.replace('_', ' ').title()} "
-                        "are waiting in Employee Updates. No employee was created automatically."
-                    ),
-                    entity_type="change_request",
-                    entity_id=request_id,
-                    target_route="/employees/source-updates",
-                    status="UNREAD",
-                    created_at_utc=now,
-                ))
+                message = (
+                    f"{record_count} source record(s) from {operation_type.replace('_', ' ').title()} "
+                    "are waiting in Employee Updates. No employee was created automatically."
+                )
+                existing = session.get(NotificationModel, notification_id)
+                if existing is None:
+                    session.add(NotificationModel(
+                        notification_id=notification_id,
+                        recipient_username=username,
+                        notification_type="SOURCE_UPDATE_AVAILABLE",
+                        severity="WARNING",
+                        title="Source update ready for individual review",
+                        message=message,
+                        entity_type="change_request",
+                        entity_id=request_id,
+                        target_route="/employees/source-updates",
+                        status="UNREAD",
+                        created_at_utc=now,
+                    ))
+                else:
+                    existing.message = message
             return len(recipients)
 
     def notify_rehire_alerts(self, alerts: list[dict[str, object]]) -> int:
