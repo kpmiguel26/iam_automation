@@ -60,8 +60,13 @@ def _load_toml(path: Path) -> dict[str, Any]:
         return {}
     try:
         with path.open("rb") as handle:
-            data = tomllib.load(handle)
-    except (OSError, ValueError):
+            # ``toml.load`` (the Python < 3.11 fallback) expects a filename
+            # or text input on some supported versions. Passing a binary
+            # file object raises the opaque Windows error "Expecting
+            # something like a string". ``loads`` is portable across both
+            # tomllib and toml, so decode once and parse text consistently.
+            data = tomllib.loads(handle.read().decode("utf-8"))
+    except (OSError, UnicodeDecodeError, TypeError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
 

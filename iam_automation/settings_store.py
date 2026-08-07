@@ -28,8 +28,10 @@ def load_user_settings(path: Path | None = None) -> dict[str, Any]:
         return {}
     try:
         with settings_path.open("rb") as handle:
-            data = tomllib.load(handle)
-    except (OSError, ValueError):
+            # Use ``loads`` with decoded text because the Python < 3.11
+            # ``toml`` fallback does not consistently accept binary handles.
+            data = tomllib.loads(handle.read().decode("utf-8"))
+    except (OSError, UnicodeDecodeError, TypeError, ValueError):
         # A partially written settings file must never prevent the launcher
         # from starting. Preserve it for diagnostics, then recover cleanly.
         try:

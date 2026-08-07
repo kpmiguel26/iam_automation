@@ -3,11 +3,33 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from iam_automation import config
 
 
 class ConfigTests(unittest.TestCase):
+    def test_toml_reader_uses_text_loads_for_python310_fallbacks(self):
+        path = Path(tempfile.mktemp(suffix=".toml"))
+        path.write_text("[paths]\nsharepoint_root_path = \"C:/OneDrive/IAM\"\n", encoding="utf-8")
+
+        class Parser:
+            @staticmethod
+            def loads(value):
+                self.assertIsInstance(value, str)
+                return {"paths": {"sharepoint_root_path": "C:/OneDrive/IAM"}}
+
+            @staticmethod
+            def load(_value):
+                raise AssertionError("binary load must not be used")
+
+        try:
+            with patch.object(config, "tomllib", Parser):
+                defaults = config._config_defaults(path)
+        finally:
+            path.unlink(missing_ok=True)
+        self.assertEqual(defaults["sharepoint_root_path"], "C:/OneDrive/IAM")
+
     def test_sample_config_has_no_machine_specific_absolute_paths(self):
         defaults = config._config_defaults(config.DEFAULT_CONFIG_PATH)
         self.assertEqual(defaults["sharepoint_root_path"], "")
