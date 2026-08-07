@@ -18,6 +18,7 @@ from iam_automation.application.source_reconciliation import ensure_source_ident
 from iam_automation.application.source_date import parse_source_date
 from iam_automation.application.status_catalog import normalize_accessnow_status
 from iam_automation.application.notification_service import NotificationService
+from iam_automation.application.rehire_alert_service import RehireAlertService
 from iam_automation.application.user_service import UserService
 
 
@@ -264,7 +265,7 @@ class SourceUpdatesTests(unittest.TestCase):
 
     def test_rehire_business_days_exclude_configured_holidays(self):
         with patch.dict(os.environ, {"REHIRE_HOLIDAYS": "2026-07-06"}):
-            elapsed = EmployeeService._business_days_between(date(2026, 7, 3), date(2026, 7, 7))
+            elapsed = RehireAlertService._business_days_between(date(2026, 7, 3), date(2026, 7, 7))
 
         self.assertEqual(elapsed, 1)
 
