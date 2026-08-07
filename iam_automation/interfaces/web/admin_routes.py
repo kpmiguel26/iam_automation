@@ -13,6 +13,7 @@ from ...application.employee_reset_service import EmployeeResetService
 from ...application.audit_service import record_audit
 from ...application.import_service import ImportService
 from ...application.notification_service import NotificationService
+from ...application.file_watch_service import load_watcher_health
 from ...application.publication_service import PublicationService
 from ...application.salesforce_export_service import SalesforceExportService
 from ...application.request_service import RequestService
@@ -112,7 +113,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     def home():
         username = str(session.get("iam_user", ""))
         pending = list_pending_discoveries(discovery_file) if discovery_file and discovery_file.exists() else []
-        return render_template("admin/control_center.html", username=username, roles=tuple(session.get("iam_roles", ())), unread_count=notifications.unread_count(username), delegations=delegations.list_active(), pending_discoveries=pending, message=None, error=None)
+        return render_template("admin/control_center.html", username=username, roles=tuple(session.get("iam_roles", ())), unread_count=notifications.unread_count(username), delegations=delegations.list_active(), pending_discoveries=pending, watcher_health=load_watcher_health(database_path), message=None, error=None)
 
     @blueprint.get("/notifications")
     @admin_required

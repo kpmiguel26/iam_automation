@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from iam_automation.application.delegation_service import DelegationService
-from iam_automation.application.file_watch_service import FileWatchService
+from iam_automation.application.file_watch_service import FileWatchService, load_watcher_health
 from iam_automation.application.import_service import ImportService
 from iam_automation.application.notification_service import NotificationService
 from iam_automation.application.request_service import RequestService
@@ -139,6 +139,23 @@ class ApplicationAdminOperationsTests(unittest.TestCase):
             self.assertEqual(notification.severity, "CRITICAL")
             watcher.record_watcher_recovery()
             self.assertEqual(watcher.notifications.list_for_user("admin")[0].status, "RESOLVED")
+
+    def test_file_watcher_health_is_persisted_outside_runtime_database(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            watcher = FileWatchService(database, Path(tmp))
+            watcher.record_watcher_health(status="DEGRADED", consecutive_failures=3, error=OSError("sync unavailable"))
+            degraded = load_watcher_health(database)
+            self.assertEqual(degraded["status"], "DEGRADED")
+            self.assertEqual(degraded["consecutive_failures"], 3)
+            self.assertIn("OSError: sync unavailable", degraded["last_error"])
+
+            watcher.record_watcher_health(status="HEALTHY", consecutive_failures=0, processed_count=2)
+            healthy = load_watcher_health(database)
+            self.assertEqual(healthy["status"], "HEALTHY")
+            self.assertEqual(healthy["last_processed_count"], 2)
+            self.assertEqual(healthy["last_error"], "")
+            self.assertTrue(healthy["last_success_at_utc"])
 
     def test_file_watcher_detects_published_runtime_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:

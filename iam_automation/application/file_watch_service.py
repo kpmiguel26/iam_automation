@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import threading
 from dataclasses import dataclass
@@ -33,6 +34,21 @@ class FileObservation:
     signature: str
 
 
+def watcher_health_path(database_path: Path) -> Path:
+    """Return the local, non-published watcher health sidecar path."""
+    return database_path.with_name(database_path.name + ".watcher-health.json")
+
+
+def load_watcher_health(database_path: Path) -> dict[str, object]:
+    """Read the last watcher state without making health part of SQLite data."""
+    path = watcher_health_path(database_path)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
 class FileWatchService:
     """Detect shared changes and stage source reports safely.
 
@@ -51,6 +67,30 @@ class FileWatchService:
         watcher = FileWatcher(self, interval_seconds)
         watcher.start()
         return watcher
+
+    def record_watcher_health(
+        self,
+        *,
+        status: str,
+        consecutive_failures: int,
+        processed_count: int = 0,
+        error: Exception | None = None,
+    ) -> None:
+        """Persist operational watcher state outside the shared runtime DB."""
+        now = datetime.now(timezone.utc).isoformat()
+        previous = load_watcher_health(self.database_path)
+        payload = {
+            "status": status,
+            "last_cycle_at_utc": now,
+            "last_success_at_utc": now if status == "HEALTHY" else previous.get("last_success_at_utc"),
+            "consecutive_failures": max(0, int(consecutive_failures)),
+            "last_processed_count": max(0, int(processed_count)),
+            "last_error": f"{type(error).__name__}: {error}" if error else "",
+        }
+        path = watcher_health_path(self.database_path)
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(path)
 
     def scan_once(self) -> int:
         # Refresh replaces the local SQLite file atomically. Hold the same
@@ -384,15 +424,28 @@ class FileWatcher:
         consecutive_failures = 0
         while not self._stop.is_set():
             try:
-                self.service.scan_once()
+                processed_count = self.service.scan_once()
                 if consecutive_failures:
                     self.service.record_watcher_recovery()
                 consecutive_failures = 0
+                self.service.record_watcher_health(
+                    status="HEALTHY",
+                    consecutive_failures=0,
+                    processed_count=processed_count,
+                )
             except Exception as exc:
                 # The watcher is a long-lived auxiliary process. A bad file, a
                 # transient OneDrive state, or a database contention must not kill it.
                 LOGGER.exception("File watcher cycle failed; retrying on next poll")
                 consecutive_failures += 1
+                try:
+                    self.service.record_watcher_health(
+                        status="DEGRADED",
+                        consecutive_failures=consecutive_failures,
+                        error=exc,
+                    )
+                except Exception:
+                    LOGGER.exception("Could not persist file watcher health state")
                 try:
                     self.service.record_watcher_failure(exc, consecutive_failures)
                 except Exception:
