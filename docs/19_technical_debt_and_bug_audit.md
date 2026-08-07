@@ -1,22 +1,22 @@
 # Technical Debt and Bug Audit
 
-**Fecha:** 2026-08-06
+**Fecha:** 2026-08-07
 **Rama revisada:** `production`
-**Commit revisado:** `529e923` (`Add 30-day rehire alerts`)
+**Commit revisado:** `458d58e` (`Extract rehire alert policy service`)
 **Alcance:** servicios de aplicación, ingestión de fuentes, watcher, sincronización SQLite, webapp, seguridad, documentación y pruebas.
 
 ## Resumen ejecutivo
 
 La aplicación tiene una base funcional sólida para un POC: separación entre evidencia de fuentes y empleados canónicos, workflow de aprobación, SQLite local/publicado, auditoría y pruebas de dominio. Sin embargo, todavía hay riesgos que pueden producir decisiones incorrectas sobre empleados o una operación difícil de recuperar.
 
-Prioridades recomendadas:
+Prioridades originales y estado actual:
 
-1. Corregir el parsing de fechas de AccessNow antes de usar el rehire alert en producción.
-2. Normalizar explícitamente `DEACTIVATED`; hoy puede terminar como empleado `ACTIVE` en el modelo canónico.
-3. Reconciliar y expirar las notificaciones de rehire cuando el hold deja de aplicar.
-4. Reemplazar la firma del watcher basada en `size + mtime` por checksum de contenido o una estrategia de observación más fuerte.
-5. Añadir protección CSRF a todos los POST mutantes.
-6. Hacer que el suite de pruebas sea verde y eliminar comandos/documentación obsoletos.
+1. Parsing de fechas de AccessNow: corregido y cubierto por regresión.
+2. Estado `DEACTIVATED`: normalizado y propagado al modelo canónico.
+3. Alertas de rehire: reconciliadas, expirables y archivables sin alterar el estado canónico.
+4. Watcher: usa checksum de contenido y expone salud operacional en el Control Center.
+5. CSRF: aplicado a los POST mutantes.
+6. Suite: `138 passed, 1 skipped`; el skip requiere loopback habilitado.
 
 ## Evidencia de validación
 
@@ -29,7 +29,7 @@ Comando ejecutado:
 Resultado actual:
 
 ```text
-121 passed, 2 failed
+138 passed, 1 skipped
 ```
 
 Fallos observados:
@@ -37,6 +37,8 @@ Fallos observados:
 - `tests/test_webapp.py::test_local_server_uses_loopback_and_ephemeral_port`: algunos entornos aislados impiden abrir el socket (`PermissionError: [Errno 1] Operation not permitted`); la prueba se omite únicamente en ese caso y debe ejecutarse en CI o entorno con loopback habilitado.
 
 Los tests de fuente y empleados pasan, incluyendo la prueba del rehire alert agregada en `tests/test_source_updates.py`.
+
+La prueba `tests/test_employee_scale.py` valida 12,000 trabajadores en la consulta paginada y filtros del directorio; el benchmark local actual fue de aproximadamente 1.10 segundos.
 
 ## Hallazgos priorizados
 
@@ -182,7 +184,7 @@ La lectura del dashboard usa el checksum del manifest publicado y cachea el chec
 
 ## Deuda de diseño y mantenibilidad
 
-- `EmployeeService` concentra consultas, reconciliación, parsing de payloads, alertas, promoción y construcción de vistas. Conviene separar `SourceEvidenceService`, `RehirePolicyService` y presenters de UI.
+- `EmployeeService` todavía concentra consultas, reconciliación, promoción y construcción de vistas. La política de rehire ya fue separada en `RehireAlertService`; queda separar presenters de UI y evidencia de fuentes.
 - El sistema tiene vocabularios de estado duplicados entre AccessNow, Worker, Engagement, Request e Ingestion. Un catálogo central evitaría conversiones silenciosas.
 - La política de días hábiles está embebida en el servicio y no es configurable ni auditable por región.
 - Parte de la UI está en inglés y parte en español; esto complica soporte y pruebas de copy.
@@ -194,19 +196,15 @@ La lectura del dashboard usa el checksum del manifest publicado y cachea el chec
 
 ### Antes del siguiente release
 
-1. Parser de fechas compartido y catálogo de estados.
-2. Reconciliación/expiración de rehire alerts.
-3. Suite verde: corregir expectativa del watcher y aislar el test de sockets.
-4. Agregar pruebas de `DEACTIVATED`, fechas AccessNow reales, feriados y expiración.
-5. Corregir README y registrar la causa específica del fallo de sync en preflight.
+1. Promover a GitHub los cuatro commits locales posteriores a `24ea60e`.
+2. Ejecutar el flujo completo en Windows con el último `production`.
+3. Obtener aprobación operativa del calendario de feriados por región.
 
 ### Siguiente iteración
 
-1. CSRF y configuración explícita de cookies/sesión.
-2. Checksum de contenido para el watcher.
-3. Estado de salud del watcher visible en Control Center.
-4. Comparación real entre SQLite local y snapshot publicado.
-5. Separación de servicios de dominio y presentadores de UI.
+1. Comparación real entre SQLite local y snapshot publicado.
+2. Separación adicional de presenters de UI y servicios de dominio.
+3. Pruebas de recuperación para publicación, OneDrive y reinicio del watcher.
 
 ### Antes de producción
 
