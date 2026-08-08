@@ -1,3 +1,13 @@
+"""
+File: iam_automation/database/alembic/env.py
+Purpose: Supports runtime database initialization, schema, or migration operations.
+Responsibilities: Exposes or coordinates: run_migrations_offline, run_migrations_online.
+Dependencies: alembic, sqlalchemy, iam_automation
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 from logging.config import fileConfig

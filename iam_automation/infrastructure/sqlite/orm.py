@@ -1,3 +1,13 @@
+"""
+File: iam_automation/infrastructure/sqlite/orm.py
+Purpose: Provides SQLite persistence infrastructure for orm.
+Responsibilities: Exposes or coordinates: Base, AppUserModel, UserRoleModel, ApprovedUserModel, RoleModel, NotificationModel, ….
+Dependencies: sqlalchemy
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 from contextlib import contextmanager

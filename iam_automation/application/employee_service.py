@@ -1,3 +1,13 @@
+"""
+File: iam_automation/application/employee_service.py
+Purpose: Implements the application service for employee service workflows.
+Responsibilities: Exposes or coordinates: EmployeeSummary, EmployeeService.
+Dependencies: sqlalchemy, infrastructure, worker_history_service, publication_state, source_reconciliation
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import json

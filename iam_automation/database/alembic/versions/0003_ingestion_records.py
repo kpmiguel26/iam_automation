@@ -1,4 +1,12 @@
-"""Add source staging records for automated ingestion."""
+"""
+File: iam_automation/database/alembic/versions/0003_ingestion_records.py
+Purpose: Add source staging records for automated ingestion.
+Responsibilities: Exposes or coordinates: upgrade, downgrade.
+Dependencies: alembic
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
 
 from alembic import op
 

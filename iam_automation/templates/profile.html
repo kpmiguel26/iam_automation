@@ -1,3 +1,13 @@
+<!--
+File: iam_automation/templates/profile.html
+Purpose: Provides the profile component of IAM Automation.
+Responsibilities: Provides the file-level implementation used by the application.
+Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+-->
+
 {% extends "base.html" %}
 {% block title %}My profile{% endblock %}
 {% block content %}<div class="container py-5 page-shell"><div class="page-heading"><div><p class="eyebrow">Account</p><h1>My profile</h1><p class="text-secondary mb-0">Your application identity and current workspace access.</p></div></div><div class="row g-4 mt-2"><div class="col-lg-7"><section class="surface p-4 profile-card"><div class="d-flex align-items-center gap-3 mb-4"><span class="avatar avatar-lg">{{ username[:1]|upper }}</span><div><h2 class="h4 mb-1">{{ username }}</h2><span class="status-pill status-active"><span></span>Authenticated session</span></div></div><div class="profile-grid"><div><span class="section-label">Application username</span><strong>{{ username }}</strong></div><div><span class="section-label">Session type</span><strong>Local application session</strong></div><div class="profile-wide"><span class="section-label">Active workspace</span><code class="small text-break">{{ sharepoint_path }}</code></div></div></section></div><div class="col-lg-5"><section class="surface p-4 h-100"><span class="section-label">Effective roles</span><div class="d-flex flex-wrap mb-4">{% for role in roles %}<span class="badge role-badge">{{ role.replace('_', ' ').title() }}</span>{% endfor %}</div><p class="small text-secondary mb-0">Permissions are evaluated on every protected route. The Windows identity is recorded for traceability and the application account controls access.</p></section></div></div></div>{% endblock %}

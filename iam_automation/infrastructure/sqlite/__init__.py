@@ -1,1 +1,9 @@
-"""SQLite repositories used by the local runtime."""
+"""
+File: iam_automation/infrastructure/sqlite/__init__.py
+Purpose: SQLite repositories used by the local runtime.
+Responsibilities: Provides the file-level implementation used by the application.
+Dependencies: Python standard library and local project modules, as applicable.
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""

@@ -1,3 +1,13 @@
+/*
+ * File: iam_automation/static/css/app.css
+ * Purpose: Provides the app component of IAM Automation.
+ * Responsibilities: Organizes layout, typography, controls, states, and application visual treatment.
+ * Dependencies: Application markup and Bootstrap theme tokens, as applicable.
+ * Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+ * Author: Miguel Fernandez.
+ * Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+ */
+
 :root { --kp-navy: #0e2046; --kp-teal: #007f82; }
 body { background: #f4f6f8; color: #172033; }
 .kp-header { background: var(--kp-navy); color: #fff; }

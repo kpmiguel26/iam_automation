@@ -1,4 +1,12 @@
-"""Shared identity resolution and source identifier registration."""
+"""
+File: iam_automation/application/source_reconciliation.py
+Purpose: Shared identity resolution and source identifier registration.
+Responsibilities: Exposes or coordinates: source_identifiers, _match_types, find_worker_matches, ensure_source_identifiers.
+Dependencies: sqlalchemy, infrastructure
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,12 @@
-"""Business-day rules used by policy calculations."""
+"""
+File: iam_automation/application/business_calendar.py
+Purpose: Business-day rules used by policy calculations.
+Responsibilities: Exposes or coordinates: configured_rehire_holidays, business_days_between.
+Dependencies: Python standard library and local project modules, as applicable.
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
 
 from __future__ import annotations
 

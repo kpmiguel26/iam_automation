@@ -1,3 +1,13 @@
+"""
+File: iam_automation/interfaces/web/bug_report_routes.py
+Purpose: Defines Flask routes for the bug report routes area.
+Responsibilities: Exposes or coordinates: create_bug_report_blueprint.
+Dependencies: flask, application, identity
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 from functools import wraps

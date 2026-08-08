@@ -1,3 +1,13 @@
+"""
+File: tests/test_worker_history.py
+Purpose: Provides automated regression tests for test worker history.
+Responsibilities: Exposes or coordinates: WorkerHistoryTests.
+Dependencies: unittest, iam_automation
+Inputs/outputs: Inputs: temporary databases, fixtures, and test doubles. Outputs: assertions and test results.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import tempfile

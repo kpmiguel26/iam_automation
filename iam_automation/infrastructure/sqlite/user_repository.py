@@ -1,3 +1,13 @@
+"""
+File: iam_automation/infrastructure/sqlite/user_repository.py
+Purpose: Provides SQLite persistence infrastructure for user repository.
+Responsibilities: Exposes or coordinates: UserRepository.
+Dependencies: sqlalchemy, domain, identity, orm
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

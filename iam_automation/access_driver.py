@@ -1,3 +1,13 @@
+"""
+File: iam_automation/access_driver.py
+Purpose: Provides the access driver component of IAM Automation.
+Responsibilities: Exposes or coordinates: connection_string, available_odbc_drivers, select_access_driver, connect_access.
+Dependencies: Python standard library and local project modules, as applicable.
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

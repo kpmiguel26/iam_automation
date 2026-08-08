@@ -1,3 +1,13 @@
+"""
+File: iam_automation/application/accessnow_ingestion_service.py
+Purpose: Implements the application service for accessnow ingestion service workflows.
+Responsibilities: Exposes or coordinates: AccessNowIngestionResult, AccessNowIngestionService.
+Dependencies: sqlalchemy, infrastructure, publication_state, source_reconciliation, worker_history_service
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import csv

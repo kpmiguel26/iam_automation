@@ -1,3 +1,13 @@
+"""
+File: iam_automation/qt_startup.py
+Purpose: Provides the qt startup component of IAM Automation.
+Responsibilities: Exposes or coordinates: StartupWindow, run_desktop_app.
+Dependencies: ctypes, webbrowser, startup, webapp
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import ctypes

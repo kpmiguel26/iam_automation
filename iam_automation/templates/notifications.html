@@ -1,3 +1,13 @@
+<!--
+File: iam_automation/templates/notifications.html
+Purpose: Provides the notifications component of IAM Automation.
+Responsibilities: Provides the file-level implementation used by the application.
+Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+-->
+
 {% extends "base.html" %}
 {% block title %}Notifications{% endblock %}
 {% block content %}<div class="container-fluid px-4 px-lg-5 py-4 page-shell"><div class="page-heading"><div><p class="eyebrow">Workspace activity</p><h1>Notifications</h1><p class="text-secondary mb-0">Review changes, assignments and actions that need your attention.</p></div><span class="badge text-bg-light border">{{ notifications|length }} events</span></div><div class="notification-list mt-4">{% for item in notifications %}<article class="surface notification-card {% if item.status == 'UNREAD' %}notification-unread{% endif %}"><div class="notification-card-icon severity-{{ item.severity|lower }}" aria-hidden="true">{% if item.severity in ('CRITICAL', 'ERROR', 'WARNING') %}!{% else %}i{% endif %}</div><div class="notification-card-body"><div class="d-flex justify-content-between gap-3"><div><h2 class="h6 mb-1">{{ item.title }}</h2><p class="small text-secondary mb-2">{{ item.notification_type|replace('_', ' ')|title }} · {{ item.status|replace('_', ' ')|title }}</p></div><span class="badge text-bg-light">{{ item.severity }}</span></div><p class="mb-3">{{ item.message }}</p><div class="d-flex flex-wrap gap-2">{% if item.target_route %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('notification_open', notification_id=item.notification_id) }}">Open related item</a>{% endif %}{% if item.status == 'UNREAD' %}<form method="post" action="{{ url_for('notification_read', notification_id=item.notification_id) }}"><button class="btn btn-sm btn-outline-secondary" type="submit">Mark as read</button></form>{% endif %}{% if item.status not in ('RESOLVED', 'EXPIRED') %}<form method="post" action="{{ url_for('notification_resolve', notification_id=item.notification_id) }}"><button class="btn btn-sm btn-outline-success" type="submit">Resolve</button></form>{% endif %}</div></div></article>{% else %}<div class="surface empty-state"><div class="empty-state-icon">✓</div><h2 class="h5">You are all caught up</h2><p class="text-secondary mb-0">New workspace activity will appear here.</p></div>{% endfor %}</div></div>{% endblock %}

@@ -1,3 +1,13 @@
+"""
+File: iam_automation/startup.py
+Purpose: Provides the startup component of IAM Automation.
+Responsibilities: Exposes or coordinates: StartupState, StartupSettings, PreflightResult, _default_workspace, _path_from, settings_for_root, ….
+Dependencies: application, database, identity, identity_discovery, runtime_sync
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import os

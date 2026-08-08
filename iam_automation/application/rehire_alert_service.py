@@ -1,3 +1,13 @@
+"""
+File: iam_automation/application/rehire_alert_service.py
+Purpose: Implements the application service for rehire alert service workflows.
+Responsibilities: Exposes or coordinates: RehireAlertService.
+Dependencies: sqlalchemy, infrastructure, business_calendar, publication_state, source_date
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import json

@@ -1,3 +1,13 @@
+"""
+File: iam_automation/application/worker_history_service.py
+Purpose: Implements the application service for worker history service workflows.
+Responsibilities: Exposes or coordinates: _now, worker_snapshot, record_worker_version, version_dict, backfill_missing_worker_versions.
+Dependencies: sqlalchemy, infrastructure
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import json

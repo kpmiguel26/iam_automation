@@ -1,3 +1,13 @@
+"""
+File: iam_automation/interfaces/web/admin_routes.py
+Purpose: Defines Flask routes for the admin routes area.
+Responsibilities: Exposes or coordinates: create_admin_blueprint.
+Dependencies: flask, application, database, identity, identity_discovery
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import sqlite3

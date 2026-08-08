@@ -1,3 +1,13 @@
+"""
+File: iam_automation/database/migration_runner.py
+Purpose: Supports runtime database initialization, schema, or migration operations.
+Responsibilities: Exposes or coordinates: _alembic_config, _legacy_versions, _current_revision, _legacy_version_for_revision, apply_pending_migrations, applied_migrations, ….
+Dependencies: alembic, sqlalchemy
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import sqlite3

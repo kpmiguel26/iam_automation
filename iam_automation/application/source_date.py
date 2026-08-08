@@ -1,4 +1,12 @@
-"""Date parsing helpers for source-system exports."""
+"""
+File: iam_automation/application/source_date.py
+Purpose: Date parsing helpers for source-system exports.
+Responsibilities: Exposes or coordinates: parse_source_date.
+Dependencies: Python standard library and local project modules, as applicable.
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
 
 from __future__ import annotations
 

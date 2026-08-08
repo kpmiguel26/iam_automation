@@ -1,3 +1,13 @@
+"""
+File: iam_automation/settings_store.py
+Purpose: Provides the settings store component of IAM Automation.
+Responsibilities: Exposes or coordinates: user_settings_path, load_user_settings, save_user_settings.
+Dependencies: Python standard library and local project modules, as applicable.
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import os

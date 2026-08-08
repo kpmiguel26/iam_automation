@@ -1,3 +1,13 @@
+"""
+File: iam_automation/coordinator.py
+Purpose: Provides the coordinator component of IAM Automation.
+Responsibilities: Exposes or coordinates: CoordinatorPaths, paths_from_settings, ensure_paths_valid, create_backup, local_working_copy, read_database_version, ….
+Dependencies: audit, checksum, config, identity, lock
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import shutil

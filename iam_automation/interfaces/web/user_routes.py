@@ -1,3 +1,13 @@
+"""
+File: iam_automation/interfaces/web/user_routes.py
+Purpose: Defines Flask routes for the user routes area.
+Responsibilities: Exposes or coordinates: create_user_blueprint, create_identity_blueprint.
+Dependencies: flask, application, identity, identity_discovery, domain
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 from functools import wraps

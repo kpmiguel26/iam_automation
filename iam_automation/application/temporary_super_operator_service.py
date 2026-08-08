@@ -1,3 +1,13 @@
+"""
+File: iam_automation/application/temporary_super_operator_service.py
+Purpose: Implements the application service for temporary super operator service workflows.
+Responsibilities: Exposes or coordinates: TemporarySuperOperatorService.
+Dependencies: sqlalchemy, identity, infrastructure, user_service
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import json

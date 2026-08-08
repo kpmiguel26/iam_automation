@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Build a versioned, runnable source distribution for IAM Automation."""
+"""
+File: scripts/package_source.py
+Purpose: Build a versioned, runnable source distribution for IAM Automation.
+Responsibilities: Exposes or coordinates: project_version, git_value, is_excluded, source_files, build_manifest, create_archive, ….
+Dependencies: argparse
+Inputs/outputs: Inputs: command-line arguments and configured paths. Outputs: validation messages, files, or process status.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
 
 from __future__ import annotations
 

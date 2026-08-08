@@ -1,3 +1,13 @@
+"""
+File: tests/test_publication_state.py
+Purpose: Provides automated regression tests for test publication state.
+Responsibilities: Exposes or coordinates: PublicationStateTests.
+Dependencies: unittest, iam_automation
+Inputs/outputs: Inputs: temporary databases, fixtures, and test doubles. Outputs: assertions and test results.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 import tempfile
 import unittest
 from pathlib import Path

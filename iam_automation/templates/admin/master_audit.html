@@ -1,3 +1,13 @@
+<!--
+File: iam_automation/templates/admin/master_audit.html
+Purpose: Provides the master audit component of IAM Automation.
+Responsibilities: Provides the file-level implementation used by the application.
+Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+-->
+
 {% extends "base.html" %}
 {% block title %}Master audit center{% endblock %}
 {% block content %}<div class="container-fluid px-4 px-lg-5 py-4 admin-page"><div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4"><div><a class="back-link" href="{{ url_for('admin.home') }}">Control Center</a><p class="eyebrow mt-3 mb-1">Evidence and accountability</p><h1>Master audit center</h1><p class="text-secondary mb-0">Original events are append-only. Export and archive operations are audited.</p></div><div class="page-actions"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('master_admin.export_audit') }}">Export JSON</a><form method="post" action="{{ url_for('master_admin.archive_audit') }}"><button class="btn btn-sm btn-outline-secondary" type="submit">Archive events</button></form></div></div><div class="surface table-responsive"><table class="table table-sm table-hover align-middle mb-0"><thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Entity</th><th>Result</th><th>Details</th></tr></thead><tbody>{% for event in events %}<tr><td class="small text-secondary">{{ event.timestamp }}</td><td>{{ event.user }}</td><td><code>{{ event.action }}</code></td><td>{{ event.entity_type }} / {{ event.entity_id }}</td><td>{{ event.result }}</td><td class="small">{{ event.new_values }}</td></tr>{% else %}<tr><td colspan="6" class="empty-state">No audit events recorded yet.</td></tr>{% endfor %}</tbody></table></div></div>{% endblock %}

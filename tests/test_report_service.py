@@ -1,3 +1,13 @@
+"""
+File: tests/test_report_service.py
+Purpose: Provides automated regression tests for test report service.
+Responsibilities: Exposes or coordinates: ReportServiceTests.
+Dependencies: unittest, iam_automation
+Inputs/outputs: Inputs: temporary databases, fixtures, and test doubles. Outputs: assertions and test results.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import tempfile

@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
+# -----------------------------------------------------------------------------
+# File: run.sh
+# Purpose: Provides the run component of IAM Automation.
+# Responsibilities: Validates prerequisites, prepares runtime paths, and invokes the requested application operation.
+# Dependencies: Operating-system shell, Python runtime, and project scripts, as applicable.
+# Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+# Author: Miguel Fernandez.
+# Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+# -----------------------------------------------------------------------------
+
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

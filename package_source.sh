@@ -1,4 +1,14 @@
 #!/usr/bin/env sh
+# -----------------------------------------------------------------------------
+# File: package_source.sh
+# Purpose: Provides the package source component of IAM Automation.
+# Responsibilities: Validates prerequisites, prepares runtime paths, and invokes the requested application operation.
+# Dependencies: Operating-system shell, Python runtime, and project scripts, as applicable.
+# Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+# Author: Miguel Fernandez.
+# Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+# -----------------------------------------------------------------------------
+
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)

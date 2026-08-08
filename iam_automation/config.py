@@ -1,3 +1,13 @@
+"""
+File: iam_automation/config.py
+Purpose: Provides the config component of IAM Automation.
+Responsibilities: Exposes or coordinates: PathResource, dev_auto_approve_users_enabled, dev_default_role, _load_toml, _config_defaults, _env_defaults, ….
+Dependencies: Python standard library and local project modules, as applicable.
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import os

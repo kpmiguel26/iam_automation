@@ -1,3 +1,13 @@
+"""
+File: iam_automation/interfaces/web/report_routes.py
+Purpose: Defines Flask routes for the report routes area.
+Responsibilities: Exposes or coordinates: create_report_blueprint.
+Dependencies: flask, application
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import json

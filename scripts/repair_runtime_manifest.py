@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Explicitly repair a runtime SQLite manifest after integrity validation."""
+"""
+File: scripts/repair_runtime_manifest.py
+Purpose: Explicitly repair a runtime SQLite manifest after integrity validation.
+Responsibilities: Exposes or coordinates: main.
+Dependencies: argparse, iam_automation
+Inputs/outputs: Inputs: command-line arguments and configured paths. Outputs: validation messages, files, or process status.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
 
 from __future__ import annotations
 

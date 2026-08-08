@@ -1,3 +1,13 @@
+"""
+File: iam_automation/identity.py
+Purpose: Provides the identity component of IAM Automation.
+Responsibilities: Exposes or coordinates: normalize_role, CurrentUser, windows_username, computer_name, load_approved_users, validate_current_user, ….
+Dependencies: getpass, socket
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import csv

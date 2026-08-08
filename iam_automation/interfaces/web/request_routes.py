@@ -1,3 +1,13 @@
+"""
+File: iam_automation/interfaces/web/request_routes.py
+Purpose: Defines Flask routes for the request routes area.
+Responsibilities: Exposes or coordinates: _current_user, create_request_blueprint.
+Dependencies: flask, application, identity
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 from functools import wraps

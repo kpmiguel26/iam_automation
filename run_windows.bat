@@ -1,3 +1,13 @@
+REM -----------------------------------------------------------------------------
+REM File: run_windows.bat
+REM Purpose: Provides the run windows component of IAM Automation.
+REM Responsibilities: Validates prerequisites, prepares runtime paths, and invokes the requested application operation.
+REM Dependencies: Operating-system shell, Python runtime, and project scripts, as applicable.
+REM Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+REM Author: Miguel Fernandez.
+REM Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+REM -----------------------------------------------------------------------------
+
 @echo off
 setlocal EnableExtensions
 

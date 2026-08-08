@@ -1,3 +1,13 @@
+"""
+File: scripts/build_architecture_brief_docx.py
+Purpose: Provides an operational utility for build architecture brief docx.
+Responsibilities: Exposes or coordinates: set_cell_shading, set_cell_margins, set_table_borders, set_repeat_table_header, set_cell_width, set_table_geometry, ….
+Dependencies: docx, PIL
+Inputs/outputs: Inputs: command-line arguments and configured paths. Outputs: validation messages, files, or process status.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import re

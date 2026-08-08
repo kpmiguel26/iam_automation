@@ -1,3 +1,13 @@
+"""
+File: scripts/experiment_05_optimistic_concurrency_sqlite.py
+Purpose: Provides an operational utility for experiment 05 optimistic concurrency sqlite.
+Responsibilities: Exposes or coordinates: init_db, main.
+Dependencies: argparse
+Inputs/outputs: Inputs: command-line arguments and configured paths. Outputs: validation messages, files, or process status.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import argparse

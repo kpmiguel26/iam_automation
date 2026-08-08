@@ -1,3 +1,13 @@
+"""
+File: scripts/export_diagrams.py
+Purpose: Provides an operational utility for export diagrams.
+Responsibilities: Exposes or coordinates: render_one, main.
+Dependencies: argparse
+Inputs/outputs: Inputs: command-line arguments and configured paths. Outputs: validation messages, files, or process status.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import argparse

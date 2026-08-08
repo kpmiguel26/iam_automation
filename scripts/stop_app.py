@@ -1,3 +1,13 @@
+"""
+File: scripts/stop_app.py
+Purpose: Provides an operational utility for stop app.
+Responsibilities: Exposes or coordinates: main.
+Dependencies: urllib, iam_automation
+Inputs/outputs: Inputs: command-line arguments and configured paths. Outputs: validation messages, files, or process status.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import json

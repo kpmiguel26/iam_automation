@@ -1,3 +1,13 @@
+"""
+File: tests/test_source_duplicates.py
+Purpose: Provides automated regression tests for test source duplicates.
+Responsibilities: Exposes or coordinates: SourceDuplicateSummaryTests.
+Dependencies: unittest, iam_automation
+Inputs/outputs: Inputs: temporary databases, fixtures, and test doubles. Outputs: assertions and test results.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import json

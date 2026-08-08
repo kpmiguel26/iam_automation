@@ -1,3 +1,13 @@
+"""
+File: iam_automation/runtime_sync.py
+Purpose: Provides the runtime sync component of IAM Automation.
+Responsibilities: Exposes or coordinates: RuntimeDatabaseError, RuntimeSnapshot, project_runtime_path, runtime_manifest_path, find_published_runtime_db, find_published_access_db, ….
+Dependencies: Python standard library and local project modules, as applicable.
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import hashlib

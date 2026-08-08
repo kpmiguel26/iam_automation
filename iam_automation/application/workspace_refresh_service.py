@@ -1,3 +1,13 @@
+"""
+File: iam_automation/application/workspace_refresh_service.py
+Purpose: Implements the application service for workspace refresh service workflows.
+Responsibilities: Exposes or coordinates: local_runtime_checksum_path, record_published_source_checksum, record_local_runtime_checksum, read_published_source_checksum, _published_manifest_checksum, _cached_checksum, ….
+Dependencies: sqlalchemy, database, runtime_sync, infrastructure, request_service
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

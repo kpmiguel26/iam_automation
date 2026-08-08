@@ -1,1 +1,9 @@
-"""Domain models and rules for IAM Automation."""
+"""
+File: iam_automation/domain/__init__.py
+Purpose: Domain models and rules for IAM Automation.
+Responsibilities: Provides the file-level implementation used by the application.
+Dependencies: Python standard library and local project modules, as applicable.
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""

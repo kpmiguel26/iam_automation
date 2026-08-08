@@ -1,3 +1,13 @@
+"""
+File: docs/users_history/build_user_stories_document.py
+Purpose: Provides the build user stories document component of IAM Automation.
+Responsibilities: Exposes or coordinates: set_cell_shading, set_cell_margins, set_table_borders, set_table_widths, set_run, add_inline_runs, ….
+Dependencies: docx
+Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Author: Miguel Fernandez.
+Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+"""
+
 from __future__ import annotations
 
 import re
