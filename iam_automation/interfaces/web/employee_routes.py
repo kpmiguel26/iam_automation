@@ -111,11 +111,11 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
     def create_all_source_candidates():
         current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
         if not current_user.can_decide_requests:
-            return redirect(url_for("employees.source_updates_overview", all_people="1", notice="Solo un administrador puede ejecutar la creación masiva.", notice_type="danger"))
+            return redirect(url_for("employees.source_updates_overview", all_people="1", notice="Only an administrator can run bulk creation.", notice_type="danger"))
         try:
             result = service.create_all_source_candidates(current_user.username)
             record_audit(audit_path, current_user.username, "ALL_SOURCE_CANDIDATES_APPLIED", "source_updates", "bulk", new_values={"result": result})
-            return redirect(url_for("employees.source_updates_overview", all_people="1", notice=f"Procesados {result['dossiers']} expediente(s): {result['created']} empleado(s) creado(s), {result['reused']} reutilizado(s), {result['skipped']} omitido(s) y {result['failed']} con error.", notice_type="success"))
+            return redirect(url_for("employees.source_updates_overview", all_people="1", notice=f"Processed {result['dossiers']} record(s): {result['created']} employee(s) created, {result['reused']} reused, {result['skipped']} skipped, and {result['failed']} failed.", notice_type="success"))
         except (OSError, ValueError, PermissionError) as exc:
             return redirect(url_for("employees.source_updates_overview", all_people="1", notice=str(exc), notice_type="danger"))
 
@@ -148,7 +148,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 except (OSError, ValueError, PermissionError) as exc:
                     error = str(exc)
             elif not review.get("worker_id"):
-                error = "Este grupo todavía no tiene un empleado canónico único para aplicar los valores seleccionados."
+                error = "This group does not yet have a single canonical employee to apply the selected values to."
             else:
                 choices = {key.removeprefix("field_"): value for key, value in request.form.items() if key.startswith("field_") and value}
                 try:
@@ -156,7 +156,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                     for field, source_record_id in choices.items():
                         grouped.setdefault(source_record_id, []).append(field)
                     results = [service.apply_selected_source_updates(review["worker_id"], [source_record_id], fields, str(session["iam_user"])) for source_record_id, fields in grouped.items()]
-                    message = f"Se aplicaron localmente {sum(int(result['processed']) for result in results)} registro(s) y se actualizó el histórico."
+                    message = f"Applied {sum(int(result['processed']) for result in results)} record(s) locally and updated the history."
                 except (OSError, ValueError, PermissionError) as exc:
                     error = str(exc)
         return render_template("employees/duplicate_review.html", review=review, message=message, error=error)

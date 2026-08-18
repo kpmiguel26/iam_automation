@@ -229,7 +229,7 @@ Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automat
         icon.textContent = '!';
         var title = document.createElement('h2');
         title.id = 'iamConfirmationTitle';
-        title.textContent = 'Confirmar creación masiva';
+        title.textContent = 'Confirm bulk creation';
         var body = document.createElement('p');
         body.textContent = message;
         var actions = document.createElement('div');
@@ -241,7 +241,7 @@ Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automat
         var confirm = document.createElement('button');
         confirm.type = 'button';
         confirm.className = 'btn btn-danger';
-        confirm.textContent = 'Crear empleados';
+        confirm.textContent = 'Create employees';
         actions.append(cancel, confirm);
         card.append(icon, title, body, actions);
         overlay.appendChild(card);
@@ -264,9 +264,9 @@ Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automat
           form.dataset.loadingHandled = 'true';
           var action = (form.getAttribute('action') || '').toLowerCase();
           var message = form.dataset.loadingMessage || 'Saving changes and updating the workspace…';
-          if (action.indexOf('publish') !== -1) message = 'Publicando snapshot SQLite, creando respaldo y notificando al equipo…';
-          else if (action.indexOf('approval') !== -1 || action.indexOf('decision') !== -1) message = 'Guardando decisión y aplicando el cambio local…';
-          else if (form.enctype === 'multipart/form-data') message = 'Cargando y validando el archivo…';
+          if (action.indexOf('publish') !== -1) message = 'Publishing the SQLite snapshot, creating a backup, and notifying the team…';
+          else if (action.indexOf('approval') !== -1 || action.indexOf('decision') !== -1) message = 'Saving the decision and applying the local change…';
+          else if (form.enctype === 'multipart/form-data') message = 'Uploading and validating the file…';
           showLoading(message);
           form.querySelectorAll('button, input[type="submit"]').forEach(function (control) { control.disabled = true; });
         });
