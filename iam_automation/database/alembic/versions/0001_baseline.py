@@ -4,8 +4,11 @@ Purpose: Register the existing runtime schema as the Alembic baseline.
 Responsibilities: Exposes or coordinates: upgrade, downgrade.
 Dependencies: alembic
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from alembic import op
@@ -25,3 +28,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     # The baseline is intentionally not destructive.
     pass
+#endfile

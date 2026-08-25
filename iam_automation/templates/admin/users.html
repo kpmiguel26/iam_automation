@@ -4,8 +4,11 @@ Purpose: Provides the users component of IAM Automation.
 Responsibilities: Provides the file-level implementation used by the application.
 Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 -->
 
 {% extends "base.html" %}
@@ -27,3 +30,4 @@ Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automat
 {% for user in users %}<div class="modal fade" id="editUser{{ loop.index }}" tabindex="-1" aria-labelledby="editUserLabel{{ loop.index }}" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><div><p class="eyebrow mb-1">Account settings</p><h2 class="modal-title h5" id="editUserLabel{{ loop.index }}">Edit {{ user.username }}</h2></div><button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><form method="post" action="{{ url_for('user_admin.update_user', username=user.username) }}"><div class="modal-body"><label class="form-label">Username</label><input class="form-control mb-3" value="{{ user.username }}" disabled><label class="form-label">Display name</label><input class="form-control mb-3" name="display_name" value="{{ user.display_name }}"><label class="form-label">Access roles</label><select class="form-select mb-3" name="roles" multiple size="5" required>{% for option in role_options %}{% if not option.admin_only or can_assign_master %}<option value="{{ option.value }}" {% if option.value in user.roles %}selected{% endif %}>{{ option.label }}{% if option.admin_only %} (restricted){% endif %}</option>{% endif %}{% endfor %}</select><label class="form-label">Account status</label><select class="form-select mb-3" name="status" required>{% for status in account_statuses %}<option value="{{ status }}" {% if user.status == status %}selected{% endif %}>{{ status|replace('_', ' ')|title }}</option>{% endfor %}</select><label class="form-label">Reset password <span class="text-secondary fw-normal">(optional)</span></label><input class="form-control" name="password" type="password" placeholder="Leave blank to keep current password"></div><div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Save changes</button></div></form></div></div></div>{% endfor %}
 {% endblock %}
 {% block scripts %}<script>document.getElementById('userSearch')?.addEventListener('input', function () { const q = this.value.toLowerCase(); document.querySelectorAll('.user-row').forEach(row => { row.hidden = !row.innerText.toLowerCase().includes(q); }); });</script>{% endblock %}
+<!-- #endfile -->

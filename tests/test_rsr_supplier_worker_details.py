@@ -4,8 +4,11 @@ Purpose: Provides automated regression tests for test rsr supplier worker detail
 Responsibilities: Exposes or coordinates: RsrSupplierWorkerDetailsTests.
 Dependencies: unittest, openpyxl, sqlalchemy, iam_automation
 Inputs/outputs: Inputs: temporary databases, fixtures, and test doubles. Outputs: assertions and test results.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -166,3 +169,4 @@ class RsrSupplierWorkerDetailsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+#endfile

@@ -4,8 +4,11 @@ Purpose: Implements the application service for publication state workflows.
 Responsibilities: Exposes or coordinates: pending_marker_path, mark_publication_pending, clear_publication_pending, publication_pending.
 Dependencies: Python standard library and local project modules, as applicable.
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -41,3 +44,4 @@ def clear_publication_pending(runtime_path: Path) -> None:
 
 def publication_pending(runtime_path: Path | None) -> bool:
     return bool(runtime_path and pending_marker_path(runtime_path).is_file())
+#endfile

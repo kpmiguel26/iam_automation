@@ -4,8 +4,11 @@ Purpose: Provides the employees component of IAM Automation.
 Responsibilities: Provides the file-level implementation used by the application.
 Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 -->
 
 {% extends "base.html" %}
@@ -55,3 +58,4 @@ Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automat
   <section class="surface p-4 mt-4"><p class="eyebrow mb-1">Troubleshooting</p><h2 class="h5">If something looks wrong</h2><div class="row g-3 small text-secondary"><div class="col-md-4"><strong class="d-block text-dark">Employee not found</strong>Check the directory search and confirm the local workspace has refreshed.</div><div class="col-md-4"><strong class="d-block text-dark">Values disagree</strong>Open each source accordion and compare source, file and timestamp. Do not overwrite another source to “fix” it.</div><div class="col-md-4"><strong class="d-block text-dark">History is missing</strong>Confirm the change was applied locally. Publishing only shares the local history; it does not create it.</div></div></section>
 </div>
 {% endblock %}
+<!-- #endfile -->

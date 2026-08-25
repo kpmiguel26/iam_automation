@@ -4,8 +4,11 @@
 # Responsibilities: Validates prerequisites, prepares runtime paths, and invokes the requested application operation.
 # Dependencies: Operating-system shell, Python runtime, and project scripts, as applicable.
 # Inputs/outputs: Inputs: command-line arguments and configured paths. Outputs: validation messages, files, or process status.
-# Author: Miguel Fernandez.
-# Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+# Author / implementation: Miguel Fernandez.
+# Developed for: Kaiser Permanente NSES GWFM.
+# Project implementation and integration: Miguel Fernandez.
+# Third-party source, libraries, and dependencies retain their original licenses.
+# Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 # -----------------------------------------------------------------------------
 
 param(
@@ -18,3 +21,4 @@ Write-Host "Computer: $env:COMPUTERNAME"
 Write-Host "Python:"
 python --version
 python scripts/validate_environment.py --config $ConfigPath
+#endfile

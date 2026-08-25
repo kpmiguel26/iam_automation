@@ -4,8 +4,11 @@ Purpose: Supports runtime database initialization, schema, or migration operatio
 Responsibilities: Exposes or coordinates: AccessDatabaseInitializationError, _create_empty_access_file, initialize_access_database.
 Dependencies: access_driver, schema
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -87,3 +90,4 @@ def initialize_access_database(db_path: Path, *, driver: str | None = None) -> d
     except Exception as exc:
         raise AccessDatabaseInitializationError(f"Access schema initialization failed for {db_path}: {exc}") from exc
     return {"database": str(db_path), "created": created, "skipped": skipped, "ok": True}
+#endfile

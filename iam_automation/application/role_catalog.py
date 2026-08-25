@@ -4,8 +4,11 @@ Purpose: Implements the application service for role catalog workflows.
 Responsibilities: Exposes or coordinates: RoleOption.
 Dependencies: identity
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -32,3 +35,4 @@ ROLE_OPTIONS = (
     RoleOption(ROLE_MASTER_ADMIN, "Master Administrator", "Controls security, recovery and global settings.", admin_only=True),
     RoleOption(ROLE_SUPER_OPERATOR, "Temporary Super Operator", "Temporary operational access; cannot publish Access or manage Master security.", admin_only=True),
 )
+#endfile

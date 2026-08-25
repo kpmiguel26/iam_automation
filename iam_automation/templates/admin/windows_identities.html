@@ -4,8 +4,11 @@ Purpose: Provides the windows identities component of IAM Automation.
 Responsibilities: Provides the file-level implementation used by the application.
 Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 -->
 
 {% extends "base.html" %}
@@ -44,3 +47,4 @@ Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automat
 {% for identity in identities %}<div class="modal fade" id="editIdentity{{ loop.index }}" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><div><p class="eyebrow mb-1">Traceability record</p><h2 class="modal-title h5">Edit {{ identity.username }}</h2></div><button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><form method="post" action="{{ url_for('identity_admin.save_identity') }}"><div class="modal-body"><label class="form-label">Username</label><input class="form-control mb-3" name="username" value="{{ identity.username }}" readonly><label class="form-label">Display name</label><input class="form-control mb-3" name="display_name" value="{{ identity.display_name }}"><label class="form-label">Record status</label><select class="form-select" name="active"><option value="1" {% if identity.active %}selected{% endif %}>Active</option><option value="0" {% if not identity.active %}selected{% endif %}>Inactive</option></select></div><div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Save changes</button></div></form></div></div></div>{% endfor %}
 {% endblock %}
 {% block scripts %}<script>document.getElementById('identitySearch')?.addEventListener('input', function () { const q = this.value.toLowerCase(); document.querySelectorAll('.identity-row').forEach(row => { row.hidden = !row.innerText.toLowerCase().includes(q); }); });</script>{% endblock %}
+<!-- #endfile -->

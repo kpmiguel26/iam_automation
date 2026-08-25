@@ -4,8 +4,11 @@ Purpose: Implements the application service for workspace refresh service workfl
 Responsibilities: Exposes or coordinates: local_runtime_checksum_path, record_published_source_checksum, record_local_runtime_checksum, read_published_source_checksum, _published_manifest_checksum, _cached_checksum, ….
 Dependencies: sqlalchemy, database, runtime_sync, infrastructure, request_service
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -166,3 +169,4 @@ class WorkspaceRefreshService:
             initialize_runtime_database(snapshot.local_path)
             record_published_source_checksum(snapshot.local_path, snapshot.checksum)
             return self.version(), exported
+#endfile

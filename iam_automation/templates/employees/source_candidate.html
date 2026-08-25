@@ -4,8 +4,11 @@ Purpose: Provides the source candidate component of IAM Automation.
 Responsibilities: Provides the file-level implementation used by the application.
 Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 -->
 
 {% extends "base.html" %}
@@ -29,3 +32,4 @@ Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automat
   <section class="surface p-4 mt-3"><form method="post" action="{{ url_for('employees.request_source_candidate', record_id=preview.record_id) }}"><label class="form-label" for="candidateReason">Business reason</label><textarea id="candidateReason" class="form-control" name="reason" rows="3" required placeholder="Explain why this candidate should be created"></textarea><div class="d-flex justify-content-end gap-2 flex-wrap mt-3"><button class="btn btn-outline-primary" type="submit">Submit for approval</button>{% if can_apply %}<button class="btn btn-primary" type="submit" formaction="{{ url_for('employees.apply_source_candidate', record_id=preview.record_id) }}">Create employee now</button>{% endif %}</div></form></section>
 </div>
 {% endblock %}
+<!-- #endfile -->

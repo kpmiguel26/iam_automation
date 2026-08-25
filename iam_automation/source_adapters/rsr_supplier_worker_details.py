@@ -4,8 +4,11 @@ Purpose: Provides the rsr supplier worker details component of IAM Automation.
 Responsibilities: Exposes or coordinates: RsrIngestionResult, _utc_now, _header_key, _value, RsrSupplierWorkerDetailsAdapter.
 Dependencies: openpyxl, sqlalchemy, infrastructure, application
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -382,3 +385,4 @@ class RsrSupplierWorkerDetailsAdapter:
     @staticmethod
     def _add_identifiers(session, worker_id: str, payload: dict[str, str], now: str) -> None:
         ensure_source_identifiers(session, worker_id, SOURCE_SYSTEM, payload, now)
+#endfile

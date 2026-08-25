@@ -4,8 +4,11 @@ Purpose: Environment discovery and startup preflight use cases.
 Responsibilities: Provides the file-level implementation used by the application.
 Dependencies: sharepoint_discovery, startup
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from ..sharepoint_discovery import DiscoveryCandidate, discover_candidates
@@ -19,3 +22,4 @@ __all__ = [
     "StartupState",
     "discover_candidates",
 ]
+#endfile

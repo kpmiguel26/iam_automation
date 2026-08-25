@@ -5,8 +5,11 @@ Purpose: Build a versioned, runnable source distribution for IAM Automation.
 Responsibilities: Exposes or coordinates: project_version, git_value, is_excluded, source_files, build_manifest, create_archive, ….
 Dependencies: argparse
 Inputs/outputs: Inputs: command-line arguments and configured paths. Outputs: validation messages, files, or process status.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -169,3 +172,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+#endfile

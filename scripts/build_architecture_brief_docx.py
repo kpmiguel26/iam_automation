@@ -4,8 +4,11 @@ Purpose: Provides an operational utility for build architecture brief docx.
 Responsibilities: Exposes or coordinates: set_cell_shading, set_cell_margins, set_table_borders, set_repeat_table_header, set_cell_width, set_table_geometry, ….
 Dependencies: docx, PIL
 Inputs/outputs: Inputs: command-line arguments and configured paths. Outputs: validation messages, files, or process status.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -460,3 +463,4 @@ def build_doc() -> None:
 
 if __name__ == "__main__":
     build_doc()
+#endfile

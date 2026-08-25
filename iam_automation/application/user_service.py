@@ -4,8 +4,11 @@ Purpose: Implements the application service for user service workflows.
 Responsibilities: Exposes or coordinates: UserService.
 Dependencies: werkzeug, domain, identity, infrastructure
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -110,3 +113,4 @@ class UserService:
         if role not in set(current_roles):
             return False
         return sum(1 for user in self.repository.list_users() if user.active and role in set(user.roles)) == 1
+#endfile

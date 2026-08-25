@@ -4,8 +4,11 @@ Purpose: Implements the application service for notification service workflows.
 Responsibilities: Exposes or coordinates: Notification, NotificationService.
 Dependencies: sqlalchemy, infrastructure
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -280,3 +283,4 @@ class NotificationService:
         if row.notification_type == "FILE_DETECTED" and "/requests/pending/" in row.entity_id:
             target_route = "/admin/approvals"
         return Notification(row.notification_id, row.recipient_username, row.notification_type, row.severity, row.title, row.message, target_route, row.status, row.entity_type, row.entity_id, row.created_at_utc, row.read_at_utc, row.expires_at_utc)
+#endfile

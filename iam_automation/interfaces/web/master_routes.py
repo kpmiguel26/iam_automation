@@ -4,8 +4,11 @@ Purpose: Defines Flask routes for the master routes area.
 Responsibilities: Exposes or coordinates: create_master_blueprint.
 Dependencies: flask, application, identity
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -166,3 +169,4 @@ def create_master_blueprint(database_path: Path, audit_path: Path) -> Blueprint:
         return redirect(url_for("master_admin.audit"))
 
     return blueprint
+#endfile

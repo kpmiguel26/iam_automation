@@ -4,8 +4,11 @@ Purpose: Implements the application service for overview service workflows.
 Responsibilities: Exposes or coordinates: OverviewService.
 Dependencies: sqlalchemy, infrastructure
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -50,3 +53,4 @@ class OverviewService:
                 "employees": int(session.scalar(select(func.count(WorkerModel.worker_id))) or 0),
                 "employee_discrepancies": int(session.scalar(select(func.count(WorkerDiscrepancyModel.discrepancy_id)).where(WorkerDiscrepancyModel.status == "OPEN")) or 0),
             }
+#endfile

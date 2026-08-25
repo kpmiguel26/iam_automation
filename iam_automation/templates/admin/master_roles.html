@@ -4,10 +4,14 @@ Purpose: Provides the master roles component of IAM Automation.
 Responsibilities: Provides the file-level implementation used by the application.
 Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 -->
 
 {% extends "base.html" %}
 {% block title %}Roles and permissions{% endblock %}
 {% block content %}<div class="container-fluid px-4 px-lg-5 py-4 admin-page"><a class="back-link" href="{{ url_for('admin.home') }}">Control Center</a><p class="eyebrow mt-3 mb-1">Master security</p><h1>Roles and permissions</h1><p class="text-secondary">Global authorization policy for this workspace. Route enforcement remains server-side.</p><div class="surface table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Role</th><th>Description</th><th>Global capabilities</th></tr></thead><tbody>{% for option in role_options %}<tr><td><strong>{{ option.label }}</strong><div class="small text-secondary"><code>{{ option.value }}</code></div></td><td>{{ option.description }}</td><td>{% for permission, roles in permissions.items() if option.value in roles %}<span class="badge role-badge me-1">{{ permission }}</span>{% else %}<span class="text-secondary small">Operational access only</span>{% endfor %}</td></tr>{% endfor %}</tbody></table></div></div>{% endblock %}
+<!-- #endfile -->

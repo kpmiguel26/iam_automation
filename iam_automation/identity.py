@@ -4,8 +4,11 @@ Purpose: Provides the identity component of IAM Automation.
 Responsibilities: Exposes or coordinates: normalize_role, CurrentUser, windows_username, computer_name, load_approved_users, validate_current_user, ….
 Dependencies: getpass, socket
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -201,3 +204,4 @@ def auto_approve_current_user_for_development(path: Path, role: str = ROLE_REQUE
         if session.scalar(select(UserRoleModel).where(UserRoleModel.username == username, UserRoleModel.role_name == normalized_role)) is None:
             session.add(UserRoleModel(username=username, role_name=normalized_role))
     return validate_current_user_from_sqlite(path)
+#endfile

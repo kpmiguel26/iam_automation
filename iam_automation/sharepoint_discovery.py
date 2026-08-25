@@ -4,8 +4,11 @@ Purpose: Provides the sharepoint discovery component of IAM Automation.
 Responsibilities: Exposes or coordinates: DiscoveryCandidate, _candidate_for, common_search_roots, discover_candidates.
 Dependencies: config
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -90,3 +93,4 @@ def discover_candidates(search_roots: tuple[Path, ...] | None = None, *, max_dep
                 continue
             queue.extend((child, depth + 1) for child in children)
     return tuple(sorted(candidates.values(), key=lambda item: (-item.score, str(item.path).lower())))
+#endfile

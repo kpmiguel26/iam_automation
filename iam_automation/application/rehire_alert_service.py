@@ -4,8 +4,11 @@ Purpose: Implements the application service for rehire alert service workflows.
 Responsibilities: Exposes or coordinates: RehireAlertService.
 Dependencies: sqlalchemy, infrastructure, business_calendar, publication_state, source_date
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -164,3 +167,4 @@ class RehireAlertService:
             session.commit()
         mark_publication_pending(self.database_path, actor=actor, reason=f"Rehire alert archived: {reason}")
         return {"record_id": record_id, "status": "RESOLVED"}
+#endfile

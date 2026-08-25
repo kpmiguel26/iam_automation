@@ -4,8 +4,12 @@ Purpose: Provides the list component of IAM Automation.
 Responsibilities: Provides the file-level implementation used by the application.
 Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 -->
 
 {% extends "base.html" %}{% block title %}My Requests{% endblock %}{% block content %}<div class="container-fluid px-4 px-lg-5 py-4 admin-page"><div class="d-flex justify-content-between align-items-start gap-3 mb-4"><div><p class="eyebrow">Request management</p><h1>My requests</h1><p class="text-secondary">Track onboarding and identity changes submitted by you.</p></div><a class="btn btn-primary" href="{{ url_for('requests.new_request') }}">+ New request</a></div>{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}<section class="surface overflow-hidden"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Request</th><th>Operation</th><th>Employee</th><th>Status</th><th>Submitted</th></tr></thead><tbody>{% for item in requests %}<tr><td><code class="small">{{ item.request_id[:8] }}</code><div class="small text-secondary">{{ item.reason }}</div></td><td>{{ operation_options.get(item.operation_type, item.operation_type) }}</td><td>{{ item.entity_id }}</td><td><span class="status-pill status-{{ item.status|lower }}">{{ item.status.replace('_', ' ')|title }}</span></td><td class="small text-secondary">{{ item.created_at_utc }}</td></tr>{% else %}<tr><td colspan="5" class="empty-state">No requests submitted yet.</td></tr>{% endfor %}</tbody></table></div></section></div>{% endblock %}
+<!-- #endfile -->

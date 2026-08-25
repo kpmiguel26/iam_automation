@@ -4,8 +4,11 @@ Purpose: Provides SQLite persistence infrastructure for identity repository.
 Responsibilities: Exposes or coordinates: ApprovedIdentityRepository.
 Dependencies: sqlalchemy, domain, identity, orm
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -48,3 +51,4 @@ class ApprovedIdentityRepository:
     def _to_identity(session, row: ApprovedUserModel) -> ApprovedIdentity:
         roles = tuple(sorted(normalize_role(item.role_name) for item in session.scalars(select(UserRoleModel).where(UserRoleModel.username == row.username)).all()))
         return ApprovedIdentity(row.username, row.display_name, bool(row.active), roles)
+#endfile

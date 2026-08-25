@@ -4,8 +4,11 @@ Purpose: Provides the delegations component of IAM Automation.
 Responsibilities: Provides the file-level implementation used by the application.
 Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 -->
 
 {% extends "base.html" %}
@@ -19,3 +22,4 @@ Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automat
   <section class="surface overflow-hidden"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Principal</th><th>Delegate</th><th>Scope</th><th>Window</th><th>Status</th><th class="text-end">Action</th></tr></thead><tbody>{% for item in delegations %}<tr><td><strong>{{ item.principal_username }}</strong></td><td>{{ item.delegate_username }}</td><td><span class="badge role-badge">{{ item.scope.replace('_', ' ').title() }}</span></td><td class="small text-secondary">{{ item.starts_at_utc }}<br>{{ item.expires_at_utc }}</td><td><span class="status-pill {% if item.status == 'ACTIVE' %}status-active{% else %}status-inactive{% endif %}"><span></span>{{ item.status|title }}</span><div class="small text-secondary">{{ item.reason }}</div></td><td class="text-end">{% if item.status == 'ACTIVE' %}<form method="post" action="{{ url_for('admin.revoke_delegation', delegation_id=item.delegation_id) }}"><button class="btn btn-sm btn-outline-danger">Revoke</button></form>{% else %}<span class="small text-secondary">History retained</span>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="empty-state">No delegations recorded.</td></tr>{% endfor %}</tbody></table></div></section>
 </div>
 {% endblock %}
+<!-- #endfile -->

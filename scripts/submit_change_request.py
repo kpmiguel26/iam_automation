@@ -4,8 +4,11 @@ Purpose: Provides an operational utility for submit change request.
 Responsibilities: Exposes or coordinates: main.
 Dependencies: argparse, iam_automation
 Inputs/outputs: Inputs: command-line arguments and configured paths. Outputs: validation messages, files, or process status.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -52,3 +55,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+#endfile

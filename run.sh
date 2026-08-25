@@ -5,8 +5,11 @@
 # Responsibilities: Validates prerequisites, prepares runtime paths, and invokes the requested application operation.
 # Dependencies: Operating-system shell, Python runtime, and project scripts, as applicable.
 # Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-# Author: Miguel Fernandez.
-# Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+# Author / implementation: Miguel Fernandez.
+# Developed for: Kaiser Permanente NSES GWFM.
+# Project implementation and integration: Miguel Fernandez.
+# Third-party source, libraries, and dependencies retain their original licenses.
+# Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 # -----------------------------------------------------------------------------
 
 set -Eeuo pipefail
@@ -78,3 +81,4 @@ echo "[IAM] Starting IAM Automation preflight and local webapp..."
 export IAM_LAUNCHER_LOG="${IAM_LAUNCHER_LOG:-$ROOT_DIR/.iam_launcher.log}"
 : > "$IAM_LAUNCHER_LOG"
 exec "$VENV_PYTHON" "$ROOT_DIR/run_app.py"
+#endfile

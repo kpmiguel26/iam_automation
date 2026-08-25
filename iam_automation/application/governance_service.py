@@ -4,8 +4,11 @@ Purpose: Implements the application service for governance service workflows.
 Responsibilities: Exposes or coordinates: GovernanceService.
 Dependencies: audit, runtime_sync, publication_state
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author: Miguel Fernandez.
-Copyright: © Miguel Fernandez. Developed for Kaiser Permanente NSES IAM Automation.
+Author / implementation: Miguel Fernandez.
+Developed for: Kaiser Permanente NSES GWFM.
+Project implementation and integration: Miguel Fernandez.
+Third-party source, libraries, and dependencies retain their original licenses.
+Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 """
 
 from __future__ import annotations
@@ -61,3 +64,4 @@ class GovernanceService:
 
     def _audit(self, actor: str, action: str, result: str, new_values: dict) -> None:
         append_audit_event(self.audit_path, build_event(user=actor, computer="local-web", action=action, result=result, database_version="runtime-sqlite", application_version="local", new_values=new_values))
+#endfile
