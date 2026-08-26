@@ -133,3 +133,12 @@ All items start in `Backlog` and require a dedicated `feature/<name>` branch bef
 - [ ] Sophie Moya Bermudez receives duplicate-roster evidence for the biweekly meeting when requested.
 - [ ] Amanda Madrigal owns the Report Studio roster-lock consolidation test; IAM provides data and defect support if the canonical model is affected.
 - [ ] Vendor communication/access remains delayed as an operational control until the flow is stable.
+
+### 2026-08-26 Daily closeout — `bugfix/preflight`
+
+- [x] Unify the desktop preflight and Waitress output into one startup log.
+- [x] Format HTTP activity with method, route, status, duration and user; omit static-resource noise.
+- [x] Keep **Open App** disabled until Waitress is ready and provide an explicit **Close App** action.
+- [x] Disable the window close control so the application shuts down the web service cleanly.
+- [x] Apply corporate desktop styling, hover states and pointer cursors to preflight actions.
+- [x] Validate the preflight/webapp changes: 12 tests passed.

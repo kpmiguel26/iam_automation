@@ -16,6 +16,8 @@ from __future__ import annotations
 import errno
 import json
 import logging
+import time
+import urllib.request
 import multiprocessing
 import os
 import queue
@@ -111,6 +113,8 @@ def create_app(
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
     csrf_session_key = "iam_csrf_token"
+    http_logger = logging.getLogger("iam.http")
+    http_logger.setLevel(logging.INFO)
 
     def csrf_token() -> str:
         token = session.get(csrf_session_key)
@@ -139,6 +143,32 @@ def create_app(
         body = re.sub(pattern, rf"\1{field}", body, flags=re.IGNORECASE)
         response.set_data(body)
         return response
+
+    @app.after_request
+    def log_http_request(response):
+        if request.method in {"GET", "POST"} and not request.path.startswith("/static/") and request.path != "/favicon.ico":
+            started_at = request.environ.get("iam_request_started_at")
+            duration_ms = ((time.perf_counter() - started_at) * 1000) if isinstance(started_at, float) else 0
+            status_label = "OK" if response.status_code < 400 else "WARNING" if response.status_code < 500 else "CRITICAL"
+            message = "%s %s | %s %s | %.0f ms | user=%s" % (
+                request.method,
+                request.path,
+                response.status_code,
+                status_label,
+                duration_ms,
+                str(session.get("iam_user") or "anonymous"),
+            )
+            if response.status_code >= 500:
+                http_logger.error(message)
+            elif response.status_code >= 400:
+                http_logger.warning(message)
+            else:
+                http_logger.info(message)
+        return response
+
+    @app.before_request
+    def record_http_start() -> None:
+        request.environ["iam_request_started_at"] = time.perf_counter()
 
     @app.template_filter("human_datetime")
     def human_datetime(value: object) -> str:
@@ -405,9 +435,19 @@ class LocalWebAppServer:
         self._thread = None
 
 
-def _serve_webapp_process(preflight_result: PreflightResult, ready_queue) -> None:
+def _serve_webapp_process(preflight_result: PreflightResult, ready_queue, log_queue) -> None:
     """Serve the local app in a separate process from the Qt control panel."""
     shutdown_token = secrets.token_urlsafe(32)
+    class QueueLogHandler(logging.Handler):
+        def emit(self, record) -> None:
+            try:
+                log_queue.put_nowait(self.format(record))
+            except Exception:
+                pass
+    log_handler = QueueLogHandler()
+    log_handler.setFormatter(logging.Formatter("%(levelname)s | %(message)s"))
+    logging.getLogger().addHandler(log_handler)
+    logging.getLogger("waitress").setLevel(logging.ERROR)
     server_holder: dict[str, LocalWebAppServer] = {}
 
     def shutdown_server() -> None:
@@ -422,6 +462,15 @@ def _serve_webapp_process(preflight_result: PreflightResult, ready_queue) -> Non
     server_holder["server"] = server
     url = server.start()
     webapp_pid_path().write_text(json.dumps({"pid": os.getpid(), "port": server.port, "token": shutdown_token}) + "\n", encoding="utf-8")
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=1):
+                break
+        except Exception:
+            time.sleep(.1)
+    else:
+        raise RuntimeError("Waitress did not become ready within the expected time.")
     ready_queue.put(url)
     try:
         if server._thread:
@@ -442,6 +491,7 @@ def _serve_webapp_process(preflight_result: PreflightResult, ready_queue) -> Non
             webapp_pid_path().unlink()
         except FileNotFoundError:
             pass
+        logging.getLogger().removeHandler(log_handler)
 
 
 def launch_local_webapp_process(
@@ -449,11 +499,12 @@ def launch_local_webapp_process(
     *,
     open_browser: bool = True,
     startup_timeout: float = 10.0,
-) -> tuple[multiprocessing.Process, str]:
+) -> tuple[multiprocessing.Process, str, object]:
     """Start Flask independently so the Qt launcher remains responsive."""
     context = multiprocessing.get_context("spawn")
     ready_queue = context.Queue()
-    process = context.Process(target=_serve_webapp_process, args=(preflight_result, ready_queue), name="iam-flask-webapp", daemon=False)
+    log_queue = context.Queue()
+    process = context.Process(target=_serve_webapp_process, args=(preflight_result, ready_queue, log_queue), name="iam-flask-webapp", daemon=False)
     process.start()
     try:
         url = ready_queue.get(timeout=startup_timeout)
@@ -464,7 +515,7 @@ def launch_local_webapp_process(
         raise RuntimeError("The local Flask webapp did not start within the expected time.") from exc
     if open_browser:
         webbrowser.open(url)
-    return process, url
+    return process, url, log_queue
 
 
 def open_browser(url: str) -> None:
