@@ -169,6 +169,18 @@ class EmployeeService:
                 name_key = " ".join(f"{worker.first_name or ''} {worker.last_name or ''}".split()).casefold()
                 if name_key:
                     groups.setdefault(name_key, []).append(worker)
+            duplicate_members = [worker for members in groups.values() if len(members) >= 2 for worker in members]
+            duplicate_ids = [worker.worker_id for worker in duplicate_members]
+            identifiers_by_worker: dict[str, list[WorkerIdentifierModel]] = {}
+            engagements_by_worker: dict[str, list[WorkerEngagementModel]] = {}
+            lineage_by_worker: dict[str, list[WorkerSourceLineageModel]] = {}
+            if duplicate_ids:
+                for item in session.scalars(select(WorkerIdentifierModel).where(WorkerIdentifierModel.worker_id.in_(duplicate_ids), WorkerIdentifierModel.active.is_(True)).order_by(WorkerIdentifierModel.source_system, WorkerIdentifierModel.identifier_type)).all():
+                    identifiers_by_worker.setdefault(item.worker_id, []).append(item)
+                for item in session.scalars(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id.in_(duplicate_ids)).order_by(WorkerEngagementModel.source_system, WorkerEngagementModel.created_at_utc)).all():
+                    engagements_by_worker.setdefault(item.worker_id, []).append(item)
+                for item in session.scalars(select(WorkerSourceLineageModel).where(WorkerSourceLineageModel.worker_id.in_(duplicate_ids)).order_by(WorkerSourceLineageModel.observed_at_utc.desc())).all():
+                    lineage_by_worker.setdefault(item.worker_id, []).append(item)
             result: list[dict[str, object]] = []
             for name_key, members in groups.items():
                 if len(members) < 2:
@@ -177,7 +189,7 @@ class EmployeeService:
                     "name_key": name_key,
                     "display_name": members[0].display_name or " ".join(f"{members[0].first_name or ''} {members[0].last_name or ''}".split()),
                     "count": len(members),
-                    "workers": [self._canonical_duplicate_summary(session, worker) for worker in members],
+                    "workers": [self._canonical_duplicate_summary_from_rows(worker, identifiers_by_worker.get(worker.worker_id, []), engagements_by_worker.get(worker.worker_id, []), lineage_by_worker.get(worker.worker_id, [])) for worker in members],
                 })
             return result
 
@@ -214,6 +226,10 @@ class EmployeeService:
         review = self.canonical_duplicate_review(worker_id)
         if review is None:
             return None
+        return self._canonical_duplicate_merge_plan_for_group(review)
+
+    def _canonical_duplicate_merge_plan_for_group(self, review: dict[str, object]) -> dict[str, object]:
+        """Build a merge plan from an already loaded duplicate group."""
         ranked = sorted(
             list(review["workers"]),
             key=lambda worker: (
@@ -253,9 +269,7 @@ class EmployeeService:
         """Return flat, read-only rows shared by the duplicate UI and exports."""
         rows: list[dict[str, str]] = []
         for group in self.list_canonical_duplicates():
-            plan = self.canonical_duplicate_merge_plan(str(group["workers"][0]["worker_id"]))
-            if plan is None:
-                continue
+            plan = self._canonical_duplicate_merge_plan_for_group(group)
             survivor = plan["survivor"]
             for duplicate in plan["duplicates"]:
                 conflicts = [item for item in plan["conflicts"] if item["profile_id"] == duplicate["worker_id"]]
@@ -279,15 +293,7 @@ class EmployeeService:
         return rows
 
     @staticmethod
-    def _canonical_duplicate_summary(session, worker: WorkerModel) -> dict[str, object]:
-        identifiers = session.scalars(select(WorkerIdentifierModel).where(
-            WorkerIdentifierModel.worker_id == worker.worker_id,
-            WorkerIdentifierModel.active.is_(True),
-        ).order_by(WorkerIdentifierModel.source_system, WorkerIdentifierModel.identifier_type)).all()
-        engagements = session.scalars(select(WorkerEngagementModel).where(
-            WorkerEngagementModel.worker_id == worker.worker_id,
-        ).order_by(WorkerEngagementModel.source_system, WorkerEngagementModel.created_at_utc)).all()
-        lineage_rows = session.scalars(select(WorkerSourceLineageModel).where(WorkerSourceLineageModel.worker_id == worker.worker_id).order_by(WorkerSourceLineageModel.observed_at_utc.desc())).all()
+    def _canonical_duplicate_summary_from_rows(worker: WorkerModel, identifiers: list[WorkerIdentifierModel], engagements: list[WorkerEngagementModel], lineage_rows: list[WorkerSourceLineageModel]) -> dict[str, object]:
         lineage_sources = sorted({str(item.source_system) for item in lineage_rows if item.source_system})
         engagement_evidence = {}
         for item in lineage_rows:
@@ -305,6 +311,15 @@ class EmployeeService:
             "engagements": [{"source_system": item.source_system, "vendor_name": item.vendor_name, "job_title": item.job_title, "status": item.status, "work_order_id": item.work_order_id, "source_file": engagement_evidence.get(item.engagement_id, {}).get("source_file", ""), "observed_at_utc": engagement_evidence.get(item.engagement_id, {}).get("observed_at_utc", item.updated_at_utc)} for item in engagements],
             "source_systems": sorted(set(lineage_sources) | {str(item.source_system) for item in identifiers}),
         }
+
+    @staticmethod
+    def _canonical_duplicate_summary(session, worker: WorkerModel) -> dict[str, object]:
+        return EmployeeService._canonical_duplicate_summary_from_rows(
+            worker,
+            session.scalars(select(WorkerIdentifierModel).where(WorkerIdentifierModel.worker_id == worker.worker_id, WorkerIdentifierModel.active.is_(True)).order_by(WorkerIdentifierModel.source_system, WorkerIdentifierModel.identifier_type)).all(),
+            session.scalars(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker.worker_id).order_by(WorkerEngagementModel.source_system, WorkerEngagementModel.created_at_utc)).all(),
+            session.scalars(select(WorkerSourceLineageModel).where(WorkerSourceLineageModel.worker_id == worker.worker_id).order_by(WorkerSourceLineageModel.observed_at_utc.desc())).all(),
+        )
 
     def list_staged_records(self) -> list[dict[str, str]]:
         with orm_session(self.database_path) as session:
