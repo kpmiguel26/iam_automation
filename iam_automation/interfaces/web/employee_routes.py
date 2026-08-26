@@ -118,7 +118,8 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
     @authenticated
     def canonical_duplicate_review(worker_id: str):
         review = service.canonical_duplicate_review(worker_id)
-        if review is None:
+        plan = service.canonical_duplicate_merge_plan(worker_id)
+        if review is None or plan is None:
             return render_template("errors/404.html"), 404
         current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
         error = None
@@ -126,15 +127,16 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             if not current_user.can_decide_requests:
                 error = "Only an administrator can merge canonical employee profiles."
             else:
-                survivor_id = request.form.get("survivor_worker_id", "").strip()
-                duplicate_id = request.form.get("duplicate_worker_id", "").strip()
                 try:
-                    result = service.merge_workers(survivor_id, duplicate_id, request.form.get("reason", ""), current_user.username)
-                    record_audit(audit_path, current_user.username, "CANONICAL_WORKER_MERGED", "worker", survivor_id, new_values={"result": result})
+                    survivor_id = str(plan["survivor"]["worker_id"])
+                    result = None
+                    for duplicate in plan["duplicates"]:
+                        result = service.merge_workers(survivor_id, str(duplicate["worker_id"]), request.form.get("reason", ""), current_user.username)
+                    record_audit(audit_path, current_user.username, "CANONICAL_WORKER_MERGED", "worker", survivor_id, new_values={"result": result, "selection": "automatic_completeness"})
                     return redirect(url_for("employees.canonical_duplicates"))
                 except (OSError, ValueError, PermissionError) as exc:
                     error = str(exc)
-        return render_template("employees/canonical_duplicate_review.html", review=review, can_merge=current_user.can_decide_requests, error=error)
+        return render_template("employees/canonical_duplicate_review.html", review=review, plan=plan, can_merge=current_user.can_decide_requests, error=error)
 
     @blueprint.post("/source-updates/create-all")
     @authenticated

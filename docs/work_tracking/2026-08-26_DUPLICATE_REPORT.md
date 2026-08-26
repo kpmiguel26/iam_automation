@@ -1,6 +1,6 @@
 # Duplicate Profile Export Report
 
-**Status:** Backlog  
+**Status:** In Progress
 **Priority:** 1  
 **Owner:** Miguel Fernandez  
 **Target:** 2026-09-04  

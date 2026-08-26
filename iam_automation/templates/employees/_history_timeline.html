@@ -37,14 +37,26 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
         <div><span>Fields changed</span><strong>{{ version.changed_fields|length }}</strong></div>
         {% if version.source_record_key %}<div><span>Source record</span><strong>{{ version.source_record_key }}</strong></div>{% endif %}
       </div>
+      {% set snapshot = version.snapshot %}
       {% if version.changed_fields %}
         <div class="history-fields mt-3"><span class="small text-secondary d-block mb-2">Changed fields</span>{% for field in version.changed_fields %}<span class="badge history-field-badge">{{ field.replace(':', ' · ').replace('_', ' ').title() }}</span>{% endfor %}</div>
+        {% if version.change_type == 'MERGE_SURVIVOR' %}
+        <div class="history-merge-summary mt-3">
+          <div class="history-merge-summary-heading"><div><span class="eyebrow mb-1">Consolidation completed</span><h4 class="h6 mb-0">Information from the duplicate profile was retained here</h4></div><span class="badge text-bg-success">History preserved</span></div>
+          <div class="history-readable-grid mt-3">
+            <div class="history-readable-section"><h4>Profile</h4><dl class="history-readable-list"><div><dt>Name</dt><dd>{{ snapshot.display_name or 'Not provided' }}</dd></div><div><dt>Email</dt><dd>{{ snapshot.canonical_email or 'Not provided' }}</dd></div><div><dt>Status</dt><dd>{{ (snapshot.status or 'Not set').replace('_', ' ').title() }}</dd></div></dl></div>
+            <div class="history-readable-section"><h4>Consolidated evidence</h4><dl class="history-readable-list"><div><dt>Identifiers</dt><dd>{{ snapshot.identifiers|length }} retained</dd></div><div><dt>Engagements</dt><dd>{{ snapshot.engagements|length }} retained</dd></div><div><dt>Source history</dt><dd>{{ snapshot.lineage|length }} observations</dd></div></dl></div>
+          </div>
+          {% if snapshot.engagements %}<div class="history-readable-section mt-3"><h4>Engagements retained</h4><div class="history-merge-engagements">{% for item in snapshot.engagements %}<div class="history-merge-engagement"><strong>{{ item.vendor_name or 'Vendor not provided' }}</strong><span>{{ item.job_title or 'Job title not provided' }}{% if item.source_system %} · {{ item.source_system.replace('_', ' ').title() }}{% endif %}</span></div>{% endfor %}</div></div>{% endif %}
+          {% if snapshot.identifiers %}<div class="history-readable-section mt-3"><h4>Identifiers retained</h4><div class="history-readable-tags">{% for identifier in snapshot.identifiers %}<span class="history-readable-tag"><strong>{{ identifier.identifier_type.replace('_', ' ').title() }}</strong>: {{ identifier.identifier_value or 'Not provided' }} <small>{{ identifier.source_system.replace('_', ' ').title() }}</small></span>{% endfor %}</div></div>{% endif %}
+        </div>
+        {% else %}
         <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>Field</th><th>Previous value</th><th>New value</th></tr></thead><tbody>{% for change in version.changes %}<tr><td><strong>{{ change.field.replace(':', ' · ').replace('_', ' ').title() }}</strong></td><td class="text-secondary">{{ change.previous_value }}</td><td class="fw-semibold">{{ change.new_value }}</td></tr>{% endfor %}</tbody></table></div>
+        {% endif %}
       {% else %}
         <p class="small text-secondary mt-3 mb-0">No canonical field values changed in this snapshot; the source observation was retained for history.</p>
       {% endif %}
       {% if version.source_file %}<p class="small text-secondary mt-3 mb-0">Source file: <strong>{{ version.source_file }}</strong>{% if version.source_checksum %} · checksum {{ version.source_checksum[:12] }}...{% endif %}</p>{% endif %}
-      {% set snapshot = version.snapshot %}
       {% set engagement = snapshot.engagements[0] if snapshot.engagements else {} %}
       <div class="history-readable mt-4">
         <div class="small text-secondary mb-2">What this version contained</div>

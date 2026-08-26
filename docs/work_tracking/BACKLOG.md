@@ -116,7 +116,7 @@ All items start in `Backlog` and require a dedicated `feature/<name>` branch bef
 
 - [ ] **Finalize audit events** — 8 h, Miguel; see [`2026-08-26_AUDIT_EVENTS_FINALIZATION.md`](./2026-08-26_AUDIT_EVENTS_FINALIZATION.md).
 - [ ] **Add change-role submission visibility** — 10 h, Miguel; see [`2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md`](./2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md).
-- [ ] **Create duplicate-profile export report** — 12 h, Miguel; see [`2026-08-26_DUPLICATE_REPORT.md`](./2026-08-26_DUPLICATE_REPORT.md).
+- [~] **Create duplicate-profile export report** — 12 h, Miguel; see [`2026-08-26_DUPLICATE_REPORT.md`](./2026-08-26_DUPLICATE_REPORT.md). Web, CSV and XLSX implementation complete; stakeholder validation remains.
 - [ ] **Validate Salesforce/Data Loader export and application regression** — 6 h Salesforce validation, part of the 14 h combined testing allocation; see [`2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md`](./2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md).
 
 ### Priority 2 — target 2026-09-11

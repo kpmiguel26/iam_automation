@@ -52,6 +52,13 @@ class EmployeeSummary:
     discrepancy_count: int
 
 
+CANONICAL_DUPLICATE_REPORT_COLUMNS = (
+    "group", "survivor_worker_id", "duplicate_worker_id", "survivor_name",
+    "duplicate_name", "status", "conflict_count", "conflicts", "sources",
+    "files", "observed_dates", "recommendation",
+)
+
+
 class EmployeeService:
     """Read canonical workers and explicitly promote staged source records."""
 
@@ -182,6 +189,96 @@ class EmployeeService:
         return None
 
     @staticmethod
+    def _canonical_profile_completeness(worker: dict[str, object]) -> int:
+        """Score the amount of durable information available on a profile."""
+        identifiers = list(worker.get("identifiers") or [])
+        engagements = list(worker.get("engagements") or [])
+        engagement_fields = sum(
+            sum(bool(str(item.get(field) or "").strip()) for field in (
+                "vendor_name", "job_title", "status", "work_order_id",
+                "source_file", "observed_at_utc",
+            ))
+            for item in engagements
+        )
+        return (
+            (10 if str(worker.get("email") or "").strip() else 0)
+            + (3 if str(worker.get("status") or "").strip() else 0)
+            + len(identifiers) * 5
+            + len(engagements) * 4
+            + len(worker.get("source_systems") or []) * 2
+            + engagement_fields
+        )
+
+    def canonical_duplicate_merge_plan(self, worker_id: str) -> dict[str, object] | None:
+        """Build a deterministic plan using the oldest canonical as identity."""
+        review = self.canonical_duplicate_review(worker_id)
+        if review is None:
+            return None
+        ranked = sorted(
+            list(review["workers"]),
+            key=lambda worker: (
+                str(worker.get("created_at_utc") or ""),
+                str(worker.get("worker_id") or ""),
+            ),
+        )
+        field_names = (
+            ("first_name", "First name"),
+            ("last_name", "Last name"),
+            ("email", "Email"),
+            ("status", "Status"),
+        )
+        conflicts: list[dict[str, str]] = []
+        for duplicate in ranked[1:]:
+            for field, label in field_names:
+                survivor_value = str(ranked[0].get(field) or "").strip()
+                duplicate_value = str(duplicate.get(field) or "").strip()
+                if not survivor_value or not duplicate_value or survivor_value.casefold() == duplicate_value.casefold():
+                    continue
+                conflicts.append({
+                    "field": label,
+                    "survivor_value": survivor_value,
+                    "incoming_value": duplicate_value,
+                    "source": ", ".join(duplicate.get("source_systems") or []) or "Profile history",
+                    "observed_at": str(duplicate.get("updated_at_utc") or duplicate.get("created_at_utc") or ""),
+                    "profile_id": str(duplicate.get("worker_id") or ""),
+                })
+        return {
+            "survivor": ranked[0],
+            "duplicates": ranked[1:],
+            "selection_reason": "oldest_canonical_identity",
+            "conflicts": conflicts,
+        }
+
+    def canonical_duplicate_report_rows(self) -> list[dict[str, str]]:
+        """Return flat, read-only rows shared by the duplicate UI and exports."""
+        rows: list[dict[str, str]] = []
+        for group in self.list_canonical_duplicates():
+            plan = self.canonical_duplicate_merge_plan(str(group["workers"][0]["worker_id"]))
+            if plan is None:
+                continue
+            survivor = plan["survivor"]
+            for duplicate in plan["duplicates"]:
+                conflicts = [item for item in plan["conflicts"] if item["profile_id"] == duplicate["worker_id"]]
+                evidence = [item for item in duplicate.get("engagements") or [] if item.get("source_file") or item.get("observed_at_utc")]
+                files = sorted({str(item.get("source_file") or "") for item in evidence if item.get("source_file")})
+                dates = sorted({str(item.get("observed_at_utc") or "") for item in evidence if item.get("observed_at_utc")}, reverse=True)
+                rows.append({
+                    "group": str(group["display_name"]),
+                    "survivor_worker_id": str(survivor["worker_id"]),
+                    "duplicate_worker_id": str(duplicate["worker_id"]),
+                    "survivor_name": str(survivor.get("display_name") or ""),
+                    "duplicate_name": str(duplicate.get("display_name") or ""),
+                    "status": "CONFLICT_REVIEW" if conflicts else "CANDIDATE",
+                    "conflict_count": str(len(conflicts)),
+                    "conflicts": "; ".join(f"{item['field']}: {item['survivor_value']} / {item['incoming_value']}" for item in conflicts),
+                    "sources": ", ".join(str(item) for item in duplicate.get("source_systems") or []),
+                    "files": "; ".join(files),
+                    "observed_dates": "; ".join(dates),
+                    "recommendation": "Consolidate into oldest canonical; review conflicts first" if conflicts else "Consolidate into oldest canonical identity",
+                })
+        return rows
+
+    @staticmethod
     def _canonical_duplicate_summary(session, worker: WorkerModel) -> dict[str, object]:
         identifiers = session.scalars(select(WorkerIdentifierModel).where(
             WorkerIdentifierModel.worker_id == worker.worker_id,
@@ -190,7 +287,12 @@ class EmployeeService:
         engagements = session.scalars(select(WorkerEngagementModel).where(
             WorkerEngagementModel.worker_id == worker.worker_id,
         ).order_by(WorkerEngagementModel.source_system, WorkerEngagementModel.created_at_utc)).all()
-        lineage_sources = sorted({str(item) for item in session.scalars(select(WorkerSourceLineageModel.source_system).where(WorkerSourceLineageModel.worker_id == worker.worker_id)).all() if item})
+        lineage_rows = session.scalars(select(WorkerSourceLineageModel).where(WorkerSourceLineageModel.worker_id == worker.worker_id).order_by(WorkerSourceLineageModel.observed_at_utc.desc())).all()
+        lineage_sources = sorted({str(item.source_system) for item in lineage_rows if item.source_system})
+        engagement_evidence = {}
+        for item in lineage_rows:
+            if item.engagement_id and item.engagement_id not in engagement_evidence:
+                engagement_evidence[item.engagement_id] = {"source_file": EmployeeService._source_file_name(item.source_file), "observed_at_utc": item.observed_at_utc}
         return {
             "worker_id": worker.worker_id,
             "display_name": worker.display_name,
@@ -200,7 +302,7 @@ class EmployeeService:
             "created_at_utc": worker.created_at_utc,
             "updated_at_utc": worker.updated_at_utc,
             "identifiers": [{"source_system": item.source_system, "identifier_type": item.identifier_type, "value": item.identifier_value} for item in identifiers],
-            "engagements": [{"source_system": item.source_system, "vendor_name": item.vendor_name, "job_title": item.job_title, "status": item.status, "work_order_id": item.work_order_id} for item in engagements],
+            "engagements": [{"source_system": item.source_system, "vendor_name": item.vendor_name, "job_title": item.job_title, "status": item.status, "work_order_id": item.work_order_id, "source_file": engagement_evidence.get(item.engagement_id, {}).get("source_file", ""), "observed_at_utc": engagement_evidence.get(item.engagement_id, {}).get("observed_at_utc", item.updated_at_utc)} for item in engagements],
             "source_systems": sorted(set(lineage_sources) | {str(item.source_system) for item in identifiers}),
         }
 
@@ -1595,6 +1697,25 @@ class EmployeeService:
             if duplicate.superseded_by_worker_id:
                 raise ValueError("The duplicate worker has already been superseded.")
             moved = {"identifiers": 0, "engagements": 0, "lineage": 0, "discrepancies": 0, "ingestion_records": 0}
+            merged_profile_fields: list[str] = []
+            profile_conflicts = {"first_name", "last_name", "canonical_email", "status"}
+            for field in profile_conflicts:
+                survivor_value = str(getattr(survivor, field) or "").strip()
+                duplicate_value = str(getattr(duplicate, field) or "").strip()
+                if not survivor_value and duplicate_value and field != "status":
+                    setattr(survivor, field, duplicate_value.lower() if field == "canonical_email" else duplicate_value)
+                    merged_profile_fields.append(field)
+                elif survivor_value and duplicate_value and survivor_value.casefold() != duplicate_value.casefold():
+                    session.add(WorkerDiscrepancyModel(
+                        discrepancy_id=str(uuid.uuid4()), worker_id=survivor_worker_id,
+                        source_system="CANONICAL_MERGE", source_record_key=duplicate_worker_id,
+                        field_name=field, current_value=survivor_value, incoming_value=duplicate_value,
+                        status="OPEN", created_at_utc=now,
+                    ))
+                    moved["discrepancies"] += 1
+            if "first_name" in merged_profile_fields or "last_name" in merged_profile_fields:
+                survivor.display_name = " ".join(part for part in (survivor.first_name, survivor.last_name) if part)
+                merged_profile_fields.append("display_name")
             survivor_keys = {(item.source_system, item.identifier_type, item.normalized_value) for item in session.scalars(select(WorkerIdentifierModel).where(WorkerIdentifierModel.worker_id == survivor_worker_id)).all()}
             for item in session.scalars(select(WorkerIdentifierModel).where(WorkerIdentifierModel.worker_id == duplicate_worker_id)).all():
                 key = (item.source_system, item.identifier_type, item.normalized_value)
@@ -1623,7 +1744,7 @@ class EmployeeService:
             duplicate.superseded_by_worker_id = survivor_worker_id
             duplicate.updated_at_utc = now
             session.add(WorkerMergeEventModel(merge_id=str(uuid.uuid4()), survivor_worker_id=survivor_worker_id, duplicate_worker_id=duplicate_worker_id, reason=reason, actor=actor, created_at_utc=now))
-            record_worker_version(session, survivor_worker_id, actor=actor, change_type="MERGE_SURVIVOR", changed_fields=["identifiers", "engagements", "lineage", "discrepancies"])
+            record_worker_version(session, survivor_worker_id, actor=actor, change_type="MERGE_SURVIVOR", source_system="CANONICAL_MERGE", source_record_key=duplicate_worker_id, changed_fields=sorted(set(merged_profile_fields + ["identifiers", "engagements", "lineage", "discrepancies"])))
             record_worker_version(session, duplicate_worker_id, actor=actor, change_type="MERGE_SUPERSEDED", changed_fields=["status", "superseded_by_worker_id"])
             return {"survivor_worker_id": survivor_worker_id, "duplicate_worker_id": duplicate_worker_id, "moved": moved}
 #endfile
