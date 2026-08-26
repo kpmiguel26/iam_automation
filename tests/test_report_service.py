@@ -21,15 +21,17 @@ from pathlib import Path
 
 from iam_automation.application.report_service import ReportService
 from iam_automation.application.report_template_service import ReportTemplateService
-from iam_automation.application.employee_service import EmployeeService
+from iam_automation.application.employee_service import CANONICAL_DUPLICATE_REPORT_COLUMNS, EmployeeService
 from iam_automation.application.user_service import UserService
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.infrastructure.sqlite.orm import (
     IngestionRecordModel,
     WorkerDiscrepancyModel,
     WorkerEngagementModel,
+    WorkerIdentifierModel,
     WorkerModel,
     WorkerSourceProfileModel,
+    WorkerSourceLineageModel,
     orm_session,
 )
 from iam_automation import webapp
@@ -51,6 +53,30 @@ class ReportServiceTests(unittest.TestCase):
             private = next(item for item in service.list_for_user("alice") if item.name == "Private")
             self.assertIsNone(service.get_for_user(private.template_id, "bob"))
             self.assertEqual(service.get_for_user(shared.template_id, "bob").name, "Shared")
+
+    def test_canonical_duplicate_report_flattens_two_profile_group_with_conflict_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            with orm_session(database) as session:
+                session.add_all([
+                    WorkerModel(worker_id="stable", first_name="Ada", last_name="Lovelace", display_name="Ada Lovelace", canonical_email="old@example.com", status="ACTIVE", created_at_utc="2026-07-01T00:00:00+00:00"),
+                    WorkerModel(worker_id="recent", first_name="Ada", last_name="Lovelace", display_name="Ada Lovelace", canonical_email="new@example.com", status="ACTIVE", created_at_utc="2026-08-01T00:00:00+00:00"),
+                    WorkerModel(worker_id="third", first_name="Ada", last_name="Lovelace", display_name="Ada Lovelace", canonical_email="", status="ACTIVE", created_at_utc="2026-08-03T00:00:00+00:00"),
+                ])
+                session.add(WorkerIdentifierModel(identifier_id="id-1", worker_id="recent", source_system="ROSTER_LOCK", identifier_type="VENDOR_EMPLOYEE_ID", identifier_value="100", normalized_value="100", created_at_utc="2026-08-01T00:00:00+00:00"))
+                session.add(WorkerEngagementModel(engagement_id="eng-1", worker_id="recent", source_system="ROSTER_LOCK", vendor_name="TTEC", job_title="Trainer", updated_at_utc="2026-08-02T00:00:00+00:00"))
+                session.add(WorkerSourceLineageModel(lineage_id="lineage-1", worker_id="recent", engagement_id="eng-1", batch_id="batch-1", source_system="ROSTER_LOCK", source_file="Roster_20260802.xlsx", source_checksum="checksum", row_number=2, field_name="email", normalized_value="new@example.com", observed_at_utc="2026-08-02T00:00:00+00:00"))
+                session.add(WorkerSourceProfileModel(profile_id="profile-1", worker_id="recent", source_system="ROSTER_LOCK", source_record_key="TTEC:100", snapshot_json="{}"))
+            rows = EmployeeService(database).canonical_duplicate_report_rows()
+            self.assertEqual(len(rows), 2)
+            self.assertTrue(all(set(row) == set(CANONICAL_DUPLICATE_REPORT_COLUMNS) for row in rows))
+            self.assertTrue(all(row["survivor_worker_id"] == "stable" for row in rows))
+            recent = next(row for row in rows if row["duplicate_worker_id"] == "recent")
+            self.assertEqual(recent["status"], "CONFLICT_REVIEW")
+            self.assertIn("Email", recent["conflicts"])
+            self.assertIn("ROSTER_LOCK", recent["sources"])
+            self.assertIn("Roster_20260802.xlsx", recent["files"])
+            self.assertIn("2026-08-02", recent["observed_dates"])
 
     def test_studio_field_catalog_is_limited_by_source_and_all_unlocks_catalog(self):
         service = ReportService(Path("/missing/runtime.sqlite"))

@@ -21,7 +21,7 @@ from pathlib import Path
 from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.worker_history_service import backfill_missing_worker_versions, record_worker_version
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.infrastructure.sqlite.orm import WorkerMergeEventModel, WorkerModel, WorkerProfileVersionModel, orm_session
+from iam_automation.infrastructure.sqlite.orm import WorkerDiscrepancyModel, WorkerMergeEventModel, WorkerModel, WorkerProfileVersionModel, orm_session
 
 
 class WorkerHistoryTests(unittest.TestCase):
@@ -80,6 +80,64 @@ class WorkerHistoryTests(unittest.TestCase):
             active, total = EmployeeService(database).list_workers_page(page=1, per_page=25)
             self.assertEqual(total, 1)
             self.assertEqual(active[0].worker_id, survivor_id)
+
+    def test_merge_fills_missing_profile_values_and_records_conflicts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            survivor_id, duplicate_id = str(uuid.uuid4()), str(uuid.uuid4())
+            with orm_session(database) as session:
+                survivor = self._worker(survivor_id, "Ada")
+                survivor.last_name = ""
+                survivor.canonical_email = ""
+                survivor.display_name = "Ada"
+                duplicate = self._worker(duplicate_id, "Ada")
+                duplicate.last_name = "Lovelace"
+                duplicate.display_name = "Ada Lovelace"
+                duplicate.canonical_email = "ada.lovelace@example.com"
+                session.add_all([survivor, duplicate])
+
+            EmployeeService(database).merge_workers(survivor_id, duplicate_id, "Same person confirmed", "admin")
+
+            with orm_session(database) as session:
+                survivor = session.get(WorkerModel, survivor_id)
+                self.assertEqual(survivor.last_name, "Lovelace")
+                self.assertEqual(survivor.canonical_email, "ada.lovelace@example.com")
+                self.assertEqual(survivor.display_name, "Ada Lovelace")
+                self.assertEqual(session.query(WorkerDiscrepancyModel).filter_by(worker_id=survivor_id).count(), 0)
+
+                conflicting_id = str(uuid.uuid4())
+                conflicting = self._worker(conflicting_id, "Ada")
+                conflicting.canonical_email = "different@example.com"
+                session.add(conflicting)
+
+            EmployeeService(database).merge_workers(survivor_id, conflicting_id, "Same person confirmed", "admin")
+            with orm_session(database) as session:
+                survivor = session.get(WorkerModel, survivor_id)
+                self.assertEqual(survivor.canonical_email, "ada.lovelace@example.com")
+                discrepancy = session.query(WorkerDiscrepancyModel).filter_by(worker_id=survivor_id, field_name="canonical_email").one()
+                self.assertEqual(discrepancy.current_value, "ada.lovelace@example.com")
+                self.assertEqual(discrepancy.incoming_value, "different@example.com")
+
+    def test_duplicate_merge_plan_selects_most_complete_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            sparse_id, complete_id = str(uuid.uuid4()), str(uuid.uuid4())
+            with orm_session(database) as session:
+                sparse = self._worker(sparse_id, "Ada")
+                sparse.canonical_email = ""
+                sparse.created_at_utc = "2026-07-30T00:00:00+00:00"
+                complete = self._worker(complete_id, "Ada")
+                complete.canonical_email = "ada.lovelace@example.com"
+                complete.status = "INACTIVE"
+                complete.created_at_utc = "2026-08-01T00:00:00+00:00"
+                session.add_all([sparse, complete])
+
+            plan = EmployeeService(database).canonical_duplicate_merge_plan(sparse_id)
+            self.assertIsNotNone(plan)
+            self.assertEqual(plan["survivor"]["worker_id"], sparse_id)
+            self.assertEqual(plan["duplicates"][0]["worker_id"], complete_id)
+            self.assertEqual(plan["selection_reason"], "oldest_canonical_identity")
+            self.assertEqual([item["field"] for item in plan["conflicts"]], ["Status"])
 
 
 if __name__ == "__main__":

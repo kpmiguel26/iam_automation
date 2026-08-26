@@ -126,6 +126,57 @@ class RsrSupplierWorkerDetailsTests(unittest.TestCase):
             after = next(item for item in EmployeeService(database).list_staged_records() if item["source_system"] == "RSR_SUPPLIER_WORKER_DETAILS")
             self.assertEqual(after["match_status"], "MATCHED")
 
+    def test_rsr_approval_revalidates_stale_unmatched_record_before_creating_worker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            database = initialize_runtime_database(root / "runtime.sqlite")
+            roster = root / "roster.xlsx"
+            rsr = root / "rsr.xlsx"
+            self._write_roster(roster)
+            self._write_rsr(rsr)
+
+            RosterLockIngestionService(database).ingest_file(roster)
+            rsr_result = RsrSupplierWorkerDetailsAdapter(database).ingest_file(rsr, "qa")
+            rsr_record = next(item for item in EmployeeService(database).list_staged_records() if item["source_system"] == "RSR_SUPPLIER_WORKER_DETAILS")
+            RsrSupplierWorkerDetailsAdapter(database).match_batch(rsr_result.batch_id)
+            roster_record = next(item for item in EmployeeService(database).list_staged_records() if item["source_system"] == "ROSTER_LOCK")
+            worker_id = EmployeeService(database).promote_ingestion_record(roster_record["record_id"], "qa")
+            with orm_session(database) as session:
+                record = session.get(IngestionRecordModel, rsr_record["record_id"])
+                record.match_status = "UNMATCHED"
+                record.matched_worker_id = None
+
+            result = EmployeeService(database).apply_approved_import_records([rsr_record["record_id"]], "qa")
+            self.assertEqual(result["created"], 0)
+            self.assertEqual(result["failed"], 0)
+            self.assertEqual(len(EmployeeService(database).list_workers()), 1)
+            with orm_session(database) as session:
+                record = session.get(IngestionRecordModel, rsr_record["record_id"])
+                self.assertEqual(record.matched_worker_id, worker_id)
+                self.assertEqual(record.match_status, "MATCHED")
+
+    def test_roster_promotion_reuses_rsr_canonical_by_shared_vendor_identifier(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            database = initialize_runtime_database(root / "runtime.sqlite")
+            roster = root / "roster.xlsx"
+            rsr = root / "rsr.xlsx"
+            self._write_roster(roster)
+            self._write_rsr(rsr)
+
+            RsrSupplierWorkerDetailsAdapter(database).ingest_file(rsr, "qa")
+            rsr_record = next(item for item in EmployeeService(database).list_staged_records() if item["source_system"] == "RSR_SUPPLIER_WORKER_DETAILS")
+            rsr_result = RsrSupplierWorkerDetailsAdapter(database).apply_approved_records([rsr_record["record_id"]], "qa")
+            self.assertEqual(rsr_result["created"], 1)
+            rsr_worker_id = EmployeeService(database).list_workers()[0].worker_id
+
+            RosterLockIngestionService(database).ingest_file(roster)
+            roster_record = next(item for item in EmployeeService(database).list_staged_records() if item["source_system"] == "ROSTER_LOCK")
+            roster_worker_id = EmployeeService(database).promote_ingestion_record(roster_record["record_id"], "qa")
+
+            self.assertEqual(roster_worker_id, rsr_worker_id)
+            self.assertEqual(len(EmployeeService(database).list_workers()), 1)
+
     def test_vendor_is_derived_from_statement_of_work_not_adapter_name(self):
         self.assertEqual(
             RsrSupplierWorkerDetailsAdapter._derive_vendor_name({

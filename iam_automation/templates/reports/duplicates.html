@@ -1,24 +1,36 @@
-<!--
-File: iam_automation/templates/reports/duplicates.html
-Purpose: Provides the duplicates component of IAM Automation.
-Responsibilities: Provides the file-level implementation used by the application.
-Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
-Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author / implementation: Miguel Fernandez.
-Developed for: Kaiser Permanente NSES GWFM.
-Project implementation and integration: Miguel Fernandez.
-Third-party source, libraries, and dependencies retain their original licenses.
-Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
--->
-
+<!-- Read-only duplicate search selector and result views. -->
 {% extends "base.html" %}
 {% block title %}Duplicate Search{% endblock %}
 {% block content %}
-<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
-  <div class="page-heading"><div><p class="eyebrow">Report library</p><h1>Duplicate search</h1><p class="text-secondary mb-0">Review duplicate signals found in pending source records before they become canonical employee data.</p></div><a class="btn btn-outline-primary" href="{{ url_for('reports.reports_home') }}">Back to Reports</a></div>
-  <section class="surface p-4 mt-4"><div class="section-heading"><div><p class="eyebrow mb-1">On-demand check</p><h2 class="h5 mb-0">Duplicate signals</h2><p class="small text-secondary mb-0">This scan compares records sharing a source identifier or a strong name/email signal. It does not change data.</p></div><a class="btn btn-outline-secondary" href="{{ url_for('reports.duplicate_report') }}">Run again</a></div>
-    {% if duplicate_summary.groups %}<div class="table-responsive mt-3"><table class="table table-hover align-middle mb-0"><thead><tr><th>Signal</th><th>Value</th><th>Records</th><th>Classification</th><th>Review</th></tr></thead><tbody>{% for group in duplicate_summary.groups %}{% set first = group.records[0] %}<tr><td>{{ group.signal }}</td><td><strong>{{ group.value }}</strong></td><td>{{ group.record_count }}</td><td><span class="badge {% if group.classification == 'CORROBORATED' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ group.classification|replace('_', ' ')|title }}</span></td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.duplicate_review', record_id=first.record_id) }}">Review</a></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="alert alert-success mt-3 mb-0">No duplicate signals were found in the pending source records.</div>{% endif %}
+<style>
+  .duplicate-report-shell { max-width: none; width: 100%; }
+  .duplicate-report-shell .surface { width: 100%; }
+  .duplicate-report-shell .table-responsive { width: 100%; }
+</style>
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell duplicate-report-shell">
+  <div class="page-heading"><div><p class="eyebrow">Report library</p><h1>Duplicate search</h1><p class="text-secondary mb-0">Choose what kind of duplicate you want to investigate. No search changes employee or source history.</p></div><a class="btn btn-outline-primary" href="{{ url_for('reports.reports_home') }}">Back to Reports</a></div>
+
+  <section class="surface p-4 mt-4">
+    <div class="section-heading"><div><p class="eyebrow mb-1">Choose a search</p><h2 class="h5 mb-0">Duplicate categories</h2><p class="small text-secondary mb-0">The categories separate canonical-profile duplication from repeated source observations.</p></div></div>
+    <div class="row g-3 mt-1">
+      <div class="col-md-6 col-xl-3"><a class="d-block h-100 text-decoration-none border rounded-3 p-3 {% if duplicate_mode == 'canonical' %}border-danger bg-danger-subtle{% else %}bg-light{% endif %}" href="{{ url_for('reports.duplicate_report', type='canonical') }}"><span class="badge text-bg-danger mb-3">Canonical employees</span><h3 class="h6 text-dark">Duplicate canonical profiles</h3><p class="small text-secondary mb-0">Find multiple active canonical employees, their source evidence, conflicts and the recommended consolidation.</p></a></div>
+      <div class="col-md-6 col-xl-3"><a class="d-block h-100 text-decoration-none border rounded-3 p-3 {% if duplicate_mode == 'source_identifier' %}border-primary bg-primary-subtle{% else %}bg-light{% endif %}" href="{{ url_for('reports.duplicate_report', type='source_identifier') }}"><span class="badge text-bg-primary mb-3">Source observations</span><h3 class="h6 text-dark">Repeated identifiers</h3><p class="small text-secondary mb-0">Find multiple files containing the same vendor, AccessNow, Fieldglass or other source identifier.</p></a></div>
+      <div class="col-md-6 col-xl-3"><a class="d-block h-100 text-decoration-none border rounded-3 p-3 {% if duplicate_mode == 'name_email' %}border-warning bg-warning-subtle{% else %}bg-light{% endif %}" href="{{ url_for('reports.duplicate_report', type='name_email') }}"><span class="badge text-bg-warning mb-3">Weak signal</span><h3 class="h6 text-dark">Name + email matches</h3><p class="small text-secondary mb-0">Find source records that share a normalized name and email when no strong identifier is available.</p></a></div>
+      <div class="col-md-6 col-xl-3"><a class="d-block h-100 text-decoration-none border rounded-3 p-3 {% if duplicate_mode == 'unresolved' %}border-secondary bg-secondary-subtle{% else %}bg-light{% endif %}" href="{{ url_for('reports.duplicate_report', type='unresolved') }}"><span class="badge text-bg-secondary mb-3">Needs review</span><h3 class="h6 text-dark">Unresolved duplicate links</h3><p class="small text-secondary mb-0">Find source groups whose observations point to more than one canonical employee and need investigation.</p></a></div>
+    </div>
   </section>
+
+  {% if not duplicate_mode %}<div class="alert alert-info mt-3 mb-0">No duplicate signals were found because no duplicate category has been selected yet. Choose one of the four searches above to run it.</div>{% endif %}
+
+  {% if duplicate_mode == 'canonical' %}<section class="surface p-4 mt-4">
+    <div class="section-heading"><div><p class="eyebrow mb-1">Read-only results</p><h2 class="h5 mb-0">Duplicate canonical profiles</h2><p class="small text-secondary mb-0">One row per duplicate profile. The recommended action keeps the oldest canonical identity and preserves all source history.</p></div><div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="{{ url_for('reports.duplicate_report_export', type='canonical', format='csv') }}">Download CSV</a><a class="btn btn-outline-primary" href="{{ url_for('reports.duplicate_report_export', type='canonical', format='xlsx') }}">Download XLSX</a></div></div>
+    {% if canonical_rows %}<div class="table-responsive mt-3"><table class="table table-hover align-middle mb-0"><thead><tr><th>Duplicate group</th><th>Canonical profiles</th><th>Status</th><th>Sources / files</th><th>Conflicts</th><th>Recommendation</th><th></th></tr></thead><tbody>{% for row in canonical_rows %}<tr><td><strong>{{ row.group }}</strong></td><td class="small"><div>Stable: <code>{{ row.survivor_worker_id }}</code></div><div>Duplicate: <code>{{ row.duplicate_worker_id }}</code></div></td><td><span class="badge {% if row.status == 'CONFLICT_REVIEW' %}text-bg-warning{% else %}text-bg-success{% endif %}">{{ row.status|replace('_', ' ')|title }}</span></td><td class="small"><strong>{{ row.sources or 'No source recorded' }}</strong>{% if row.files %}<div class="text-secondary">{{ row.files }}</div>{% endif %}{% if row.observed_dates %}<div class="text-secondary">{{ row.observed_dates }}</div>{% endif %}</td><td class="small">{% if row.conflicts %}<span class="text-danger">{{ row.conflict_count }}: {{ row.conflicts }}</span>{% else %}<span class="text-secondary">None detected</span>{% endif %}</td><td class="small">{{ row.recommendation }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.canonical_duplicate_review', worker_id=row.duplicate_worker_id) }}">Review</a></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="alert alert-success mt-3 mb-0">No active duplicate canonical profiles were found.</div>{% endif %}
+  </section>{% endif %}
+
+  {% if duplicate_mode in ('source_identifier', 'name_email', 'unresolved') %}<section class="surface p-4 mt-4">
+    <div class="section-heading"><div><p class="eyebrow mb-1">Read-only results</p><h2 class="h5 mb-0">{% if duplicate_mode == 'source_identifier' %}Repeated source identifiers{% elif duplicate_mode == 'name_email' %}Name + email matches{% else %}Unresolved duplicate links{% endif %}</h2><p class="small text-secondary mb-0">These are source observations, not automatically duplicate canonical employees.</p></div><a class="btn btn-outline-secondary" href="{{ url_for('reports.duplicate_report', type=duplicate_mode) }}">Refresh</a></div>
+    {% if duplicate_summary.groups %}<div class="table-responsive mt-3"><table class="table table-hover align-middle mb-0"><thead><tr><th>Signal</th><th>Value</th><th>Source observations</th><th>Status</th><th>Files / observed</th><th>History</th></tr></thead><tbody>{% for group in duplicate_summary.groups %}{% set first = group.records[0] %}<tr><td>{{ group.signal }}</td><td><strong>{{ group.value }}</strong></td><td>{{ group.record_count }}</td><td><span class="badge {% if group.classification == 'CORROBORATED' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ group.classification|replace('_', ' ')|title }}</span></td><td>{% for record in group.records %}<div class="small mb-1"><strong>{{ record.source_file }}</strong><br><span class="text-secondary">{{ record.created_at_utc|human_datetime }}</span></div>{% endfor %}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.duplicate_review', record_id=first.record_id) }}">View history</a></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="alert alert-success mt-3 mb-0">No groups were found for this duplicate category.</div>{% endif %}
+  </section>{% endif %}
 </div>
 {% endblock %}
 <!-- #endfile -->

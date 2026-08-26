@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Review canonical consolidation{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell canonical-review-page">
+  <a class="back-link" href="{{ url_for('employees.canonical_duplicates') }}">Back to canonical duplicates</a>
+  <div class="page-heading mt-3">
+    <div><p class="eyebrow">Consolidation review</p><h1>{{ review.display_name }}</h1><p class="text-secondary mb-0">Review the automatic plan before preserving one canonical identity and its complete history.</p></div>
+    <span class="badge text-bg-warning">{{ review.count }} profiles found</span>
+  </div>
+
+  {% if error %}<div class="alert alert-danger mt-4">{{ error }}</div>{% endif %}
+
+  <section class="surface p-4 mt-4">
+    <div class="canonical-review-intro">
+      <div><p class="eyebrow mb-1">Recommended action</p><h2 class="h4 mb-1">Keep one stable identity, consolidate all evidence</h2><p class="text-secondary mb-0">The oldest canonical employee ID remains active. Newer profiles are absorbed without deleting their history.</p></div>
+      <span class="badge text-bg-success">Automatic plan</span>
+    </div>
+    <div class="canonical-review-rules mt-4">
+      <div><span class="canonical-review-rule-icon">1</span><div><strong>Identity stays stable</strong><small>The oldest canonical profile remains active.</small></div></div>
+      <div><span class="canonical-review-rule-icon">2</span><div><strong>Evidence is combined</strong><small>Identifiers, engagements, lineage and source history are retained.</small></div></div>
+      <div><span class="canonical-review-rule-icon">3</span><div><strong>Conflicts remain visible</strong><small>Critical differences become discrepancies for review.</small></div></div>
+    </div>
+  </section>
+
+  <section class="mt-4">
+    <div class="d-flex align-items-end justify-content-between gap-3 mb-3"><div><p class="eyebrow mb-1">Profiles in this group</p><h2 class="h4 mb-0">What will happen to each profile</h2></div><span class="small text-secondary">{{ review.count }} canonical profiles</span></div>
+    <div class="canonical-profile-grid">
+      <article class="surface canonical-profile-card canonical-profile-card-survivor">
+        <div class="canonical-profile-card-header"><div><span class="eyebrow">Stable canonical identity</span><h3>{{ plan.survivor.display_name }}</h3></div><span class="badge text-bg-success">Keep active</span></div>
+        <code class="canonical-profile-id">{{ plan.survivor.worker_id }}</code>
+        <dl class="canonical-profile-details"><div><dt>Canonical email</dt><dd>{{ plan.survivor.email or 'Not provided' }}</dd></div><div><dt>Created</dt><dd>{{ plan.survivor.created_at_utc }}</dd></div></dl>
+        <div class="canonical-profile-stats"><span><strong>{{ plan.survivor.source_systems|length }}</strong> sources</span><span><strong>{{ plan.survivor.identifiers|length }}</strong> identifiers</span><span><strong>{{ plan.survivor.engagements|length }}</strong> engagements</span></div>
+        <div class="canonical-profile-evidence">
+          <div><span class="canonical-evidence-label">Sources</span><div class="canonical-evidence-badges">{% for source in plan.survivor.source_systems %}<span class="badge source-badge">{{ source|replace('_', ' ')|title }}</span>{% else %}<span class="text-secondary small">None recorded</span>{% endfor %}</div></div>
+          <div><span class="canonical-evidence-label">Identifiers</span>{% for item in plan.survivor.identifiers %}<div class="canonical-evidence-line"><strong>{{ item.identifier_type|replace('_', ' ')|title }}:</strong> {{ item.value }} <span class="text-secondary">({{ item.source_system|replace('_', ' ')|title }})</span></div>{% else %}<span class="text-secondary small">None recorded</span>{% endfor %}</div>
+          <div><span class="canonical-evidence-label">Engagements</span>{% for item in plan.survivor.engagements %}<div class="canonical-engagement-line"><strong>{{ item.vendor_name or 'Vendor not provided' }}</strong>{% if item.job_title %}<span> · {{ item.job_title }}</span>{% endif %}<div class="canonical-evidence-badges">{% if item.source_file %}<span class="badge source-badge">{{ item.source_file }}</span>{% endif %}{% if item.observed_at_utc %}<span class="badge date-badge">{{ item.observed_at_utc|human_datetime }}</span>{% endif %}</div></div>{% else %}<span class="text-secondary small">None recorded</span>{% endfor %}</div>
+        </div>
+        <p class="small text-secondary mb-0 mt-3">This profile keeps its employee ID and receives the evidence from the other profile(s).</p>
+      </article>
+      {% for worker in plan.duplicates %}
+      <article class="surface canonical-profile-card canonical-profile-card-absorbed">
+        <div class="canonical-profile-card-header"><div><span class="eyebrow">Profile to consolidate</span><h3>{{ worker.display_name }}</h3></div><span class="badge text-bg-secondary">History retained</span></div>
+        <code class="canonical-profile-id">{{ worker.worker_id }}</code>
+        <dl class="canonical-profile-details"><div><dt>Canonical email</dt><dd>{{ worker.email or 'Not provided' }}</dd></div><div><dt>Created</dt><dd>{{ worker.created_at_utc }}</dd></div></dl>
+        <div class="canonical-profile-stats"><span><strong>{{ worker.source_systems|length }}</strong> sources</span><span><strong>{{ worker.identifiers|length }}</strong> identifiers</span><span><strong>{{ worker.engagements|length }}</strong> engagements</span></div>
+        <div class="canonical-profile-evidence">
+          <div><span class="canonical-evidence-label">Sources</span><div class="canonical-evidence-badges">{% for source in worker.source_systems %}<span class="badge source-badge">{{ source|replace('_', ' ')|title }}</span>{% else %}<span class="text-secondary small">None recorded</span>{% endfor %}</div></div>
+          <div><span class="canonical-evidence-label">Identifiers</span>{% for item in worker.identifiers %}<div class="canonical-evidence-line"><strong>{{ item.identifier_type|replace('_', ' ')|title }}:</strong> {{ item.value }} <span class="text-secondary">({{ item.source_system|replace('_', ' ')|title }})</span></div>{% else %}<span class="text-secondary small">None recorded</span>{% endfor %}</div>
+          <div><span class="canonical-evidence-label">Engagements</span>{% for item in worker.engagements %}<div class="canonical-engagement-line"><strong>{{ item.vendor_name or 'Vendor not provided' }}</strong>{% if item.job_title %}<span> · {{ item.job_title }}</span>{% endif %}<div class="canonical-evidence-badges">{% if item.source_file %}<span class="badge source-badge">{{ item.source_file }}</span>{% endif %}{% if item.observed_at_utc %}<span class="badge date-badge">{{ item.observed_at_utc|human_datetime }}</span>{% endif %}</div></div>{% else %}<span class="text-secondary small">None recorded</span>{% endfor %}</div>
+        </div>
+        <p class="small text-secondary mb-0 mt-3">This profile is marked superseded after its information and source trail are linked to the stable identity.</p>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if plan.conflicts %}
+  <section class="surface p-4 mt-4 canonical-conflicts-panel">
+    <div class="canonical-review-intro"><div><p class="eyebrow mb-1">Review before confirming</p><h2 class="h4 mb-1">{{ plan.conflicts|length }} conflicting field{% if plan.conflicts|length != 1 %}s{% endif %} detected</h2><p class="text-secondary mb-0">These critical values will not be overwritten automatically. They remain visible as discrepancies after consolidation.</p></div><span class="badge text-bg-warning">Review required</span></div>
+    <div class="table-responsive mt-3"><table class="table align-middle mb-0"><thead><tr><th>Field</th><th>Current canonical value</th><th>Other profile value</th><th>Source / date</th></tr></thead><tbody>{% for conflict in plan.conflicts %}<tr><td><strong>{{ conflict.field }}</strong></td><td><span class="conflict-value conflict-value-current">{{ conflict.survivor_value }}</span></td><td><span class="conflict-value conflict-value-incoming">{{ conflict.incoming_value }}</span></td><td class="small"><strong>{{ conflict.source|replace('_', ' ')|title }}</strong><br><span class="text-secondary">{{ conflict.observed_at|human_datetime }}</span></td></tr>{% endfor %}</tbody></table></div>
+    <p class="small text-secondary mb-0 mt-3">No decision is required here. The differences will be recorded for a later review workflow.</p>
+  </section>
+  {% endif %}
+
+  <form method="post" class="mt-4">
+    <section class="surface p-4 canonical-review-confirmation">
+      <div><p class="eyebrow mb-1">Final confirmation</p><h2 class="h4 mb-1">Confirm this automatic consolidation</h2><p class="text-secondary mb-0">No historical source file or profile version will be deleted.</p></div>
+      <div class="mt-4"><label class="form-label" for="mergeReason">Reason for consolidation <span class="text-danger">*</span></label><textarea class="form-control" id="mergeReason" name="reason" rows="3" required placeholder="Example: Same normalized name and overlapping source evidence; older canonical identity retained."></textarea><div class="form-text">This explanation is recorded with the consolidation event.</div></div>
+      {% if can_merge %}<div class="d-flex justify-content-end mt-4"><button class="btn btn-danger" type="submit">Confirm and consolidate</button></div>{% else %}<div class="alert alert-warning mt-3 mb-0">Your account can review this group but cannot execute a canonical consolidation.</div>{% endif %}
+    </section>
+  </form>
+</div>
+{% endblock %}

@@ -231,3 +231,13 @@
 - Full regression verification passed: **99 tests**. The loopback Waitress smoke test required local socket permission and passed when run with it.
 - Deliberately excluded generated SQLite, audit, backup and request artifacts from Git; these belong to the local simulated SharePoint runtime, not the source baseline.
 - Next objective is selective source reconciliation: official source contracts, vendor normalization, matching, duplicate review, employee-level decisions and operational notification cleanup.
+
+### Canonical Profile Merge - 2026-08-26
+
+- Created branch `feature/canonical-profile-merge` from `production`; existing uncommitted work-tracking documentation was preserved.
+- Reviewed the simulated runtime database without modifying it. It contains 711 canonical workers and 61 normalized-name duplicate groups (122 profiles).
+- Confirmed the reviewed duplicates are cross-source canonical profiles, typically one `ROSTER_LOCK` profile and one `RSR_SUPPLIER_WORKER_DETAILS` profile, rather than duplicate rows within one ingested file.
+- Added an authenticated canonical-duplicate index and review flow with explicit survivor selection, mandatory reason, transactional merge service, audit event and superseded-worker history.
+- Full regression verification passed: **141 tests**. A temporary copy of the fixture was migrated and the duplicate detector returned 61 groups / 122 profiles.
+- Added the prevention barrier: RSR approval and Roster Lock promotion revalidate strong cross-source identity inside the write transaction before creating a canonical worker; name-only matches require review.
+- Added regression coverage for stale `UNMATCHED` RSR approval and reverse-order Roster/RSR promotion reuse.

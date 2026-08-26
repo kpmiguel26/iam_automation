@@ -14,12 +14,14 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 from __future__ import annotations
 
 import json
+import csv
+import io
 from functools import wraps
 from pathlib import Path
 
-from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, Response, jsonify, redirect, render_template, request, session, url_for, send_file
 
-from ...application.employee_service import EmployeeService
+from ...application.employee_service import CANONICAL_DUPLICATE_REPORT_COLUMNS, EmployeeService
 from ...application.report_service import ReportService, ReportStudioResult
 from ...application.report_template_service import ReportTemplateService
 
@@ -43,7 +45,7 @@ def create_report_blueprint(database_path: Path, sharepoint_root: Path | None = 
     @authenticated
     def reports_home():
         if request.args.get("duplicates", "") == "1":
-            return render_template("reports/duplicates.html", duplicate_summary=employee_service.source_duplicate_summary())
+            return render_template("reports/duplicates.html", duplicate_summary=None, duplicate_mode="")
         return render_template("reports/index.html", report=service.snapshot())
 
     @blueprint.get("/vendors")
@@ -54,7 +56,47 @@ def create_report_blueprint(database_path: Path, sharepoint_root: Path | None = 
     @blueprint.get("/duplicates")
     @authenticated
     def duplicate_report():
-        return render_template("reports/duplicates.html", duplicate_summary=employee_service.source_duplicate_summary())
+        duplicate_mode = request.args.get("type", "").strip().lower()
+        duplicate_summary = None
+        canonical_rows = None
+        if duplicate_mode == "canonical":
+            canonical_rows = employee_service.canonical_duplicate_report_rows()
+        if duplicate_mode in {"source_identifier", "name_email", "unresolved"}:
+            duplicate_summary = employee_service.source_duplicate_summary()
+            if duplicate_mode == "source_identifier":
+                duplicate_summary["groups"] = [group for group in duplicate_summary["groups"] if group["signal"] != "Name + email"]
+            elif duplicate_mode == "name_email":
+                duplicate_summary["groups"] = [group for group in duplicate_summary["groups"] if group["signal"] == "Name + email"]
+            elif duplicate_mode == "unresolved":
+                duplicate_summary["groups"] = [group for group in duplicate_summary["groups"] if group["classification"] == "REVIEW_DUPLICATE"]
+            duplicate_summary["group_count"] = len(duplicate_summary["groups"])
+        return render_template("reports/duplicates.html", duplicate_summary=duplicate_summary, canonical_rows=canonical_rows, duplicate_mode=duplicate_mode)
+
+    @blueprint.get("/duplicates/export")
+    @authenticated
+    def duplicate_report_export():
+        if request.args.get("type", "").strip().lower() != "canonical":
+            return Response("Only canonical duplicate export is available.", status=400, mimetype="text/plain")
+        rows = employee_service.canonical_duplicate_report_rows()
+        columns = list(CANONICAL_DUPLICATE_REPORT_COLUMNS)
+        export_format = request.args.get("format", "csv").strip().lower()
+        if export_format == "xlsx":
+            from openpyxl import Workbook
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "Canonical duplicates"
+            sheet.append(columns)
+            for row in rows:
+                sheet.append([row[column] for column in columns])
+            output = io.BytesIO()
+            workbook.save(output)
+            output.seek(0)
+            return send_file(output, as_attachment=True, download_name="canonical-duplicate-report.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        output = io.StringIO(newline="")
+        writer = csv.DictWriter(output, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows({column: row[column] for column in columns} for row in rows)
+        return Response("\ufeff" + output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=canonical-duplicate-report.csv"})
 
     @blueprint.get("/new-hires")
     @authenticated
