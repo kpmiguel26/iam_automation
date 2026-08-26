@@ -16,6 +16,7 @@ from __future__ import annotations
 import ctypes
 import sys
 import webbrowser
+from queue import Empty
 from pathlib import Path
 from typing import Callable
 
@@ -23,14 +24,14 @@ from .startup import PreflightResult, StartupController, StartupState
 from .webapp import launch_local_webapp_process, stop_local_webapp, webapp_pid_path
 
 try:  # Optional until the desktop/web UI dependencies are installed.
-    from PySide6.QtCore import Qt, QThread, Signal
+    from PySide6.QtCore import Qt, QThread, QTimer, Signal
     from PySide6.QtGui import QIcon, QPixmap
-    from PySide6.QtWidgets import QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QProgressBar, QScrollArea, QVBoxLayout, QWidget
+    from PySide6.QtWidgets import QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QProgressBar, QPlainTextEdit, QVBoxLayout, QWidget
 except ModuleNotFoundError:  # pragma: no cover - exercised when optional UI deps are absent
     QApplication = None  # type: ignore[assignment,misc]
     QFileDialog = None  # type: ignore[assignment,misc]
-    Qt = QIcon = QPixmap = QThread = Signal = None  # type: ignore[assignment,misc]
-    QApplication = QFileDialog = QFrame = QHBoxLayout = QLabel = QLineEdit = QPlainTextEdit = QPushButton = QProgressBar = QScrollArea = QVBoxLayout = QWidget = None  # type: ignore[assignment,misc]
+    Qt = QIcon = QPixmap = QThread = QTimer = Signal = None  # type: ignore[assignment,misc]
+    QApplication = QFileDialog = QFrame = QHBoxLayout = QLabel = QLineEdit = QPushButton = QProgressBar = QPlainTextEdit = QVBoxLayout = QWidget = None  # type: ignore[assignment,misc]
 
 
 if QThread is not None:
@@ -70,6 +71,7 @@ class StartupWindow:
         self.controller = controller
         self.on_ready = on_ready
         self.widget = QWidget()
+        self.widget.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, False)
         self.widget.setWindowTitle("IAM Automation - Environment Check")
         icon_path = Path(__file__).resolve().parent / "static" / "preflight_icon.svg"
         if icon_path.is_file():
@@ -78,7 +80,7 @@ class StartupWindow:
         self.widget.setMinimumSize(760, 560)
         self.widget.setStyleSheet(
             """
-            QWidget { background: #f4f7fb; color: #17233f; font-family: "Helvetica Neue", Arial, sans-serif; font-size: 13px; }
+            QWidget { background: #f4f7fb; color: #17233f; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; font-size: 13px; }
             QLabel { background: transparent; }
             QFrame#header { background: #10254d; border-radius: 10px; }
             QLabel#logo { background: transparent; }
@@ -94,13 +96,17 @@ class StartupWindow:
             QLineEdit, QPlainTextEdit { background: white; border: 1px solid #d7dfec; border-radius: 7px; padding: 8px; }
             QLineEdit:focus, QPlainTextEdit:focus { border: 1px solid #2e74c9; }
             QScrollArea { background: white; border: 1px solid #d7dfec; border-radius: 7px; }
-            QPushButton { background: #edf2f8; border: 1px solid #cbd6e5; border-radius: 6px; color: #1b3157; font-weight: 600; padding: 8px 14px; min-height: 18px; }
-            QPushButton:hover { background: #e1eaf5; border-color: #8ca8ca; }
+            QPushButton { background: #ffffff; border: 1px solid #b9c8dc; border-radius: 7px; color: #17345f; font-weight: 650; padding: 9px 16px; min-height: 20px; }
+            QPushButton:hover { background: #e8f3ff; border-color: #3478c8; color: #0b4f9b; }
+            QPushButton:pressed { background: #d5e8fb; border-color: #1266d6; }
             QPushButton:disabled { color: #9aa6b8; background: #eef1f5; border-color: #dfe4eb; }
             QPushButton#primaryButton { background: #1266d6; border-color: #1266d6; color: white; }
-            QPushButton#primaryButton:hover { background: #0c55b6; }
+            QPushButton#primaryButton:hover { background: #0b55b5; border-color: #083f89; color: white; }
+            QPushButton#primaryButton:pressed { background: #073b81; }
             QPushButton#successButton { background: #16834b; border-color: #16834b; color: white; }
+            QPushButton#successButton:hover { background: #0f6d3d; border-color: #0b5d34; color: white; }
             QPushButton#dangerButton { color: #9d2f2a; border-color: #e2aaa6; }
+            QPushButton#dangerButton:hover { background: #c63c32; border-color: #a92e27; color: white; }
             """
         )
         self.logo_label = QLabel()
@@ -117,17 +123,10 @@ class StartupWindow:
         self.preflight_progress.setRange(0, 0)
         self.preflight_progress.setTextVisible(False)
         self.preflight_progress.setVisible(False)
-        self.details_label = QLabel()
-        self.details_label.setWordWrap(True)
-        self.details_scroll = QScrollArea()
-        self.details_scroll.setWidgetResizable(True)
-        self.details_scroll.setWidget(self.details_label)
-        self.details_scroll.setMinimumHeight(150)
-        self.details_scroll.setMaximumHeight(230)
         self.log_output = QPlainTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.setMinimumHeight(100)
-        self.log_output.setMaximumHeight(170)
+        self.log_output.setMaximumHeight(330)
         self.path_input = QLineEdit()
         self.path_input.setReadOnly(True)
         self.browse_button = QPushButton("Browse")
@@ -135,15 +134,23 @@ class StartupWindow:
         self.start_button = QPushButton("Start Web App")
         self.open_button = QPushButton("Open App")
         self.stop_button = QPushButton("Stop Web App")
+        self.close_button = QPushButton("Close App")
         self.browse_button.setObjectName("secondaryButton")
         self.retry_button.setObjectName("secondaryButton")
         self.start_button.setObjectName("primaryButton")
         self.open_button.setObjectName("successButton")
         self.stop_button.setObjectName("dangerButton")
+        self.close_button.setObjectName("dangerButton")
         self.open_button.setEnabled(False)
         self.stop_button.setEnabled(False)
+        for button in (self.browse_button, self.retry_button, self.start_button, self.open_button, self.stop_button, self.close_button):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.webapp_url: str | None = None
         self.webapp_process = None
+        self.webapp_log_queue = None
+        self.webapp_log_timer = QTimer(self.widget)
+        self.webapp_log_timer.setInterval(200)
+        self.webapp_log_timer.timeout.connect(self._drain_webapp_log)
         self.preflight_worker = None
         self.preflight_callback = None
         self.closing = False
@@ -188,11 +195,7 @@ class StartupWindow:
         layout.addWidget(self.status_label)
         layout.addWidget(self.preflight_progress)
 
-        details_label = QLabel("VALIDATION DETAILS")
-        details_label.setObjectName("sectionLabel")
-        layout.addWidget(details_label)
-        layout.addWidget(self.details_scroll)
-        log_label = QLabel("STARTUP LOG")
+        log_label = QLabel("STARTUP LOG · PREFLIGHT + WAITRESS")
         log_label.setObjectName("sectionLabel")
         layout.addWidget(log_label)
         layout.addWidget(self.log_output)
@@ -204,12 +207,14 @@ class StartupWindow:
         actions.addWidget(self.start_button)
         actions.addWidget(self.open_button)
         actions.addWidget(self.stop_button)
+        actions.addWidget(self.close_button)
         layout.addLayout(actions)
         self.browse_button.clicked.connect(self.browse)
         self.retry_button.clicked.connect(self.retry)
         self.start_button.clicked.connect(self.continue_to_login)
         self.open_button.clicked.connect(self.open_app)
         self.stop_button.clicked.connect(self.stop_webapp)
+        self.close_button.clicked.connect(self.exit_app)
 
     def show(self) -> None:
         self.widget.show()
@@ -218,16 +223,24 @@ class StartupWindow:
         if result.settings:
             self.path_input.setText(str(result.settings.sharepoint_root_path))
         self._set_status(f"{result.state.value}: {result.message}", ready=result.ok, error=not result.ok)
-        details = [f"{item['label']}: {item['status']} - {item['message']}" for item in result.resources]
-        self.details_label.setText("\n".join(details))
         self._log(f"[{result.state.value}] {result.message}")
         for item in result.resources:
-            self._log(f"{item['label']}: {item['status']}")
+            self._log(f"{item['label']}: {item['status']} - {item['message']}")
         self.start_button.setEnabled(result.ok and self.webapp_url is None)
         self.open_button.setEnabled(self.webapp_url is not None)
 
     def _log(self, message: str) -> None:
         self.log_output.appendPlainText(message)
+
+    def _drain_webapp_log(self) -> None:
+        if self.webapp_log_queue is None:
+            return
+        while True:
+            try:
+                message = self.webapp_log_queue.get_nowait()
+            except Empty:
+                return
+            self._log(f"[WAITRESS] {message}")
 
     def _set_status(self, message: str, *, ready: bool = False, error: bool = False) -> None:
         self.status_label.setText(message)
@@ -285,15 +298,14 @@ class StartupWindow:
     def retry(self) -> None:
         self._run_preflight("retry")
 
-    def mark_webapp_started(self, process, url: str) -> None:
+    def mark_webapp_started(self, process, url: str, log_queue) -> None:
         self.webapp_process = process
         self.webapp_url = url
+        self.webapp_log_queue = log_queue
+        self.webapp_log_timer.start()
         self._set_status(f"READY: Local webapp is running at {url}", ready=True)
         self._log(f"[WEBAPP] Flask/Waitress process started: {url}")
-        self.details_label.setText(
-            self.details_label.text()
-            + f"\nWebapp process: running\nBrowser URL: {url}\nClick Open App when you are ready."
-        )
+        self._log(f"[WEBAPP] Waitress is ready. Open App is now enabled.")
         self.start_button.setEnabled(False)
         self.open_button.setEnabled(True)
         self.stop_button.setEnabled(True)
@@ -313,9 +325,13 @@ class StartupWindow:
         self._log("[WEBAPP] Stop request sent successfully.")
         self.webapp_url = None
         self.webapp_process = None
+        self.webapp_log_queue = None
+        self.webapp_log_timer.stop()
         self.start_button.setEnabled(True)
         self.open_button.setEnabled(False)
         self.stop_button.setEnabled(False)
+        for button in (self.browse_button, self.retry_button, self.start_button, self.open_button, self.stop_button):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._set_status("READY: Webapp stopped. The control panel remains available.", ready=True)
         if self.closing:
             self._finish_exit()
@@ -327,9 +343,11 @@ class StartupWindow:
             self._set_status("READY: Stale webapp session cleared. Start the webapp again.", ready=True)
             return
         self.stop_button.setEnabled(True)
+        self.close_button.setEnabled(True)
         self._set_status(f"STOP_ERROR: {message}", error=True)
 
     def exit_app(self) -> None:
+        self.close_button.setEnabled(False)
         if self.webapp_url:
             self.closing = True
             self.stop_webapp()
@@ -378,7 +396,7 @@ class StartupWindow:
 
 if QThread is not None:
     class WebAppStartupWorker(QThread):
-        ready = Signal(object, str)
+        ready = Signal(object, str, object)
         failed = Signal(str)
 
         def __init__(self, result: PreflightResult):
@@ -387,11 +405,11 @@ if QThread is not None:
 
         def run(self) -> None:
             try:
-                process, url = launch_local_webapp_process(self.result, open_browser=False)
+                process, url, log_queue = launch_local_webapp_process(self.result, open_browser=False)
             except Exception as exc:  # pragma: no cover - depends on local process startup
                 self.failed.emit(str(exc))
                 return
-            self.ready.emit(process, url)
+            self.ready.emit(process, url, log_queue)
 
     class WebAppStopWorker(QThread):
         stopped = Signal()
@@ -434,10 +452,10 @@ def run_desktop_app(controller: StartupController | None = None) -> int:
         window.mark_webapp_starting()
         worker = WebAppStartupWorker(result)
         startup_workers.append(worker)
-        worker.ready.connect(lambda process, url: (server_holder.append(process), window.mark_webapp_started(process, url)))
+        worker.ready.connect(lambda process, url, log_queue: (server_holder.append(process), window.mark_webapp_started(process, url, log_queue)))
         worker.failed.connect(lambda message: (
             window.status_label.setText(f"WEBAPP_ERROR: {message}"),
-            window.details_label.setText(window.details_label.text() + f"\nWebapp startup failed: {message}"),
+            window._log(f"[WAITRESS] Startup failed: {message}"),
             window.start_button.setEnabled(True),
             window.open_button.setEnabled(False),
         ))
