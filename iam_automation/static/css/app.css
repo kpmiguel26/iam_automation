@@ -110,8 +110,7 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .role-badge { background: #e5f3f2; border: 1px solid #b9ddda; color: #075e61; margin: .15rem; }
 .notification-unread { border-left: 4px solid var(--kp-teal); }
 .status-dot { border-radius: 50%; display: inline-block; height: .75rem; width: .75rem; }
-.admin-page { max-width: 1440px; }
-.page-shell { max-width: 1480px; }
+.admin-page, .page-shell { max-width: none; width: 100%; }
 .page-heading, .section-heading { align-items: flex-end; display: flex; gap: 1rem; justify-content: space-between; }
 .source-file-filter-panel { background: linear-gradient(135deg, #ffffff 0%, #f7fafc 100%); padding: 1.25rem 1.5rem 1rem; }
 .source-file-filter-heading { align-items: center; display: flex; gap: 1rem; justify-content: space-between; margin-bottom: 1rem; }
@@ -323,7 +322,7 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .status-overdue { background: #fff0ef; color: #9d3028; }
 .status-approved { background: #e8f6ee; color: #17613d; }
 .status-rejected { background: #fff0ef; color: #9d3028; }
-.form-page { max-width: 900px; }
+.form-page { max-width: none; width: 100%; }
 .empty-state { color: #697587; padding: 3rem !important; text-align: center; }
 .modal-content { border: 0; border-radius: .65rem; box-shadow: 0 20px 55px rgba(14,32,70,.2); }
 .modal-header { border-bottom-color: #edf0f4; padding: 1.25rem 1.5rem; }

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Canonical duplicates{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <div class="page-heading"><div><p class="eyebrow">Canonical employee review</p><h1>Duplicate canonical profiles</h1><p class="text-secondary mb-0">These groups contain multiple canonical workers with the same normalized name. Source-file duplicates are handled separately.</p></div><a class="btn btn-outline-primary" href="{{ url_for('employees.employee_directory') }}">Back to employees</a></div>
+  <div class="alert alert-warning mt-4">Do not merge by name alone. Review identifiers, source systems, engagements and history before selecting a survivor.</div>
+  <section class="surface table-responsive mt-4"><table class="table table-hover align-middle mb-0"><thead><tr><th>Name</th><th>Profiles</th><th>Sources</th><th>Profile IDs</th><th>Review</th></tr></thead><tbody>
+    {% for group in groups %}<tr><td><strong>{{ group.display_name }}</strong></td><td>{{ group.count }}</td><td class="small">{{ group.workers|map(attribute='source_systems')|list|join(', ') }}</td><td class="small"><div class="d-flex flex-column gap-1">{% for worker in group.workers %}<code>{{ worker.worker_id }}</code>{% endfor %}</div></td><td><a class="btn btn-sm btn-outline-danger" href="{{ url_for('employees.canonical_duplicate_review', worker_id=group.workers[0].worker_id) }}">Review merge</a></td></tr>
+    {% else %}<tr><td colspan="5" class="empty-state"><strong>No active canonical name duplicates found.</strong></td></tr>{% endfor %}
+  </tbody></table></section>
+</div>
+{% endblock %}

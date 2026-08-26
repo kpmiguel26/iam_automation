@@ -103,3 +103,33 @@ Working document: [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACC
 - [ ] Implement Roster Lock/Fieldglass reconciliation and discrepancy workflow.
 - [x] Add worker version history and duplicate-worker merge evidence.
 - [ ] Confirm selective source-update review behavior with stakeholders.
+
+## September 2026 IAM Action Items
+
+Source: [`2026-08-25_MIGUEL_FERNANDEZ_ACTION_ITEMS_ESTIMATE.md`](../2026-08-25_MIGUEL_FERNANDEZ_ACTION_ITEMS_ESTIMATE.md)
+
+Booking baseline: **75 hours of planned work + 5 hours contingency = 80 hours recommended**. The source estimate contains a reconciliation note: its contingency row says 8 hours while the executive summary says 5, and the second date window is listed as 42 hours although its detailed tasks total 47 hours. Until stakeholders confirm otherwise, this backlog uses the executive 80-hour booking recommendation.
+
+All items start in `Backlog` and require a dedicated `feature/<name>` branch before implementation.
+
+### Priority 1 — target 2026-09-04
+
+- [ ] **Finalize audit events** — 8 h, Miguel; see [`2026-08-26_AUDIT_EVENTS_FINALIZATION.md`](./2026-08-26_AUDIT_EVENTS_FINALIZATION.md).
+- [ ] **Add change-role submission visibility** — 10 h, Miguel; see [`2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md`](./2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md).
+- [ ] **Create duplicate-profile export report** — 12 h, Miguel; see [`2026-08-26_DUPLICATE_REPORT.md`](./2026-08-26_DUPLICATE_REPORT.md).
+- [ ] **Validate Salesforce/Data Loader export and application regression** — 6 h Salesforce validation, part of the 14 h combined testing allocation; see [`2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md`](./2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md).
+
+### Priority 2 — target 2026-09-11
+
+- [~] **Implement safe canonical-profile merge and duplicate-prevention matching** — 28 h, Miguel; see [`2026-08-26_CANONICAL_PROFILE_MERGE.md`](./2026-08-26_CANONICAL_PROFILE_MERGE.md).
+- [ ] **Complete history, retention and regression validation** — 8 h, combined with the 6 h Salesforce validation above for 14 h total testing; see [`2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md`](./2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md).
+- [ ] **Prepare SOP and technical handoff** — 3 h; see [`2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md`](./2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md).
+
+### Dependencies and operational support
+
+- [ ] Salesforce Team confirms the final workbook/template, administrative access and Data Loader process.
+- [ ] Sofia Moya confirms the five-day inactivity report availability and format.
+- [ ] Stakeholders approve duplicate rules, canonical-profile precedence, retention policy and recovery behavior.
+- [ ] Sophie Moya Bermudez receives duplicate-roster evidence for the biweekly meeting when requested.
+- [ ] Amanda Madrigal owns the Report Studio roster-lock consolidation test; IAM provides data and defect support if the canonical model is affected.
+- [ ] Vendor communication/access remains delayed as an operational control until the flow is stable.

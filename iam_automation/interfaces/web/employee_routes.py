@@ -109,6 +109,33 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             rehire_alerts=rehire_alerts,
         )
 
+    @blueprint.get("/duplicates")
+    @authenticated
+    def canonical_duplicates():
+        return render_template("employees/canonical_duplicates.html", groups=service.list_canonical_duplicates())
+
+    @blueprint.route("/duplicates/<worker_id>", methods=["GET", "POST"])
+    @authenticated
+    def canonical_duplicate_review(worker_id: str):
+        review = service.canonical_duplicate_review(worker_id)
+        if review is None:
+            return render_template("errors/404.html"), 404
+        current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
+        error = None
+        if request.method == "POST":
+            if not current_user.can_decide_requests:
+                error = "Only an administrator can merge canonical employee profiles."
+            else:
+                survivor_id = request.form.get("survivor_worker_id", "").strip()
+                duplicate_id = request.form.get("duplicate_worker_id", "").strip()
+                try:
+                    result = service.merge_workers(survivor_id, duplicate_id, request.form.get("reason", ""), current_user.username)
+                    record_audit(audit_path, current_user.username, "CANONICAL_WORKER_MERGED", "worker", survivor_id, new_values={"result": result})
+                    return redirect(url_for("employees.canonical_duplicates"))
+                except (OSError, ValueError, PermissionError) as exc:
+                    error = str(exc)
+        return render_template("employees/canonical_duplicate_review.html", review=review, can_merge=current_user.can_decide_requests, error=error)
+
     @blueprint.post("/source-updates/create-all")
     @authenticated
     def create_all_source_candidates():
@@ -136,33 +163,13 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         except (OSError, ValueError, PermissionError) as exc:
             return redirect(url_for("employees.source_updates_overview", error=str(exc), notice_type="danger"))
 
-    @blueprint.route("/source-updates/duplicate/<record_id>", methods=["GET", "POST"])
+    @blueprint.get("/source-updates/duplicate/<record_id>")
     @authenticated
     def duplicate_review(record_id: str):
         review = service.duplicate_review(record_id)
         if review is None:
             return render_template("errors/404.html"), 404
-        message = error = None
-        if request.method == "POST":
-            if request.form.get("action") == "use_latest":
-                try:
-                    result = service.resolve_source_duplicate(record_id, str(session["iam_user"]))
-                    return redirect(url_for("employees.source_updates_overview", notice=f"Canonical employee created/updated from the latest {result['source_system']} observation. {len(result['superseded_record_ids'])} older observation(s) were preserved as history.", notice_type="success"))
-                except (OSError, ValueError, PermissionError) as exc:
-                    error = str(exc)
-            elif not review.get("worker_id"):
-                error = "This group does not yet have a single canonical employee to apply the selected values to."
-            else:
-                choices = {key.removeprefix("field_"): value for key, value in request.form.items() if key.startswith("field_") and value}
-                try:
-                    grouped: dict[str, list[str]] = {}
-                    for field, source_record_id in choices.items():
-                        grouped.setdefault(source_record_id, []).append(field)
-                    results = [service.apply_selected_source_updates(review["worker_id"], [source_record_id], fields, str(session["iam_user"])) for source_record_id, fields in grouped.items()]
-                    message = f"Applied {sum(int(result['processed']) for result in results)} record(s) locally and updated the history."
-                except (OSError, ValueError, PermissionError) as exc:
-                    error = str(exc)
-        return render_template("employees/duplicate_review.html", review=review, message=message, error=error)
+        return render_template("employees/duplicate_review.html", review=review)
 
     @blueprint.get("/source-updates/candidate/<record_id>")
     @authenticated

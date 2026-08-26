@@ -231,6 +231,19 @@ class RsrSupplierWorkerDetailsAdapter:
                     payload = json.loads(record.normalized_json)
                     worker_id = record.matched_worker_id
                     if record.match_status == "UNMATCHED":
+                        # Matching is calculated when the file is ingested, but
+                        # another source may have created the canonical worker
+                        # before approval. Revalidate inside this transaction
+                        # before ever creating a new canonical employee.
+                        matches, match_reason = find_worker_matches(session, SOURCE_SYSTEM, payload)
+                        if len(matches) > 1:
+                            raise ValueError("The RSR record matches multiple canonical employees and requires manual resolution.")
+                        if len(matches) == 1 and match_reason != "Canonical name match":
+                            worker_id = matches[0]
+                            record.matched_worker_id = worker_id
+                            record.match_status = "MATCHED"
+                            record.match_reason = "Canonical match revalidated during approval"
+                    if record.match_status == "UNMATCHED":
                         worker_id = str(uuid.uuid4())
                         first_name = str(payload.get("first_name") or "").strip()
                         last_name = str(payload.get("last_name") or "").strip()

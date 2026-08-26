@@ -43,7 +43,7 @@ def create_report_blueprint(database_path: Path, sharepoint_root: Path | None = 
     @authenticated
     def reports_home():
         if request.args.get("duplicates", "") == "1":
-            return render_template("reports/duplicates.html", duplicate_summary=employee_service.source_duplicate_summary())
+            return render_template("reports/duplicates.html", duplicate_summary=None, duplicate_mode="")
         return render_template("reports/index.html", report=service.snapshot())
 
     @blueprint.get("/vendors")
@@ -54,7 +54,18 @@ def create_report_blueprint(database_path: Path, sharepoint_root: Path | None = 
     @blueprint.get("/duplicates")
     @authenticated
     def duplicate_report():
-        return render_template("reports/duplicates.html", duplicate_summary=employee_service.source_duplicate_summary())
+        duplicate_mode = request.args.get("type", "").strip().lower()
+        duplicate_summary = None
+        if duplicate_mode in {"source_identifier", "name_email", "unresolved"}:
+            duplicate_summary = employee_service.source_duplicate_summary()
+            if duplicate_mode == "source_identifier":
+                duplicate_summary["groups"] = [group for group in duplicate_summary["groups"] if group["signal"] != "Name + email"]
+            elif duplicate_mode == "name_email":
+                duplicate_summary["groups"] = [group for group in duplicate_summary["groups"] if group["signal"] == "Name + email"]
+            elif duplicate_mode == "unresolved":
+                duplicate_summary["groups"] = [group for group in duplicate_summary["groups"] if group["classification"] == "REVIEW_DUPLICATE"]
+            duplicate_summary["group_count"] = len(duplicate_summary["groups"])
+        return render_template("reports/duplicates.html", duplicate_summary=duplicate_summary, duplicate_mode=duplicate_mode)
 
     @blueprint.get("/new-hires")
     @authenticated
