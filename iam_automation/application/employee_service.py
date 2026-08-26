@@ -771,6 +771,13 @@ class EmployeeService:
             discrepancies = session.scalars(select(WorkerDiscrepancyModel).where(WorkerDiscrepancyModel.worker_id == worker_id).order_by(WorkerDiscrepancyModel.created_at_utc.desc())).all()
             versions = session.scalars(select(WorkerProfileVersionModel).where(WorkerProfileVersionModel.worker_id == worker_id).order_by(WorkerProfileVersionModel.version_number.desc())).all()
             version_items = [version_dict(item) for item in versions]
+            source_field_aliases = {
+                "email": "canonical_email", "vendor_email": "canonical_email", "vendor_email_address": "canonical_email",
+                "employee_first_name": "first_name", "employee_last_name": "last_name", "fg_status": "status",
+                "accessnow_status": "status", "worker_status": "status", "worker_start_date": "onboarding_date",
+                "worker_end_date": "production_start_date", "resident_license_state": "license_state",
+                "resident_license_number": "license_number", "taxonomy": "taxonomy_code",
+            }
             for index, item in enumerate(version_items):
                 previous = version_items[index + 1]["snapshot"] if index + 1 < len(version_items) else {}
                 previous_engagement = (previous.get("engagements") or [{}])[0]
@@ -782,9 +789,13 @@ class EmployeeService:
                         current_value = next((row.get("normalized_value", "") for row in item["snapshot"].get("lineage", []) if row.get("field_name") == lineage_field), "")
                         previous_value = next((row.get("normalized_value", "") for row in previous.get("lineage", []) if row.get("field_name") == lineage_field), "")
                     else:
-                        current_value = item["snapshot"].get(field, current_engagement.get(field, ""))
-                        previous_value = previous.get(field, previous_engagement.get(field, ""))
+                        canonical_field = source_field_aliases.get(field, field)
+                        current_value = item["snapshot"].get(canonical_field, current_engagement.get(canonical_field, ""))
+                        previous_value = previous.get(canonical_field, previous_engagement.get(canonical_field, ""))
+                    if str(current_value or "").casefold() == str(previous_value or "").casefold():
+                        continue
                     item["changes"].append({"field": field, "previous_value": previous_value or "Not set", "new_value": current_value or "Not set"})
+                item["changed_fields"] = [change["field"] for change in item["changes"]]
             source_names = sorted({item.source_system for item in identifiers if item.source_system} | {item.source_system for item in engagements if item.source_system} | {item.source_system for item in lineage if item.source_system})
             source_profiles = []
             for source_system in source_names:
