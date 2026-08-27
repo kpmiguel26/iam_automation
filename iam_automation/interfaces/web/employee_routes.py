@@ -205,7 +205,11 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         sort = request.args.get("sort", "UPDATED_DESC").strip().upper()
         if sort not in {"UPDATED_DESC", "UPDATED_ASC", "NAME_ASC", "NAME_DESC"}:
             sort = "UPDATED_DESC"
-        show_all = request.args.get("all", "") == "1"
+        # The employee directory is a DataTables view by default.  Keep an
+        # explicit all=0 escape hatch for very large result sets, while normal
+        # filtered links load the complete result set so client-side search,
+        # ordering, column visibility and export operate on every match.
+        show_all = request.args.get("all", "1") != "0"
         try:
             requested_page = max(1, int(request.args.get("page", "1")))
         except ValueError:

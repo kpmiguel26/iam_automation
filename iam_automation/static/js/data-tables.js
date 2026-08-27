@@ -39,6 +39,53 @@
     return title ? exportText(title.textContent) : (document.title || 'IAM Automation table');
   }
 
+  function addColumnVisibilityControl(api, table) {
+    var container = table.closest('.dt-container');
+    var header = table.querySelector('thead > tr:last-child');
+    var layoutEnd = container && container.querySelector('.dt-layout-row:first-child .dt-layout-end');
+    if (!container || !header || !layoutEnd) return;
+
+    var details = document.createElement('details');
+    details.className = 'dt-columns-menu';
+    var summary = document.createElement('summary');
+    summary.className = 'btn btn-outline-secondary btn-sm';
+    summary.textContent = 'Fields';
+    summary.setAttribute('aria-label', 'Choose visible fields');
+    var menu = document.createElement('div');
+    menu.className = 'dt-columns-menu-panel';
+    var actions = document.createElement('div');
+    actions.className = 'dt-columns-menu-actions';
+    var showAll = document.createElement('button');
+    showAll.type = 'button';
+    showAll.className = 'btn btn-link btn-sm p-0';
+    showAll.textContent = 'Show all fields';
+    actions.appendChild(showAll);
+    menu.appendChild(actions);
+
+    var controls = [];
+    Array.from(header.children).forEach(function (headerCell, index) {
+      var label = document.createElement('label');
+      label.className = 'dt-column-option';
+      var checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = api.column(index).visible();
+      checkbox.addEventListener('change', function () {
+        api.column(index).visible(checkbox.checked);
+      });
+      var text = document.createElement('span');
+      text.textContent = exportText(headerCell.textContent) || ('Field ' + (index + 1));
+      label.append(checkbox, text);
+      menu.appendChild(label);
+      controls.push({ checkbox: checkbox, index: index });
+    });
+    showAll.addEventListener('click', function () {
+      api.columns().visible(true);
+      controls.forEach(function (control) { control.checkbox.checked = true; });
+    });
+    details.append(summary, menu);
+    layoutEnd.insertBefore(details, layoutEnd.firstChild);
+  }
+
   function initializeTable(table) {
     if (!window.DataTable || isAlreadyInitialized(table)) return;
     if (table.dataset.datatable === 'off' || table.closest('.dataTables_wrapper')) return;
@@ -62,7 +109,7 @@
     var title = tableTitle(table);
     var fileName = title.toLowerCase().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'iam-automation-table';
 
-    new DataTable(table, {
+    var api = new DataTable(table, {
       pageLength: Number(table.dataset.pageLength || 25),
       lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
       order: [],
@@ -89,6 +136,7 @@
         bottomEnd: 'paging'
       }
     });
+    addColumnVisibilityControl(api, table);
     table.setAttribute('data-datatable-ready', 'true');
   }
 

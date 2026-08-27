@@ -82,6 +82,10 @@ class EmployeeDomainTests(unittest.TestCase):
                     first_worker = worker_id
             detail = service.get_worker(first_worker)
             self.assertEqual(len(detail["engagements"]), 2)
+            roster_profile = next(item for item in detail["source_profiles"] if item["source_system"] == "ROSTER_LOCK")
+            self.assertTrue(roster_profile["source_file"].endswith("roster-2.xlsx"))
+            self.assertTrue(roster_profile["observed_at_utc"])
+            self.assertTrue(roster_profile["engagements"][0]["source_file"])
             self.assertEqual(len(service.list_workers()), 1)
 
             self.assertEqual(service.list_workers()[0].change_type, "UPDATED")

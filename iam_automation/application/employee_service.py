@@ -1059,13 +1059,41 @@ class EmployeeService:
                     item["changes"].append({"field": field, "previous_value": previous_value or "Not set", "new_value": current_value or "Not set"})
                 item["changed_fields"] = [change["field"] for change in item["changes"]]
             source_names = sorted({item.source_system for item in identifiers if item.source_system} | {item.source_system for item in engagements if item.source_system} | {item.source_system for item in lineage if item.source_system})
+            lineage_by_engagement: dict[str, WorkerSourceLineageModel] = {}
+            for item in lineage:
+                if item.engagement_id and item.engagement_id not in lineage_by_engagement:
+                    lineage_by_engagement[item.engagement_id] = item
             source_profiles = []
             for source_system in source_names:
+                source_lineage = [item for item in lineage if item.source_system == source_system]
+                latest_lineage = source_lineage[0] if source_lineage else None
+                source_engagements = []
+                for item in engagements:
+                    if item.source_system != source_system:
+                        continue
+                    evidence = lineage_by_engagement.get(item.engagement_id)
+                    source_engagements.append({
+                        "source_system": item.source_system,
+                        "vendor_name": item.vendor_name,
+                        "program": item.program,
+                        "project": item.project,
+                        "supervisor_name": item.supervisor_name,
+                        "job_title": item.job_title,
+                        "country": item.country,
+                        "site_location": item.site_location,
+                        "onboarding_date": item.onboarding_date,
+                        "production_start_date": item.production_start_date,
+                        "status": item.status,
+                        "source_file": self._source_file_name(evidence.source_file) if evidence else "",
+                        "observed_at_utc": evidence.observed_at_utc if evidence else item.updated_at_utc,
+                    })
                 source_profiles.append({
                     "source_system": source_system,
                     "identifiers": [item for item in identifiers if item.source_system == source_system],
-                    "engagements": [item for item in engagements if item.source_system == source_system],
-                    "lineage": [item for item in lineage if item.source_system == source_system],
+                    "engagements": source_engagements,
+                    "lineage": source_lineage,
+                    "source_file": self._source_file_name(latest_lineage.source_file) if latest_lineage else "",
+                    "observed_at_utc": latest_lineage.observed_at_utc if latest_lineage else "",
                 })
             return {"worker": worker, "identifiers": identifiers, "engagements": engagements, "lineage": lineage, "source_profiles": source_profiles, "source_observations": source_observations, "discrepancies": discrepancies, "versions": version_items}
 
