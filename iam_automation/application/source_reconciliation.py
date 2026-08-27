@@ -25,19 +25,38 @@ def source_identifiers(source_system: str, payload: dict[str, object]) -> list[t
         "ACCESSNOW": (("ACCESSNOW_EMPLOYEE_ID", "accessnow_employee_id"), ("ACCESSNOW_NUID", "accessnow_nuid"), ("ACCESSNOW_MANAGER_NUID", "manager_nuid"), ("ACCESSNOW_SPONSOR_NUID", "sponsor_nuid")),
         "RSR_SUPPLIER_WORKER_DETAILS": (("RSR_WORKER_ID", "worker_id"), ("VENDOR_EMPLOYEE_ID", "supplier_reference"), ("BUYER_REFERENCE", "buyer_reference"), ("WORK_ORDER_ID", "work_order_id")),
         "ROSTER_LOCK": (("VENDOR_EMPLOYEE_ID", "vendor_employee_id"),),
+        "MASTER_ROSTER": (("MASTER_EMPLOYEE_NUMBER", "employee_number"), ("MASTER_NUID", "nuid_login_id"), ("MASTER_NPN", "npn_login_id")),
     }
     return [(kind, value) for kind, field in fields.get(source_system, ()) if (value := str(payload.get(field) or "").strip())]
 
 
 def _match_types(source_system: str, identifier_type: str) -> set[str]:
-    return {
-        ("ACCESSNOW", "ACCESSNOW_NUID"): {"ACCESSNOW_NUID", "BUYER_REFERENCE"},
-        ("RSR_SUPPLIER_WORKER_DETAILS", "BUYER_REFERENCE"): {"ACCESSNOW_NUID", "BUYER_REFERENCE"},
-    }.get((source_system, identifier_type), {identifier_type})
+    """Return the identifier aliases that represent the same business key.
+
+    These are intentionally narrow equivalence classes.  A NUID is not the
+    same value as an NPN, and worker/work-order identifiers are not identity
+    keys.  The source system is kept in the signature for callers and future
+    source-specific rules, but the aliases are shared across source systems.
+    """
+    for aliases in (
+        {"ACCESSNOW_NUID", "MASTER_NUID", "BUYER_REFERENCE"},
+        {"ACCESSNOW_EMPLOYEE_ID", "MASTER_EMPLOYEE_NUMBER", "VENDOR_EMPLOYEE_ID"},
+    ):
+        if identifier_type in aliases:
+            return aliases
+    return {identifier_type}
 
 
 def find_worker_matches(session, source_system: str, payload: dict[str, object]) -> tuple[list[str], str]:
-    """Find one canonical worker using strong IDs, then email/name fallback."""
+    """Find canonical workers using all strong evidence, then safe fallbacks.
+
+    The previous implementation returned on the first identifier.  That made
+    the result dependent on field order and allowed two identifiers in one
+    source row to point at different canonical workers without surfacing the
+    conflict.  We now collect every strong match first; more than one worker
+    is ambiguous and must not create a new canonical employee silently.
+    """
+    strong_matches: dict[str, set[str]] = {}
     for identifier_type, value in source_identifiers(source_system, payload):
         if identifier_type in {"ACCESSNOW_MANAGER_NUID", "ACCESSNOW_SPONSOR_NUID", "WORK_ORDER_ID"}:
             continue
@@ -50,8 +69,13 @@ def find_worker_matches(session, source_system: str, payload: dict[str, object])
             active = session.scalars(select(WorkerModel.worker_id).where(
                 WorkerModel.worker_id.in_(set(matches)), WorkerModel.superseded_by_worker_id.is_(None)
             )).all()
-            if active:
-                return sorted(set(active)), "Exact source identifier match"
+            for worker_id in active:
+                strong_matches.setdefault(worker_id, set()).add(identifier_type)
+    if strong_matches:
+        if len(strong_matches) == 1:
+            return sorted(strong_matches), "Exact source identifier match"
+        return sorted(strong_matches), "Conflicting source identifiers"
+
     email = str(payload.get("email") or payload.get("vendor_email") or payload.get("vendor_email_address") or "").strip().casefold()
     if email:
         matches = session.scalars(select(WorkerModel.worker_id).where(func.lower(WorkerModel.canonical_email) == email, WorkerModel.superseded_by_worker_id.is_(None))).all()

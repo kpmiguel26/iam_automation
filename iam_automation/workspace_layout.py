@@ -30,6 +30,7 @@ SHAREPOINT_FOLDERS = (
     "backups",
     "templates",
     "generated_templates",
+    "master_roster",
     "exports",
     "manifests",
     "bug_reports/open",

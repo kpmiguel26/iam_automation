@@ -15,6 +15,7 @@
 - [x] Add Master audit JSON export and append-only archive operation.
 - [x] Add notification unread counter to the avatar and notification resolution routes.
 - [x] Add notification read, resolved and expired states.
+- [x] Share notification events through one JSON per event with per-user read markers and an immutable recipient snapshot.
 - [x] Add delegation queue reassignment without duplicating request IDs.
 - [x] Add manual reviewer assignment and SLA escalation.
 - [x] Add expired delegation administration.
@@ -149,7 +150,12 @@ Working document: [`2026-08-27_MASTER_ROSTER_REQUIREMENTS.md`](./2026-08-27_MAST
 
 - [ ] Confirm official Master Roster folder, file name, owner and delivery cadence.
 - [ ] Confirm Master Roster workbook sheets, headers, required fields and row boundaries.
-- [ ] Define `MASTER_ROSTER` source registration, checksum, batch and lineage contract.
+- [x] Define and implement `MASTER_ROSTER` source registration, checksum, batch and lineage staging contract.
+- [x] Connect the watcher to `master_roster/*.xlsx` without creating an approval/apply workflow.
+- [x] Capture NUID and NPN login IDs as separate fields when the workbook repeats `LogonID`.
+- [x] Add sequential manual import from staged source files into employee history.
+- [x] Create a canonical employee when a reliable imported row has no existing history.
+- [x] Add local HTMX timeline, import status badges and request loading indicators.
 - [ ] Define read-only matching preview against the canonical employee.
 - [ ] Define cross-source consolidation view without canonical mutation.
 - [ ] Define duplicate and repeated-identifier report columns and exports.
@@ -158,15 +164,23 @@ Working document: [`2026-08-27_MASTER_ROSTER_REQUIREMENTS.md`](./2026-08-27_MAST
 - [ ] Define source adapter contract for future sources.
 - [ ] Confirm duplicate rules, identifier precedence, termination and rehire semantics.
 - [ ] Confirm retention, legal-hold and export-evidence requirements.
-- [ ] Add explicit read-only feature gate before implementation/UAT.
+- [ ] Add explicit feature-state gate for duplicate resolution and publication before UAT.
 
 ### Future controlled-change items
 
-- [ ] Promote approved Master Roster observations into canonical employees.
-- [ ] Apply Master Roster enrichment and lifecycle changes.
+- [ ] Apply source-specific enrichment and lifecycle changes after historical import.
 - [ ] Confirm/merge duplicate canonical workers.
 - [ ] Publish approved runtime SQLite or Access changes.
 - [ ] Generate or execute downstream Data Loader submissions.
+
+### 2026-08-27 DataTable standardization
+
+- [x] Apply local DataTables controls to flat application tables: pagination,
+  all-loaded-row view, sorting, search, Copy, CSV and Excel export.
+- [x] Preserve server-side pagination for large employee/source datasets and
+  provide explicit load-all behavior before client-side export.
+- [x] Document table coverage and the expandable-detail exception in
+  [`2026-08-27_DATATABLE_COVERAGE.md`](./2026-08-27_DATATABLE_COVERAGE.md).
 
 ### 2026-08-26 Daily closeout — `bugfix/preflight`
 

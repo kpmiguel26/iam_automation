@@ -77,6 +77,8 @@ class RsrSupplierWorkerDetailsTests(unittest.TestCase):
 
             applied = EmployeeService(database).apply_approved_import_records([rsr_record["record_id"]], "qa")
             self.assertEqual(applied["processed"], 1)
+            self.assertEqual(applied["created"], 0)
+            self.assertEqual(applied["reused"], 1)
             detail = EmployeeService(database).get_worker(worker_id)
             self.assertEqual(detail["engagements"][0].work_order_id, "WO-1")
             self.assertEqual(detail["engagements"][0].statement_of_work, "TTEC Contact Center Agent Services SOW 11109")
@@ -100,6 +102,11 @@ class RsrSupplierWorkerDetailsTests(unittest.TestCase):
             self.assertEqual(result["processed"], 1)
             self.assertEqual(result["created"], 1)
             self.assertEqual(len(EmployeeService(database).list_workers()), 1)
+            with orm_session(database) as session:
+                applied_record = session.get(IngestionRecordModel, record["record_id"])
+                self.assertIsNotNone(applied_record.matched_worker_id)
+                self.assertEqual(applied_record.match_status, "MATCHED")
+                self.assertEqual(applied_record.observation_state, "CURRENT")
             repeated = adapter.apply_approved_records([record["record_id"]], "qa")
             self.assertEqual(repeated["failed"], 0)
             self.assertEqual(repeated["reused"], 1)

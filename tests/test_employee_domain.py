@@ -51,6 +51,7 @@ class EmployeeDomainTests(unittest.TestCase):
             self.assertEqual(workers[0].display_name, "Ada Lovelace")
             self.assertEqual(workers[0].email, "ada@example.com")
             self.assertEqual(workers[0].vendor_name, "TTEC")
+            self.assertEqual(workers[0].change_type, "NEW_HIRE")
             roster_workers, roster_total = EmployeeService(database).list_workers_page(source="ROSTER_LOCK", page=1, per_page=25)
             self.assertEqual(roster_total, 1)
             self.assertEqual([item.worker_id for item in roster_workers], [worker_id])
@@ -82,6 +83,13 @@ class EmployeeDomainTests(unittest.TestCase):
             detail = service.get_worker(first_worker)
             self.assertEqual(len(detail["engagements"]), 2)
             self.assertEqual(len(service.list_workers()), 1)
+
+            self.assertEqual(service.list_workers()[0].change_type, "UPDATED")
+
+    def test_directory_change_badge_classifies_termination_and_missing_history(self):
+        self.assertEqual(EmployeeService._directory_change_type("ACTIVE", "Terminated", "ROSTER_LOCK_ENRICHMENT"), "TERMINATION")
+        self.assertEqual(EmployeeService._directory_change_type("ACTIVE", "New Hire", "ROSTER_LOCK_INITIAL_PROFILE"), "NEW_HIRE")
+        self.assertEqual(EmployeeService._directory_change_type("ACTIVE", "", ""), "NO_CHANGE")
 
     def test_bulk_promotion_processes_staged_rows_without_one_click_per_worker(self):
         with tempfile.TemporaryDirectory() as tmp:

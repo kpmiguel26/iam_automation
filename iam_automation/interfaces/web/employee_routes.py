@@ -14,22 +14,175 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 from __future__ import annotations
 
 from functools import wraps
+import hashlib
+import logging
+import threading
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 
 from flask import Blueprint, redirect, render_template, request, session, url_for
+from sqlalchemy import select
 
 from ...application.audit_service import record_audit
 from ...application.employee_service import EmployeeService
 from ...application.notification_service import NotificationService
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.shared_request_service import SharedRequestService
+from ...infrastructure.sqlite.orm import IngestionRecordModel, orm_session
 from ...identity import CurrentUser
+
+
+import_logger = logging.getLogger("iam.import")
 
 
 def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | None = None, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("employees", __name__, url_prefix="/employees")
     service = EmployeeService(database_path)
     requests = SharedRequestService(sharepoint_root) if sharepoint_root else RequestService(database_path)
+    source_order = ("ROSTER_LOCK", "MASTER_ROSTER", "RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW")
+    import_tasks: dict[str, dict[str, object]] = {}
+    import_task_by_file: dict[tuple[str, str], str] = {}
+    import_tasks_lock = threading.RLock()
+    import_execution_lock = threading.Lock()
+
+    def task_snapshot(task_id: str | None) -> dict[str, object] | None:
+        if not task_id:
+            return None
+        with import_tasks_lock:
+            task = import_tasks.get(task_id)
+            return dict(task) if task else None
+
+    def update_task(task_id: str, **updates: object) -> None:
+        with import_tasks_lock:
+            task = import_tasks.get(task_id)
+            if task is not None:
+                task.update(updates)
+
+    def task_for_file(source_system: str, source_file: str) -> dict[str, object] | None:
+        with import_tasks_lock:
+            task_id = import_task_by_file.get((source_system, source_file))
+        return task_snapshot(task_id)
+
+    def notify_import_result(task: dict[str, object], actor: str, *, status: str, result: dict[str, object] | None = None, error: str = "") -> str:
+        """Persist the import outcome for the actor in the shared notification center."""
+        source_system = str(task.get("source_system", ""))
+        source_file = str(task.get("source_file", ""))
+        result = result or {}
+        processed = int(result.get("processed", task.get("processed", 0)) or 0)
+        created = int(result.get("created", task.get("created", 0)) or 0)
+        reused = int(result.get("reused", task.get("reused", 0)) or 0)
+        failed = int(result.get("failed", task.get("failed", 0)) or 0)
+        target_route = "/employees/source-updates"
+        if source_system and source_file:
+            target_route += "?" + urlencode({"source": source_system, "file": source_file})
+        if status == "FAILED":
+            notification_type = "SOURCE_FILE_IMPORT_FAILED"
+            severity = "ERROR"
+            title = "Source file import failed"
+            message = f"The {source_system.replace('_', ' ').title()} file {source_file} could not be imported. {error or 'Review the task details for the error.'}"
+        else:
+            notification_type = "SOURCE_FILE_IMPORT_COMPLETED"
+            severity = "WARNING" if status == "COMPLETED_WITH_WARNINGS" else "INFO"
+            title = "Source file import completed" if severity == "INFO" else "Source file import completed with warnings"
+            message = (
+                f"{source_file}: {processed} row(s) processed, {created} new employee(s), "
+                f"{reused} existing employee(s) updated, and {failed} error(s). "
+                "Changes are local and require administrator publication to share them."
+            )
+        try:
+            stable_notification_id = hashlib.sha256(
+                f"source-file-import:{actor.casefold()}:{source_system}:{source_file}:{task.get('source_checksum', '')}".encode("utf-8")
+            ).hexdigest()
+            return NotificationService(database_path, sharepoint_root=sharepoint_root).create(
+                actor,
+                notification_type,
+                title,
+                message,
+                severity=severity,
+                target_route=target_route,
+                entity_type="source_file",
+                entity_id=f"{source_system}:{source_file}",
+                notification_id=stable_notification_id,
+            )
+        except Exception:  # pragma: no cover - notification storage failure must not hide import result
+            import_logger.exception("IMPORT NOTIFICATION FAILED | source=%s | file=%s | actor=%s", source_system, source_file, actor)
+            return ""
+
+    def run_import_task(task_id: str, record_ids: list[str], actor: str) -> None:
+        update_task(task_id, status="RUNNING", started_at=datetime.now(timezone.utc).isoformat(), message="Importing source history…")
+        task = task_snapshot(task_id) or {}
+        import_logger.info("IMPORT STARTED | source=%s | file=%s | rows=%s | task=%s", task.get("source_system"), task.get("source_file"), len(record_ids), task_id[:8])
+
+        def report_progress(processed: int, total: int, created: int, reused: int, failed: int) -> None:
+            update_task(
+                task_id,
+                processed=processed,
+                total=total,
+                created=created,
+                reused=reused,
+                failed=failed,
+                message=f"Processing row {processed} of {total}…",
+            )
+
+        try:
+            with import_execution_lock:
+                result = service.apply_approved_import_records(record_ids, actor, progress_callback=report_progress)
+            failed = int(result.get("failed", 0))
+            status = "COMPLETED_WITH_WARNINGS" if failed else "COMPLETED"
+            update_task(
+                task_id,
+                status=status,
+                processed=len(record_ids),
+                total=len(record_ids),
+                created=int(result.get("created", 0)),
+                reused=int(result.get("reused", 0)),
+                failed=failed,
+                errors=list(result.get("errors", [])),
+                completed_at=datetime.now(timezone.utc).isoformat(),
+                message="Import completed with warnings." if failed else "Import completed successfully.",
+            )
+            notification_id = notify_import_result(task_snapshot(task_id) or {}, actor, status=status, result=result)
+            if notification_id:
+                update_task(task_id, notification_id=notification_id)
+            import_logger.log(logging.WARNING if failed else logging.INFO, "IMPORT %s | source=%s | file=%s | processed=%s | created=%s | reused=%s | failed=%s | task=%s", status, task.get("source_system"), task.get("source_file"), result.get("processed", 0), result.get("created", 0), result.get("reused", 0), failed, task_id[:8])
+        except Exception as exc:  # pragma: no cover - exercised by runtime failures
+            update_task(
+                task_id,
+                status="FAILED",
+                completed_at=datetime.now(timezone.utc).isoformat(),
+                message=str(exc),
+            )
+            notification_id = notify_import_result(task_snapshot(task_id) or {}, actor, status="FAILED", error=str(exc))
+            if notification_id:
+                update_task(task_id, notification_id=notification_id)
+            import_logger.exception("IMPORT FAILED | source=%s | file=%s | task=%s | error=%s", task.get("source_system"), task.get("source_file"), task_id[:8], exc)
+
+    def source_timeline():
+        grouped = {str(item["source_system"]): item for item in service.list_source_systems()}
+        timeline = []
+        previous_complete = True
+        for source_system in source_order:
+            files = service.list_source_files(source_system)
+            imported = bool(files) and all(bool(item.get("imported")) for item in files)
+            stage_complete = not files or imported
+            item = grouped.get(source_system, {"source_system": source_system, "label": "Fieldglass" if source_system == "RSR_SUPPLIER_WORKER_DETAILS" else service._source_label(source_system), "file_count": 0, "record_count": 0, "pending_count": 0, "linked_count": 0})
+            item = dict(item)
+            item["files"] = files
+            item["step"] = len(timeline) + 1
+            item["imported"] = imported
+            item["available"] = bool(files) and previous_complete and not imported
+            item["blocked"] = bool(files) and not previous_complete
+            item["timeline_status"] = "IMPORTED" if imported else "READY_TO_IMPORT" if item["available"] else "WAITING_FOR_FILE" if not files else "BLOCKED"
+            next_file_index = next((index for index, file in enumerate(files) if not file.get("imported")), None)
+            for index, file in enumerate(files):
+                file["import_task"] = task_for_file(source_system, str(file["source_file"]))
+                file["is_latest"] = bool(files) and index == len(files) - 1
+                file["available"] = bool(item["available"] and next_file_index == index)
+            timeline.append(item)
+            previous_complete = previous_complete and stage_complete
+        return timeline
 
     def authenticated(view):
         @wraps(view)
@@ -48,6 +201,10 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         source = request.args.get("source", "ALL")
         engagement = request.args.get("engagement", "")
         review = request.args.get("review", "")
+        updated = request.args.get("updated", "ALL")
+        sort = request.args.get("sort", "UPDATED_DESC").strip().upper()
+        if sort not in {"UPDATED_DESC", "UPDATED_ASC", "NAME_ASC", "NAME_DESC"}:
+            sort = "UPDATED_DESC"
         show_all = request.args.get("all", "") == "1"
         try:
             requested_page = max(1, int(request.args.get("page", "1")))
@@ -55,15 +212,16 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             requested_page = 1
         page = requested_page
         statuses, vendors, sources = service.filter_values()
-        has_query = bool(show_all or search.strip() or engagement.strip() or review or status != "ALL" or vendor != "ALL" or source != "ALL")
-        workers, total_workers = (service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, page=page, per_page=25) if has_query else ([], 0))
-        page_count = max(1, (total_workers + 24) // 25)
+        has_query = bool(show_all or search.strip() or engagement.strip() or review or updated != "ALL" or status != "ALL" or vendor != "ALL" or source != "ALL" or sort != "UPDATED_DESC")
+        page_size = None if show_all else 25
+        workers, total_workers = (service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size) if has_query else ([], 0))
+        page_count = 1 if show_all else max(1, (total_workers + 24) // 25)
         page = min(page, page_count)
         if has_query and page != requested_page:
-            workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, page=page, per_page=25)
+            workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size)
         rehire_alerts = service.rehire_alerts()
-        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
-        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=service.pending_source_update_count(), rehire_alert_count=len(rehire_alerts))
+        NotificationService(database_path, sharepoint_root=sharepoint_root).notify_rehire_alerts(rehire_alerts)
+        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "updated": updated, "sort": sort, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=service.pending_source_update_count(), rehire_alert_count=len(rehire_alerts))
 
     @blueprint.get("/source-updates")
     @authenticated
@@ -71,8 +229,10 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         source_system = request.args.get("source", "").strip()
         source_file = request.args.get("file", "").strip()
         mode = request.args.get("mode", "").strip().lower()
-        person_query = request.args.get("person", "").strip()
-        all_people = request.args.get("all_people", "") == "1"
+        result_order = request.args.get("result_order", "RESULT").strip().upper()
+        requested_all = request.args.get("all", "") == "1"
+        if result_order not in {"RESULT", "NEW_HIRES", "UPDATED", "CURRENT", "PENDING"}:
+            result_order = "RESULT"
         try:
             requested_page = max(1, int(request.args.get("page", "1")))
         except ValueError:
@@ -81,15 +241,15 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         sources = service.list_source_systems()
         files = service.list_source_files(source_system) if source_system else []
         file_summary = service.get_source_file_summary(source_system, source_file) if source_system and source_file else None
-        records, total_records = service.list_source_records(source_system, source_file, page=page, per_page=50) if file_summary else ([], 0)
-        page_count = max(1, (total_records + 49) // 50)
+        load_all = requested_all or bool(file_summary and int(file_summary.get("record_count", 0) or 0) <= 1000)
+        records, total_records = service.list_source_records(source_system, source_file, page=page, per_page=50, result_order=result_order, load_all=load_all) if file_summary else ([], 0)
+        page_count = 1 if load_all else max(1, (total_records + 49) // 50)
         page = min(page, page_count)
-        if file_summary and page != requested_page:
-            records, total_records = service.list_source_records(source_system, source_file, page=page, per_page=50)
+        if file_summary and page != requested_page and not load_all:
+            records, total_records = service.list_source_records(source_system, source_file, page=page, per_page=50, result_order=result_order, load_all=load_all)
         duplicate_summary = service.source_duplicate_summary(source_file=source_file) if mode == "duplicates" else None
-        people = service.list_source_people() if all_people else service.search_source_people(person_query) if person_query else []
         rehire_alerts = service.rehire_alerts(source_file if source_system == "ROSTER_LOCK" else "")
-        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
+        NotificationService(database_path, sharepoint_root=sharepoint_root).notify_rehire_alerts(rehire_alerts)
         return render_template(
             "employees/source_updates_overview.html",
             sources=sources,
@@ -102,12 +262,68 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             source_file=source_file,
             file_summary=file_summary,
             mode=mode,
+            result_order=result_order,
+            load_all=load_all,
             duplicate_summary=duplicate_summary,
-            person_query=person_query,
-            people=people,
-            all_people=all_people,
             rehire_alerts=rehire_alerts,
+            source_timeline=source_timeline(),
         )
+
+    @blueprint.post("/source-updates/import")
+    @authenticated
+    def import_source_file():
+        source_system = request.form.get("source_system", "").strip()
+        source_file = request.form.get("source_file", "").strip()
+        if source_system not in source_order or not source_file:
+            return "Invalid source import request.", 400
+        summary = service.get_source_file_summary(source_system, source_file)
+        if summary is None:
+            return "Source file was not found in staging.", 404
+        timeline = source_timeline()
+        with orm_session(database_path) as db_session:
+            record_ids = list(db_session.scalars(select(IngestionRecordModel.record_id).where(IngestionRecordModel.source_system == source_system, IngestionRecordModel.source_file == summary["source_path"], IngestionRecordModel.status == "STAGED")).all())
+        if not record_ids:
+            if request.headers.get("HX-Request"):
+                return render_template("employees/_source_import_message.html", message="This file has already been imported."), 200
+            return render_template("employees/_source_import_timeline.html", source_timeline=timeline, import_message="This file has already been imported."), 200
+        current = next(item for item in timeline if item["source_system"] == source_system)
+        if not current["available"]:
+            return render_template("employees/_source_import_timeline.html", source_timeline=timeline, import_error="This source is not available yet. Import the previous source first."), 409
+        file_key = (source_system, str(summary["source_file"]))
+        with import_tasks_lock:
+            existing_id = import_task_by_file.get(file_key)
+            existing = import_tasks.get(existing_id) if existing_id else None
+            if existing and existing.get("status") in {"QUEUED", "RUNNING"}:
+                return render_template("employees/_source_import_task.html", task=dict(existing)), 202
+            task_id = str(uuid.uuid4())
+            import_tasks[task_id] = {
+                "task_id": task_id,
+                "source_system": source_system,
+                "source_file": source_file,
+                "source_label": str(current["label"]),
+                "detected_at": str(summary.get("source_modified_at") or summary.get("latest_at", "")),
+                "source_checksum": str(summary.get("source_checksum", "")),
+                "status": "QUEUED",
+                "processed": 0,
+                "total": len(record_ids),
+                "created": 0,
+                "reused": 0,
+                "failed": 0,
+                "errors": [],
+                "message": "Queued for import…",
+            }
+            import_task_by_file[file_key] = task_id
+        actor = str(session["iam_user"])
+        threading.Thread(target=run_import_task, args=(task_id, record_ids, actor), name=f"source-import-{task_id[:8]}", daemon=True).start()
+        return render_template("employees/_source_import_task.html", task=task_snapshot(task_id)), 202
+
+    @blueprint.get("/source-updates/import-status/<task_id>")
+    @authenticated
+    def import_source_task_status(task_id: str):
+        task = task_snapshot(task_id)
+        if task is None:
+            return "Import task was not found.", 404
+        return render_template("employees/_source_import_task.html", task=task)
 
     @blueprint.get("/duplicates")
     @authenticated
@@ -186,7 +402,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         current_user = CurrentUser(actor, "local-web", tuple(session.get("iam_roles", ())))
         item = requests.create(current_user, operation_type, entity_id, payload, reason)
         request_id = item.request_id
-        NotificationService(database_path).notify_request_reviewers(request_id, operation_type, actor, record_count=len(payload.get("record_ids", [])))
+        NotificationService(database_path, sharepoint_root=sharepoint_root).notify_request_reviewers(request_id, operation_type, actor, record_count=len(payload.get("record_ids", [])))
         record_audit(audit_path, actor, "SOURCE_CHANGE_REQUEST_CREATED", "change_request", request_id, new_values={"operation_type": operation_type, "record_count": len(payload.get("record_ids", []))})
         return request_id
 
@@ -222,7 +438,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             return render_template("errors/404.html"), 404
         current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
         rehire_alerts = [item for item in service.rehire_alerts() if str(item.get("worker_id", "")) == worker_id]
-        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
+        NotificationService(database_path, sharepoint_root=sharepoint_root).notify_rehire_alerts(rehire_alerts)
         return render_template("employees/source_updates.html", preview=preview, rehire_alerts=rehire_alerts, can_apply=current_user.can_decide_requests, message=request.args.get("notice"), error=request.args.get("error"))
 
     @blueprint.post("/source-updates/<worker_id>/apply")

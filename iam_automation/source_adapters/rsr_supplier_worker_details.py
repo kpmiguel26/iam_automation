@@ -20,6 +20,7 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from openpyxl import load_workbook
 from sqlalchemy import func, select
@@ -35,7 +36,7 @@ from ..infrastructure.sqlite.orm import (
     WorkerSourceLineageModel,
     orm_session,
 )
-from ..application.stable_file_read import read_stable_bytes
+from ..application.stable_file_read import file_modified_at_utc, read_stable_bytes
 from ..application.worker_history_service import record_worker_version
 from ..application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 
@@ -91,7 +92,7 @@ class RsrSupplierWorkerDetailsAdapter:
         batch_id = str(uuid.uuid4())
         staged = quarantined = 0
         with orm_session(self.database_path) as session:
-            batch = ImportBatchModel(batch_id=batch_id, filename=path.name, source_type=SOURCE_SYSTEM, status="PROCESSING", total_rows=len(rows), created_by=actor, created_at_utc=now)
+            batch = ImportBatchModel(batch_id=batch_id, filename=path.name, source_type=SOURCE_SYSTEM, status="PROCESSING", total_rows=len(rows), created_by=actor, created_at_utc=now, source_modified_at_utc=file_modified_at_utc(path))
             session.add(batch)
             for row_number, payload in rows:
                 source_key = self._source_key(payload, row_number)
@@ -210,22 +211,35 @@ class RsrSupplierWorkerDetailsAdapter:
             session.commit()
         return {"reviewed": reviewed, "matched": matched, "unmatched": unmatched, "ambiguous": ambiguous, "conflicts": conflicts, "vendor_repaired": vendor_repaired}
 
-    def apply_approved_records(self, record_ids: list[str], actor: str) -> dict[str, object]:
+    def apply_approved_records(
+        self,
+        record_ids: list[str],
+        actor: str,
+        *,
+        progress_callback: Callable[[int, int, int, int, int], None] | None = None,
+    ) -> dict[str, object]:
         selected = {str(value) for value in record_ids if str(value).strip()}
         if not selected:
             raise ValueError("The RSR import request contains no records.")
         now = _utc_now()
-        applied = created = already_applied = failed = 0
+        applied = created = reused = failed = 0
         errors: list[dict[str, str]] = []
         with orm_session(self.database_path) as session:
             records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(selected), IngestionRecordModel.source_system == SOURCE_SYSTEM)).all()
+            handled = 0
             for record in records:
                 if record.status == "APPLIED":
-                    already_applied += 1
+                    reused += 1
+                    handled += 1
+                    if progress_callback:
+                        progress_callback(handled, len(records), created, reused, failed)
                     continue
                 if record.status != "STAGED" or record.match_status not in {"MATCHED", "UNMATCHED"}:
                     errors.append({"record_id": record.record_id, "error": f"Record is not eligible for approval: {record.status}/{record.match_status}."})
                     failed += 1
+                    handled += 1
+                    if progress_callback:
+                        progress_callback(handled, len(records), created, reused, failed)
                     continue
                 try:
                     payload = json.loads(record.normalized_json)
@@ -243,6 +257,7 @@ class RsrSupplierWorkerDetailsAdapter:
                             record.matched_worker_id = worker_id
                             record.match_status = "MATCHED"
                             record.match_reason = "Canonical match revalidated during approval"
+                    was_created = worker_id is None
                     if record.match_status == "UNMATCHED":
                         worker_id = str(uuid.uuid4())
                         first_name = str(payload.get("first_name") or "").strip()
@@ -262,6 +277,8 @@ class RsrSupplierWorkerDetailsAdapter:
                             updated_at_utc=now,
                         ))
                         created += 1
+                    else:
+                        reused += 1
                     engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker_id, WorkerEngagementModel.source_system == SOURCE_SYSTEM, WorkerEngagementModel.work_order_id == payload.get("work_order_id", "")).limit(1))
                     if engagement is None:
                         engagement = WorkerEngagementModel(engagement_id=str(uuid.uuid4()), worker_id=worker_id, source_system=SOURCE_SYSTEM, created_at_utc=now, updated_at_utc=now)
@@ -270,14 +287,24 @@ class RsrSupplierWorkerDetailsAdapter:
                     self._add_identifiers(session, worker_id, payload, now)
                     for field_name, value in payload.items():
                         session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=engagement.engagement_id, batch_id=record.batch_id, source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
-                    record_worker_version(session, worker_id, actor=actor, change_type="RSR_INITIAL_PROFILE" if record.match_status == "UNMATCHED" else "RSR_SOURCE_ENRICHMENT", source_system=record.source_system, source_file=record.source_file, source_checksum=record.source_checksum, source_record_key=record.source_record_key, changed_fields=list(payload))
+                    record_worker_version(session, worker_id, actor=actor, change_type="RSR_INITIAL_PROFILE" if was_created else "RSR_SOURCE_ENRICHMENT", source_system=record.source_system, source_file=record.source_file, source_checksum=record.source_checksum, source_record_key=record.source_record_key, changed_fields=list(payload))
+                    record.matched_worker_id = worker_id
+                    record.match_status = "MATCHED"
+                    if was_created:
+                        record.match_reason = "Canonical employee created during approval"
                     record.status = "APPLIED"
+                    record.observation_state = "CURRENT"
+                    record.linked_at_utc = record.linked_at_utc or now
+                    record.last_seen_at_utc = now
                     applied += 1
                 except (ValueError, json.JSONDecodeError) as exc:
                     errors.append({"record_id": record.record_id, "error": str(exc)})
                     failed += 1
+                handled += 1
+                if progress_callback:
+                    progress_callback(handled, len(records), created, reused, failed)
             session.commit()
-        return {"processed": applied, "applied": applied, "created": created, "reused": already_applied, "failed": failed, "errors": errors, "actor": actor}
+        return {"processed": applied, "applied": applied, "created": created, "reused": reused, "failed": failed, "errors": errors, "actor": actor}
 
     @staticmethod
     def _read_rows(path: Path) -> list[tuple[int, dict[str, str]]]:

@@ -29,7 +29,7 @@ class MigrationTests(unittest.TestCase):
             first = applied_migrations(database)
             second = apply_pending_migrations(database, actor="test")
 
-            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations"))
+            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps"))
             self.assertEqual(second, ())
             connection = sqlite3.connect(database)
             try:
@@ -44,8 +44,8 @@ class MigrationTests(unittest.TestCase):
             self.assertIn("worker_merge_events", table_names)
             self.assertIn("worker_source_profiles", table_names)
             self.assertIn("superseded_by_worker_id", worker_columns)
-            self.assertEqual(alembic_revision, "0007_source_observations")
-            self.assertEqual(current_database_revision(database), "0007_source_observations")
+            self.assertEqual(alembic_revision, "0008_source_file_timestamps")
+            self.assertEqual(current_database_revision(database), "0008_source_file_timestamps")
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ from ..identity import CurrentUser, ROLE_REQUESTER, computer_name
 from .employee_service import EmployeeService
 from .notification_service import NotificationService
 from .roster_lock_ingestion_service import RosterLockIngestionService
+from .master_roster_ingestion_service import MasterRosterIngestionService
 from .accessnow_ingestion_service import AccessNowIngestionService
 from .shared_request_service import SharedRequestService
 from .workspace_refresh_service import WORKSPACE_IO_LOCK, local_runtime_checksum_path, record_local_runtime_checksum
@@ -74,7 +75,7 @@ class FileWatchService:
     def __init__(self, database_path: Path, sharepoint_root: Path):
         self.database_path = database_path
         self.sharepoint_root = sharepoint_root
-        self.notifications = NotificationService(database_path)
+        self.notifications = NotificationService(database_path, sharepoint_root=sharepoint_root)
 
     def start(self, interval_seconds: float = 1.0) -> "FileWatcher":
         watcher = FileWatcher(self, interval_seconds)
@@ -125,7 +126,7 @@ class FileWatchService:
             review_requests: set[str] = set()
             accessnow_processed = False
             for observation in changed:
-                if observation.file_kind not in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW", "APPROVED_IMPORT"}:
+                if observation.file_kind not in {"ROSTER_LOCK", "MASTER_ROSTER", "RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW", "APPROVED_IMPORT"}:
                     successful_ingestions.add(observation.path)
                     continue
                 try:
@@ -133,6 +134,8 @@ class FileWatchService:
                         result = RosterLockIngestionService(self.database_path).ingest_file(Path(observation.path))
                         self._ensure_import_review_request(observation, result)
                         review_requests.add(observation.path)
+                    elif observation.file_kind == "MASTER_ROSTER":
+                        result = MasterRosterIngestionService(self.database_path).ingest_file(Path(observation.path))
                     elif observation.file_kind == "RSR_SUPPLIER_WORKER_DETAILS":
                         result = RsrSupplierWorkerDetailsAdapter(self.database_path).ingest_file(Path(observation.path))
                         self._ensure_import_review_request(observation, result)
@@ -293,7 +296,7 @@ class FileWatchService:
         rules are visible to the reviewer.
         """
         request = load_request_file(path)
-        if request.operation_type not in {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS", "IMPORT_ACCESSNOW"}:
+        if request.operation_type not in {"IMPORT_ROSTER_LOCK", "IMPORT_MASTER_ROSTER", "IMPORT_RSR_SUPPLIER_DETAILS", "IMPORT_ACCESSNOW"}:
             return
         self.notifications.notify_source_update_available(
             request.request_id,
@@ -318,6 +321,7 @@ class FileWatchService:
             (self.sharepoint_root / "database" / "snapshots" / "identity_discoveries", "IDENTITY_DISCOVERY"),
             (self.sharepoint_root / "database" / "snapshots", "PUBLISHED_RUNTIME"),
             (self.sharepoint_root / "rosterlocks", "ROSTER_LOCK"),
+            (self.sharepoint_root / "master_roster", "MASTER_ROSTER"),
             (self.sharepoint_root / "rsrsuplierworkerdetails", "RSR_SUPPLIER_WORKER_DETAILS"),
             (self.sharepoint_root / "acessnow", "ACCESSNOW"),
             (self.sharepoint_root / "requests" / "approved", "APPROVED_IMPORT"),
@@ -326,7 +330,7 @@ class FileWatchService:
         for root, kind in roots:
             if not root.is_dir():
                 continue
-            patterns = ("*.json", "*.toml") if kind == "CONFIGURATION" else (("iam_runtime.sqlite",) if kind == "PUBLISHED_RUNTIME" else (("*.xlsx", "*.csv") if kind == "ACCESSNOW" else (("*.xlsx",) if kind in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"} else ("*.json",))))
+            patterns = ("*.json", "*.toml") if kind == "CONFIGURATION" else (("iam_runtime.sqlite",) if kind == "PUBLISHED_RUNTIME" else (("*.xlsx", "*.csv") if kind == "ACCESSNOW" else (("*.xlsx",) if kind in {"ROSTER_LOCK", "MASTER_ROSTER", "RSR_SUPPLIER_WORKER_DETAILS"} else ("*.json",))))
             for pattern in patterns:
                 for path in root.glob(pattern):
                     if path.is_file() and not path.name.startswith("."):
@@ -398,6 +402,7 @@ class FileWatchService:
             "IDENTITY_DISCOVERY": ("Identity discovery updated", "A workstation identity record is available for administrative review."),
             "PUBLISHED_RUNTIME": ("New database snapshot published", "A new runtime SQLite snapshot is available. Refresh this workstation when you are not editing a form."),
             "ROSTER_LOCK": ("Roster Lock ingested", "A vendor Roster Lock workbook was staged for validation and reconciliation."),
+            "MASTER_ROSTER": ("Master Roster ingested", "A Master Roster workbook was staged and is ready for sequential historical import."),
             "RSR_SUPPLIER_WORKER_DETAILS": ("RSR worker details ingested", "Supplier worker details were staged for matching against canonical employees."),
             "ACCESSNOW": ("AccessNow reports ingested", "Active and termination reports were merged and staged for employee status review."),
             "APPROVED_IMPORT": ("Employee updates ready", "Approved source records are ready for individual matching and review. No employee was created automatically."),
@@ -413,7 +418,7 @@ class FileWatchService:
             message=f"{message} File: {Path(observation.path).name}",
             entity_type="file",
             entity_id=observation.path,
-            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/employees/source-updates" if observation.file_kind in {"APPROVED_IMPORT", "ACCESSNOW"} else "/admin/imports" if observation.file_kind in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"} else "/admin"),
+            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/employees/source-updates" if observation.file_kind in {"APPROVED_IMPORT", "ACCESSNOW"} else "/admin/imports" if observation.file_kind in {"ROSTER_LOCK", "MASTER_ROSTER", "RSR_SUPPLIER_WORKER_DETAILS"} else "/admin"),
             status="UNREAD",
             created_at_utc=now,
         )

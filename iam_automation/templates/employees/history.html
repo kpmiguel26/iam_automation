@@ -18,7 +18,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
   {%- if value is none or value == '' -%}Not provided
   {%- elif value is mapping -%}{% for key, item in value.items() %}<span class="d-block"><strong>{{ key|replace('_', ' ')|title }}:</strong> {{ readable_value(item) }}</span>{% endfor %}
   {%- elif value is iterable and value is not string -%}{{ value|join(', ') }}
-  {%- else -%}{{ value }}
+  {%- else -%}{{ value|human_datetime }}
   {%- endif -%}
 {%- endmacro %}
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell">

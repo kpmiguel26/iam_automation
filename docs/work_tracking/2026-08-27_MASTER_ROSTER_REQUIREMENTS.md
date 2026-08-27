@@ -1,10 +1,22 @@
 # Master Roster — Functional Requirements and Read-only Scope
 
-**Status:** Requirements documented; implementation not started  
+**Status:** In progress — read-only staging implemented
 **Date:** 2026-08-27  
 **Priority:** Next planning increment  
 **Planned branch:** `feature/master-roster-read-only`  
 **Source:** IAM Automation Touchpoint summary supplied by the stakeholder; source transcript and final business rules require confirmation.
+
+## Initial workbook evidence — 2026-08-27
+
+- File reviewed: `C:\Users\E385201\OneDrive - Kaiser Permanente\IAM - KP Vendor Central - IAM Automation\master_roster\Kaiser_Master_Roster_2026-08-27T0610.xlsx`.
+- Workbook contains one sheet (`sheet1`), with metadata rows 1–3 and headers on row 4.
+- The file contains 698 data rows and 21 columns.
+- `Employee Number` is populated and unique across the 698 rows.
+- `Assignment Status` is `Active Assignment` for all 698 rows; termination fields are empty in this version.
+- `User Principal Name` has 3 empty values.
+- The last two columns are both labelled `LogonID`, but metadata identifies them as NUID and NPN respectively. The adapter preserves both as `nuid_login_id` and `npn_login_id`.
+- Initial runtime staging completed: 698 staged rows, 0 quarantined rows, canonical worker count unchanged at 12,040.
+- Source checksum: `4162bbe3f81bbf3350484526b649e3aca4f81af67e7b2d9c873a374fb1fc8270`.
 
 ## Objective
 
@@ -35,6 +47,12 @@ folder and register each file with checksum, timestamp and processing status.
 Represent `MASTER_ROSTER` as an independent source system with source-file,
 batch, row and field lineage. The source must remain distinguishable from
 AccessNow, Fieldglass, Roster Lock and future sources.
+
+The workbook currently contains two columns both labelled `LogonID`. Their
+meaning is determined by the metadata row above the headers: the first is the
+NUID login ID and the second is the NPN login ID. Both values must be captured
+independently as `nuid_login_id` and `npn_login_id`; neither may overwrite the
+other or be collapsed into a single identifier.
 
 ### RF-003 — Canonical employee evidence enrichment preview
 
@@ -138,10 +156,21 @@ redesigning the canonical evidence and lineage model.
 - Confirm the official Master Roster file name, folder, owner and delivery cadence.
 - Confirm workbook sheets, headers, row boundaries and required fields.
 - Confirm the canonical matching identifiers and precedence order.
+- Confirm that NUID and NPN login IDs remain separate identifiers and define
+  their matching/lineage behavior.
 - Confirm how termination and rehire records are represented.
 - Confirm duplicate thresholds, confidence levels and review ownership.
 - Confirm retention, legal-hold and export-evidence requirements.
 - Confirm whether future consolidation is manual, approved workflow or writer batch.
+
+## Implementation evidence
+
+- `MasterRosterIngestionService` detects the header row, preserves duplicate
+  header positions, normalizes dates and stages immutable source records.
+- The file watcher monitors `master_roster/*.xlsx` and raises a file review
+  notification without creating an approval request for this read-only phase.
+- Focused verification passed: **18 tests** covering staging, idempotency,
+  duplicate quarantine, NUID/NPN capture and watcher behavior.
 
 ## Future controlled-change scope
 
@@ -152,4 +181,3 @@ The following are intentionally deferred:
 - Confirm or merge duplicate workers.
 - Approve or publish changes to runtime SQLite or Access.
 - Generate or execute downstream Data Loader submissions.
-

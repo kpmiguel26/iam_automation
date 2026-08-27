@@ -29,6 +29,8 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
       <div><label class="form-label small text-secondary" for="employeeStatus">Profile status</label><select id="employeeStatus" class="form-select" name="status"><option value="ALL">All statuses</option><option value="NON_ACTIVE"{% if filters.status == 'NON_ACTIVE' %} selected{% endif %}>Pending / inactive</option>{% for item in statuses %}<option value="{{ item }}"{% if filters.status == item %} selected{% endif %}>{{ item.replace('_', ' ').title() }}</option>{% endfor %}</select></div>
       <div><label class="form-label small text-secondary" for="employeeVendor">Vendor group</label><select id="employeeVendor" class="form-select" name="vendor"><option value="ALL">All vendors</option><option value="NONE"{% if filters.vendor == 'NONE' %} selected{% endif %}>Without vendor</option>{% for item in vendors %}<option value="{{ item }}"{% if filters.vendor == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
       <div><label class="form-label small text-secondary" for="employeeSource">Source</label><select id="employeeSource" class="form-select" name="source"><option value="ALL">All sources</option>{% for item in sources %}<option value="{{ item }}"{% if filters.source == item %} selected{% endif %}>{{ item.replace('_', ' ').title() }}</option>{% endfor %}</select></div>
+      <div><label class="form-label small text-secondary" for="employeeUpdated">Last updated</label><select id="employeeUpdated" class="form-select" name="updated"><option value="ALL">Any time</option><option value="LAST_24_HOURS"{% if filters.updated == 'LAST_24_HOURS' %} selected{% endif %}>Last 24 hours</option><option value="LAST_7_DAYS"{% if filters.updated == 'LAST_7_DAYS' %} selected{% endif %}>Last 7 days</option><option value="LAST_30_DAYS"{% if filters.updated == 'LAST_30_DAYS' %} selected{% endif %}>Last 30 days</option><option value="LAST_90_DAYS"{% if filters.updated == 'LAST_90_DAYS' %} selected{% endif %}>Last 90 days</option></select></div>
+      <div><label class="form-label small text-secondary" for="employeeSort">Sort by</label><select id="employeeSort" class="form-select" name="sort"><option value="UPDATED_DESC"{% if filters.sort == 'UPDATED_DESC' %} selected{% endif %}>Recently updated</option><option value="UPDATED_ASC"{% if filters.sort == 'UPDATED_ASC' %} selected{% endif %}>Oldest update</option><option value="NAME_ASC"{% if filters.sort == 'NAME_ASC' %} selected{% endif %}>Name A–Z</option><option value="NAME_DESC"{% if filters.sort == 'NAME_DESC' %} selected{% endif %}>Name Z–A</option></select></div>
       <div class="d-flex gap-2"><button class="btn btn-primary" type="submit">Apply</button><a class="btn btn-light employee-reset" href="{{ url_for('employees.employee_directory') }}">Clear</a></div>
       <details class="employee-advanced-filter"{% if filters.engagement %} open{% endif %}>
         <summary>Advanced filters</summary>
@@ -43,7 +45,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 
   <section class="surface table-responsive mt-4 employee-table-surface">
     <table class="table table-hover align-middle mb-0 employee-directory-table">
-      <thead><tr><th>Employee</th><th>Identifier</th><th>Vendor / engagement</th><th>Status</th><th>Source</th><th>Review</th></tr></thead>
+      <thead><tr><th>Employee</th><th>Identifier</th><th>Vendor / engagement</th><th>Status</th><th>Change</th><th>Source</th><th>Last updated</th><th>Review</th></tr></thead>
       <tbody>
       {% for worker in workers %}
         <tr>
@@ -51,10 +53,12 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
           <td><code>{{ worker.identifier or 'Pending identifier' }}</code></td>
           <td><strong>{{ worker.vendor_name or 'No engagement' }}</strong><div class="small text-secondary">{{ worker.job_title or 'Role not provided' }}</div></td>
           <td><span class="status-pill status-{{ worker.status|lower }}"><span></span>{{ worker.status.replace('_', ' ').title() }}</span></td>
+          <td><span class="change-type-badge change-type-{{ worker.change_type|lower|replace('_', '-') }}">{% if worker.change_type == 'NEW_HIRE' %}New hire{% elif worker.change_type == 'TERMINATION' %}Termination{% elif worker.change_type == 'UPDATED' %}Updated{% else %}No change{% endif %}</span></td>
           <td class="small text-secondary">{{ worker.source_system or 'Pending' }}</td>
+          <td class="small text-secondary">{{ worker.last_updated_at_utc|human_datetime or 'Not available' }}</td>
           <td>{% if worker.discrepancy_count %}<span class="badge text-bg-warning">{{ worker.discrepancy_count }} open</span>{% else %}<span class="small text-success">Clear</span>{% endif %}</td>
         </tr>
-      {% else %}<tr><td colspan="6" class="empty-state"><div class="empty-state-icon">{% if has_query %}&#8987;{% else %}&#128269;{% endif %}</div><strong>{% if has_query %}No employees match these filters.{% else %}Search to view employees{% endif %}</strong><div class="small text-secondary mt-2">{% if has_query %}Try another search, vendor, source, or engagement filter.{% else %}The directory stays empty until a query or filter is submitted.{% endif %}</div></td></tr>{% endfor %}
+      {% else %}<tr><td colspan="8" class="empty-state"><div class="empty-state-icon">{% if has_query %}&#8987;{% else %}&#128269;{% endif %}</div><strong>{% if has_query %}No employees match these filters.{% else %}Search to view employees{% endif %}</strong><div class="small text-secondary mt-2">{% if has_query %}Try another search, vendor, source, update window, or sort order.{% else %}The directory stays empty until a query or filter is submitted.{% endif %}</div></td></tr>{% endfor %}
       </tbody>
     </table>
   </section>
@@ -63,9 +67,9 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
   <nav class="d-flex justify-content-between align-items-center mt-3" aria-label="Employee directory pages">
     <span class="small text-secondary">Showing {{ ((page - 1) * 25) + 1 if total_workers else 0 }}–{{ [page * 25, total_workers]|min }} of {{ total_workers }}</span>
     <div class="btn-group" role="group">
-      {% if page > 1 %}<a class="btn btn-light" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, source=filters.source, engagement=filters.engagement, review=filters.review, all='1' if filters.all else None, page=page - 1) }}">Previous</a>{% endif %}
+      {% if page > 1 %}<a class="btn btn-light" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, source=filters.source, engagement=filters.engagement, review=filters.review, updated=filters.updated, sort=filters.sort, all='1' if filters.all else None, page=page - 1) }}">Previous</a>{% endif %}
       <span class="btn btn-light disabled">{{ page }} / {{ page_count }}</span>
-      {% if page < page_count %}<a class="btn btn-light" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, source=filters.source, engagement=filters.engagement, review=filters.review, all='1' if filters.all else None, page=page + 1) }}">Next</a>{% endif %}
+      {% if page < page_count %}<a class="btn btn-light" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, source=filters.source, engagement=filters.engagement, review=filters.review, updated=filters.updated, sort=filters.sort, all='1' if filters.all else None, page=page + 1) }}">Next</a>{% endif %}
     </div>
   </nav>
   {% endif %}

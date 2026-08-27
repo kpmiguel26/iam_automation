@@ -132,6 +132,7 @@ def initialize_runtime_database(path: Path) -> Path:
                 quarantine_rows INTEGER NOT NULL DEFAULT 0,
                 created_by TEXT NOT NULL,
                 created_at_utc TEXT NOT NULL DEFAULT (datetime('now')),
+                source_modified_at_utc TEXT NOT NULL DEFAULT '',
                 completed_at_utc TEXT,
                 error_message TEXT
             );

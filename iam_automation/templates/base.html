@@ -19,6 +19,8 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}IAM Automation{% endblock %} | Kaiser Permanente</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/datatables/css/dataTables.bootstrap5.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/datatables/css/buttons.bootstrap5.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=static_version) }}">
 </head>
 
@@ -199,8 +201,17 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
   </div>{% endif %}
   <main>{% block content %}{% endblock %}</main>
   <footer class="text-center text-secondary small py-4">Kaiser Permanente · IAM Automation · Local session</footer>
+  <script src="{{ url_for('static', filename='vendor/htmx/htmx.min.js') }}"></script>
   <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/datatables/js/jquery.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/datatables/js/dataTables.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/datatables/js/dataTables.bootstrap5.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/datatables/js/jszip.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/datatables/js/dataTables.buttons.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/datatables/js/buttons.bootstrap5.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/datatables/js/buttons.html5.min.js') }}"></script>
   {% block scripts %}{% endblock %}
+  <script src="{{ url_for('static', filename='js/data-tables.js', v=static_version) }}"></script>
   <script src="{{ url_for('static', filename='js/utc-date-inputs.js') }}"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {

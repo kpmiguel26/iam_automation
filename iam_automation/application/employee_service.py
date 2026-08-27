@@ -16,12 +16,14 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Callable
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, case, func, not_, or_, select
 
 from ..infrastructure.sqlite.orm import (
+    ImportBatchModel,
     IngestionRecordModel,
     WorkerDiscrepancyModel,
     WorkerEngagementModel,
@@ -50,6 +52,8 @@ class EmployeeSummary:
     job_title: str
     source_system: str
     discrepancy_count: int
+    last_updated_at_utc: str = ""
+    change_type: str = "UPDATED"
 
 
 CANONICAL_DUPLICATE_REPORT_COLUMNS = (
@@ -70,6 +74,14 @@ class EmployeeService:
         """Return a portable basename for records created on any OS."""
         return Path(str(value or "").replace("\\", "/")).name
 
+    @staticmethod
+    def _source_file_modified_at(value: object) -> str:
+        """Return the source workbook modification time when this workspace can access it."""
+        try:
+            return datetime.fromtimestamp(Path(str(value or "")).stat().st_mtime, timezone.utc).isoformat()
+        except (OSError, ValueError):
+            return ""
+
     def _pending_source_records(self, source_file: str = "") -> list[IngestionRecordModel]:
         """Load pending source records, optionally scoped to one workbook."""
         pending_statuses = ("STAGED", "MATCHED", "CONFLICT", "UNMATCHED", "AMBIGUOUS", "LINKED", "CURRENT")
@@ -83,20 +95,52 @@ class EmployeeService:
             return records
         return [record for record in records if self._source_file_name(record.source_file) == selected_file]
 
-    def list_workers(self, search: str = "", status: str = "ALL", vendor: str = "ALL", source: str = "ALL", engagement: str = "", review: str = "") -> list[EmployeeSummary]:
+    def list_workers(self, search: str = "", status: str = "ALL", vendor: str = "ALL", source: str = "ALL", engagement: str = "", review: str = "", updated: str = "ALL", sort: str = "UPDATED_DESC") -> list[EmployeeSummary]:
         """Return the full directory for internal callers and small datasets."""
-        workers, _ = self.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, page=1, per_page=None)
+        workers, _ = self.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=1, per_page=None)
         return workers
 
-    def list_workers_page(self, *, search: str = "", status: str = "ALL", vendor: str = "ALL", source: str = "ALL", engagement: str = "", review: str = "", page: int = 1, per_page: int | None = 25) -> tuple[list[EmployeeSummary], int]:
+    @staticmethod
+    def _directory_change_type(worker_status: str, engagement_status: str, latest_change_type: str) -> str:
+        """Classify the latest canonical activity for the directory badge."""
+        statuses = f"{worker_status} {engagement_status}".replace("_", " ").replace("-", " ").upper()
+        change = str(latest_change_type or "").upper()
+        if any(token in statuses for token in ("TERMINAT", "DEACTIVAT", "INACTIVE")):
+            return "TERMINATION"
+        if change.endswith("_INITIAL_PROFILE"):
+            return "NEW_HIRE"
+        if "NEW HIRE" in statuses and not change:
+            return "NEW_HIRE"
+        if change:
+            return "UPDATED"
+        return "NO_CHANGE"
+
+    def list_workers_page(self, *, search: str = "", status: str = "ALL", vendor: str = "ALL", source: str = "ALL", engagement: str = "", review: str = "", updated: str = "ALL", sort: str = "UPDATED_DESC", page: int = 1, per_page: int | None = 25) -> tuple[list[EmployeeSummary], int]:
         """Query only one directory page; filtering stays in SQLite."""
         search = search.strip()
         engagement = engagement.strip()
+        updated = updated.strip().upper() or "ALL"
+        sort = sort.strip().upper() or "UPDATED_DESC"
+        if sort not in {"UPDATED_DESC", "UPDATED_ASC", "NAME_ASC", "NAME_DESC"}:
+            sort = "UPDATED_DESC"
         page = max(1, int(page))
         if per_page is not None:
             per_page = max(1, min(int(per_page), 100))
         with orm_session(self.database_path) as session:
             filters = []
+            latest_engagement = select(func.max(WorkerEngagementModel.updated_at_utc)).where(WorkerEngagementModel.worker_id == WorkerModel.worker_id).correlate(WorkerModel).scalar_subquery()
+            latest_history = select(func.max(WorkerProfileVersionModel.created_at_utc)).where(WorkerProfileVersionModel.worker_id == WorkerModel.worker_id).correlate(WorkerModel).scalar_subquery()
+            latest_change_type = select(WorkerProfileVersionModel.change_type).where(
+                WorkerProfileVersionModel.worker_id == WorkerModel.worker_id,
+            ).order_by(
+                WorkerProfileVersionModel.created_at_utc.desc(),
+                WorkerProfileVersionModel.version_number.desc(),
+            ).limit(1).correlate(WorkerModel).scalar_subquery()
+            last_updated = func.max(
+                WorkerModel.updated_at_utc,
+                func.coalesce(latest_engagement, ""),
+                func.coalesce(latest_history, ""),
+            )
             if status == "NON_ACTIVE":
                 filters.append(WorkerModel.status != "ACTIVE")
             elif status != "ALL":
@@ -132,18 +176,34 @@ class EmployeeService:
                     select(WorkerIdentifierModel.worker_id).where(WorkerIdentifierModel.worker_id == WorkerModel.worker_id, WorkerIdentifierModel.identifier_value.ilike(pattern)).exists(),
                     select(WorkerEngagementModel.worker_id).where(WorkerEngagementModel.worker_id == WorkerModel.worker_id, or_(WorkerEngagementModel.vendor_name.ilike(pattern), WorkerEngagementModel.job_title.ilike(pattern))).exists(),
                 ))
+            update_windows = {
+                "LAST_24_HOURS": timedelta(hours=24),
+                "LAST_7_DAYS": timedelta(days=7),
+                "LAST_30_DAYS": timedelta(days=30),
+                "LAST_90_DAYS": timedelta(days=90),
+            }
+            if updated in update_windows:
+                updated_since = (datetime.now(timezone.utc) - update_windows[updated]).isoformat()
+                filters.append(last_updated >= updated_since)
             filters.append(WorkerModel.superseded_by_worker_id.is_(None))
-            statement = select(WorkerModel).where(*filters).order_by(WorkerModel.display_name, WorkerModel.worker_id)
+            sort_order = {
+                "UPDATED_DESC": (last_updated.desc(), WorkerModel.display_name, WorkerModel.worker_id),
+                "UPDATED_ASC": (last_updated.asc(), WorkerModel.display_name, WorkerModel.worker_id),
+                "NAME_ASC": (WorkerModel.display_name, WorkerModel.worker_id),
+                "NAME_DESC": (WorkerModel.display_name.desc(), WorkerModel.worker_id),
+            }[sort]
+            statement = select(WorkerModel, last_updated.label("last_updated_at_utc"), latest_change_type.label("latest_change_type")).where(*filters).order_by(*sort_order)
             total = int(session.scalar(select(func.count()).select_from(WorkerModel).where(*filters)) or 0)
             if per_page is not None:
                 statement = statement.offset((page - 1) * per_page).limit(per_page)
-            workers = session.scalars(statement).all()
+            worker_rows = session.execute(statement).all()
             result: list[EmployeeSummary] = []
-            for worker in workers:
+            for worker, last_updated_at, worker_change_type in worker_rows:
                 engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker.worker_id).order_by(WorkerEngagementModel.updated_at_utc.desc()))
                 identifier = session.scalar(select(WorkerIdentifierModel).where(WorkerIdentifierModel.worker_id == worker.worker_id, WorkerIdentifierModel.active.is_(True)).order_by(WorkerIdentifierModel.created_at_utc))
                 discrepancy_count = session.scalar(select(func.count()).select_from(WorkerDiscrepancyModel).where(WorkerDiscrepancyModel.worker_id == worker.worker_id, WorkerDiscrepancyModel.status == "OPEN")) or 0
-                result.append(EmployeeSummary(worker.worker_id, worker.display_name, worker.canonical_email, worker.status, identifier.identifier_value if identifier else "", engagement.vendor_name if engagement else "", engagement.job_title if engagement else "", identifier.source_system if identifier else "", int(discrepancy_count)))
+                change_type = self._directory_change_type(worker.status, engagement.status if engagement else "", worker_change_type or "")
+                result.append(EmployeeSummary(worker.worker_id, worker.display_name, worker.canonical_email, worker.status, identifier.identifier_value if identifier else "", engagement.vendor_name if engagement else "", engagement.job_title if engagement else "", identifier.source_system if identifier else "", int(discrepancy_count), str(last_updated_at or ""), change_type))
             return result, total
 
     def filter_values(self) -> tuple[list[str], list[str], list[str]]:
@@ -331,6 +391,7 @@ class EmployeeService:
         with orm_session(self.database_path) as session:
             return int(session.scalar(select(func.count()).select_from(IngestionRecordModel).where(
                 IngestionRecordModel.status.in_(("STAGED", "MATCHED", "CONFLICT", "UNMATCHED", "AMBIGUOUS")),
+                IngestionRecordModel.observation_state.not_in(("CURRENT", "SUPERSEDED", "RESOLVED")),
             )) or 0)
 
     def rehire_alerts(self, source_file: str = "") -> list[dict[str, object]]:
@@ -415,11 +476,13 @@ class EmployeeService:
                     IngestionRecordModel.match_status,
                     IngestionRecordModel.observation_state,
                     IngestionRecordModel.created_at_utc,
-                ).where(IngestionRecordModel.source_system == source_system)
-                .order_by(IngestionRecordModel.created_at_utc.desc())
+                    ImportBatchModel.source_modified_at_utc,
+                ).join(ImportBatchModel, ImportBatchModel.batch_id == IngestionRecordModel.batch_id, isouter=True)
+                .where(IngestionRecordModel.source_system == source_system)
+                .order_by(ImportBatchModel.source_modified_at_utc.asc(), IngestionRecordModel.created_at_utc.asc())
             ).all()
         grouped: dict[tuple[str, str], dict[str, object]] = {}
-        for source_file, checksum, status, match_status, observation_state, created_at in rows:
+        for source_file, checksum, status, match_status, observation_state, created_at, source_modified_at in rows:
             key = (self._source_file_name(source_file), str(checksum or ""))
             item = grouped.setdefault(key, {
                 "source_system": source_system,
@@ -427,14 +490,18 @@ class EmployeeService:
                 "source_path": str(source_file or ""),
                 "source_checksum": key[1],
                 "record_count": 0,
+                "staged_count": 0,
                 "pending_count": 0,
                 "linked_count": 0,
                 "ambiguous_count": 0,
                 "conflict_count": 0,
                 "superseded_count": 0,
                 "latest_at": str(created_at or ""),
+                "source_modified_at": str(source_modified_at or self._source_file_modified_at(source_file) or created_at or ""),
             })
             item["record_count"] = int(item["record_count"]) + 1
+            if str(status) == "STAGED":
+                item["staged_count"] = int(item["staged_count"]) + 1
             state = str(observation_state or "")
             if state == "SUPERSEDED":
                 item["superseded_count"] = int(item["superseded_count"]) + 1
@@ -446,27 +513,56 @@ class EmployeeService:
                 item["linked_count"] = int(item["linked_count"]) + 1
             elif str(status) != "QUARANTINED":
                 item["pending_count"] = int(item["pending_count"]) + 1
-        return list(grouped.values())
+        for item in grouped.values():
+            staged_count = int(item["staged_count"])
+            item["imported"] = bool(item["record_count"]) and staged_count == 0
+            item["import_status"] = "IMPORTED" if item["imported"] else "READY_TO_IMPORT"
+        return sorted(
+            grouped.values(),
+            key=lambda item: (
+                str(item.get("source_modified_at") or item.get("latest_at") or ""),
+                str(item.get("source_file") or "").casefold(),
+            ),
+        )
 
     def get_source_file_summary(self, source_system: str, source_file: str) -> dict[str, object] | None:
         files = self.list_source_files(source_system)
         return next((item for item in files if item["source_file"] == self._source_file_name(source_file)), None)
 
-    def list_source_records(self, source_system: str, source_file: str, *, page: int = 1, per_page: int = 50) -> tuple[list[dict[str, object]], int]:
-        """Return one page of source rows and deserialize only that page."""
+    def list_source_records(self, source_system: str, source_file: str, *, page: int = 1, per_page: int = 50, result_order: str = "RESULT", load_all: bool = False) -> tuple[list[dict[str, object]], int]:
+        """Return one page of source rows, prioritizing the import outcome."""
         page = max(1, int(page))
         per_page = max(1, min(int(per_page), 100))
+        result_order = str(result_order or "RESULT").strip().upper()
+        if result_order not in {"RESULT", "NEW_HIRES", "UPDATED", "CURRENT", "PENDING"}:
+            result_order = "RESULT"
         file_summary = self.get_source_file_summary(source_system, source_file)
         if file_summary is None:
             return [], 0
         source_path = str(file_summary["source_path"])
         with orm_session(self.database_path) as session:
-            total = int(session.scalar(select(func.count()).select_from(IngestionRecordModel).where(
+            base_filter = (
                 IngestionRecordModel.source_system == source_system,
                 IngestionRecordModel.source_file == source_path,
+            )
+            new_hire = or_(
+                IngestionRecordModel.match_reason.ilike("%created during approval%"),
+                and_(IngestionRecordModel.status == "APPLIED", IngestionRecordModel.matched_worker_id.is_(None)),
+            )
+            updated = and_(IngestionRecordModel.matched_worker_id.is_not(None), not_(new_hire))
+            current = IngestionRecordModel.observation_state == "CURRENT"
+            pending = not_(current)
+            priority = {
+                "RESULT": case((new_hire, 0), (updated, 1), (current, 2), else_=3),
+                "NEW_HIRES": case((new_hire, 0), else_=1),
+                "UPDATED": case((updated, 0), (new_hire, 1), (current, 2), else_=3),
+                "CURRENT": case((current, 0), (new_hire, 1), (updated, 2), else_=3),
+                "PENDING": case((pending, 0), (new_hire, 1), (updated, 2), else_=3),
+            }[result_order]
+            total = int(session.scalar(select(func.count()).select_from(IngestionRecordModel).where(
+                *base_filter,
             )) or 0)
-            rows = session.execute(
-                select(
+            statement = select(
                     IngestionRecordModel.record_id,
                     IngestionRecordModel.batch_id,
                     IngestionRecordModel.source_system,
@@ -478,10 +574,10 @@ class EmployeeService:
                     IngestionRecordModel.observation_state,
                     IngestionRecordModel.created_at_utc,
                     IngestionRecordModel.source_file,
-                ).where(IngestionRecordModel.source_system == source_system, IngestionRecordModel.source_file == source_path)
-                .order_by(IngestionRecordModel.created_at_utc.desc(), IngestionRecordModel.row_number)
-                .offset((page - 1) * per_page).limit(per_page)
-            ).all()
+                ).where(*base_filter).order_by(priority, IngestionRecordModel.created_at_utc.desc(), IngestionRecordModel.row_number)
+            if not load_all:
+                statement = statement.offset((page - 1) * per_page).limit(per_page)
+            rows = session.execute(statement).all()
         page_rows = rows
         record_ids = [str(row[0]) for row in page_rows]
         payloads = {}
@@ -502,14 +598,27 @@ class EmployeeService:
                 payload = json.loads(payloads.get(str(row[0]), "{}") or "{}")
             except json.JSONDecodeError:
                 payload = {}
+            import_result = self._source_import_result(row[4], row[6], row[7], row[8])
             result.append({
                 "record_id": row[0], "batch_id": row[1], "source_system": row[2],
                 "source_record_key": row[3], "worker_name": workers.get(row[7], ""),
                 "status": row[4], "match_status": row[5], "match_reason": row[6],
                 "matched_worker_id": row[7] or "", "observation_state": row[8] or "PENDING",
-                "created_at_utc": row[9], "payload": payload,
+                "import_result": import_result, "created_at_utc": row[9], "payload": payload,
             })
         return result, total
+
+    @staticmethod
+    def _source_import_result(status: object, match_reason: object, matched_worker_id: object, observation_state: object) -> str:
+        """Classify an imported row for the source-file review ordering."""
+        reason = str(match_reason or "").casefold()
+        if "created during approval" in reason or (str(status) == "APPLIED" and not matched_worker_id):
+            return "NEW_HIRE"
+        if matched_worker_id:
+            return "UPDATED"
+        if str(observation_state or "") == "CURRENT":
+            return "CURRENT"
+        return "PENDING"
 
     def link_source_record(self, record_id: str, worker_id: str, actor: str = "system") -> dict[str, object]:
         """Link one immutable source observation and make it current for its key."""
@@ -645,7 +754,14 @@ class EmployeeService:
                 resolved.update(row.record_id for row in candidates if (row.source_system, row.source_record_key) in portable_keys)
         return sorted(resolved)
 
-    def apply_approved_import_records(self, record_ids: list[str], actor: str, *, request_payload: dict[str, object] | None = None) -> dict[str, object]:
+    def apply_approved_import_records(
+        self,
+        record_ids: list[str],
+        actor: str,
+        *,
+        request_payload: dict[str, object] | None = None,
+        progress_callback: Callable[[int, int, int, int, int], None] | None = None,
+    ) -> dict[str, object]:
         """Apply approved source records through their source-specific adapter."""
         from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter, SOURCE_SYSTEM
         from .accessnow_ingestion_service import AccessNowIngestionService, SOURCE_SYSTEM as ACCESSNOW_SOURCE
@@ -669,29 +785,58 @@ class EmployeeService:
                     accessnow_ids.append(record_id)
                 else:
                     roster_ids.append(record_id)
+        progress_total = len(record_ids)
+        progress_offset = 0
+        progress_created = progress_reused = progress_failed = 0
+
+        def report_progress(processed: int, total: int, created: int, reused: int, failed: int) -> None:
+            if progress_callback is None:
+                return
+            progress_callback(
+                min(progress_total, progress_offset + processed),
+                progress_total,
+                progress_created + created,
+                progress_reused + reused,
+                progress_failed + failed,
+            )
+
         if rsr_ids:
-            rsr_result = RsrSupplierWorkerDetailsAdapter(self.database_path).apply_approved_records(rsr_ids, actor)
+            rsr_result = RsrSupplierWorkerDetailsAdapter(self.database_path).apply_approved_records(rsr_ids, actor, progress_callback=report_progress)
             self._sync_applied_source_profiles(rsr_ids)
             result["processed"] = int(result["processed"]) + int(rsr_result["processed"])
             result["created"] = int(result["created"]) + int(rsr_result.get("created", 0))
             result["reused"] = int(result["reused"]) + int(rsr_result.get("reused", 0))
             result["failed"] = int(result["failed"]) + int(rsr_result["failed"])
             result["errors"] = list(result["errors"]) + list(rsr_result["errors"])
+            progress_offset += len(rsr_ids)
+            progress_created += int(rsr_result.get("created", 0))
+            progress_reused += int(rsr_result.get("reused", 0))
+            progress_failed += int(rsr_result.get("failed", 0))
         if accessnow_ids:
-            accessnow_result = AccessNowIngestionService(self.database_path).apply_approved_records(accessnow_ids, actor)
+            accessnow_result = AccessNowIngestionService(self.database_path).apply_approved_records(accessnow_ids, actor, progress_callback=report_progress)
             self._sync_applied_source_profiles(accessnow_ids)
             result["processed"] = int(result["processed"]) + int(accessnow_result["processed"])
             result["created"] = int(result["created"]) + int(accessnow_result.get("created", 0))
             result["reused"] = int(result["reused"]) + int(accessnow_result.get("reused", 0))
             result["failed"] = int(result["failed"]) + int(accessnow_result["failed"])
             result["errors"] = list(result["errors"]) + list(accessnow_result["errors"])
+            progress_offset += len(accessnow_ids)
+            progress_created += int(accessnow_result.get("created", 0))
+            progress_reused += int(accessnow_result.get("reused", 0))
+            progress_failed += int(accessnow_result.get("failed", 0))
         if roster_ids:
-            roster_result = self.promote_staged_records(roster_ids, actor)
+            roster_result = self.promote_staged_records(roster_ids, actor, progress_callback=report_progress)
             result["processed"] = int(result["processed"]) + int(roster_result["processed"])
             result["created"] = int(result["created"]) + int(roster_result["created"])
             result["reused"] = int(result["reused"]) + int(roster_result["reused"])
             result["failed"] = int(result["failed"]) + int(roster_result["failed"])
             result["errors"] = list(result["errors"]) + list(roster_result["errors"])
+            progress_offset += len(roster_ids)
+            progress_created += int(roster_result.get("created", 0))
+            progress_reused += int(roster_result.get("reused", 0))
+            progress_failed += int(roster_result.get("failed", 0))
+        if progress_callback is not None:
+            progress_callback(progress_total, progress_total, progress_created, progress_reused, progress_failed)
         return result
 
     def _sync_applied_source_profiles(self, record_ids: list[str]) -> None:
@@ -1523,25 +1668,27 @@ class EmployeeService:
     def _promote_record_in_session(self, session, record: IngestionRecordModel, now: str, actor: str = "system") -> tuple[str, bool]:
         """Promote one record while the caller owns the transaction."""
         payload = json.loads(record.normalized_json)
-        identifier_value = str(payload.get("vendor_employee_id") or "").strip()
+        identifier_value = str(payload.get("vendor_employee_id") or payload.get("employee_number") or payload.get("nuid_login_id") or payload.get("npn_login_id") or "").strip()
         if not identifier_value and not record.matched_worker_id:
             raise ValueError("The staged record has no Vendor Employee ID.")
 
         matched_worker = session.get(WorkerModel, str(record.matched_worker_id)) if record.matched_worker_id else None
-        matches, match_reason = find_worker_matches(session, "ROSTER_LOCK", payload)
+        matches, match_reason = find_worker_matches(session, record.source_system, payload)
         candidate_ids = set(matches)
         if matched_worker is not None and matched_worker.superseded_by_worker_id is None:
             candidate_ids.add(matched_worker.worker_id)
         if len(candidate_ids) > 1:
-            raise ValueError("The staged Roster Lock record matches multiple canonical employees and requires manual resolution.")
+            raise ValueError("The staged source record matches multiple canonical employees and requires manual resolution.")
         worker = session.get(WorkerModel, next(iter(candidate_ids))) if candidate_ids else None
         if worker is not None and match_reason == "Canonical name match" and not identifier_value:
             raise ValueError("A name-only canonical match requires manual resolution.")
         created = worker is None
         if worker is None:
             worker_id = str(uuid.uuid4())
-            first_name = str(payload.get("first_name") or "").strip()
-            last_name = str(payload.get("last_name") or "").strip()
+            employee_name = str(payload.get("employee_name") or "").strip()
+            name_parts = employee_name.split()
+            first_name = str(payload.get("first_name") or (name_parts[0] if name_parts else "")).strip()
+            last_name = str(payload.get("last_name") or " ".join(name_parts[1:])).strip()
             worker = WorkerModel(
                 worker_id=worker_id,
                 first_name=first_name,
@@ -1558,7 +1705,7 @@ class EmployeeService:
             session.add(worker)
         else:
             worker_id = worker.worker_id
-        ensure_source_identifiers(session, worker_id, "ROSTER_LOCK", payload, now)
+        ensure_source_identifiers(session, worker_id, record.source_system, payload, now)
 
         engagement_id = str(uuid.uuid4())
         session.add(
@@ -1618,7 +1765,7 @@ class EmployeeService:
             session,
             worker_id,
             actor=actor,
-            change_type="ROSTER_LOCK_INITIAL_PROFILE" if created else "ROSTER_LOCK_ENRICHMENT",
+            change_type=f"{record.source_system}_INITIAL_PROFILE" if created else f"{record.source_system}_ENRICHMENT",
             source_system=record.source_system,
             source_file=record.source_file,
             source_checksum=record.source_checksum,
@@ -1656,7 +1803,13 @@ class EmployeeService:
             session.commit()
         return {"processed": processed, "created": created, "reused": reused, "failed": len(errors), "errors": errors}
 
-    def promote_staged_records(self, record_ids: list[str], actor: str) -> dict[str, object]:
+    def promote_staged_records(
+        self,
+        record_ids: list[str],
+        actor: str,
+        *,
+        progress_callback: Callable[[int, int, int, int, int], None] | None = None,
+    ) -> dict[str, object]:
         """Apply only the records approved by an import request."""
         selected_ids = {str(record_id) for record_id in record_ids if str(record_id).strip()}
         if not selected_ids:
@@ -1666,9 +1819,13 @@ class EmployeeService:
         errors: list[dict[str, str]] = []
         with orm_session(self.database_path) as session:
             records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(selected_ids))).all()
+            handled = 0
             for record in records:
                 if record.status != "STAGED":
                     errors.append({"record_id": record.record_id, "error": f"Record is no longer staged: {record.status}."})
+                    handled += 1
+                    if progress_callback:
+                        progress_callback(handled, len(records), created, reused, len(errors))
                     continue
                 try:
                     _, was_created = self._promote_record_in_session(session, record, now, actor)
@@ -1677,6 +1834,9 @@ class EmployeeService:
                     reused += int(not was_created)
                 except (ValueError, json.JSONDecodeError) as exc:
                     errors.append({"record_id": record.record_id, "error": str(exc)})
+                handled += 1
+                if progress_callback:
+                    progress_callback(handled, len(records), created, reused, len(errors))
             session.commit()
         return {"processed": processed, "created": created, "reused": reused, "failed": len(errors), "errors": errors}
 

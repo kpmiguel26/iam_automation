@@ -37,7 +37,7 @@ Deliver a safe read-only review increment with:
 | D09 | Admin control center shell | Completed | `/admin`, `admin_routes.py`, role-aware avatar |
 | D09.1 | Windows identity CRUD | Completed | `/admin/windows-identities`, `IdentityService` |
 | D09.2 | User and access refinement | Completed for current development scope | [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACCESS_REFINEMENT.md) |
-| D10 | Notifications and delegation workflows | Completed | Real avatar counter, read/resolve/expire states, manual reviewer assignment, SLA escalation and delegation expiry |
+| D10 | Notifications and delegation workflows | Completed | Real avatar counter, local and SharePoint JSON-backed read/resolve/expire states, immutable recipient snapshots, manual reviewer assignment, SLA escalation and delegation expiry |
 | D10.1 | Master session revocation | Completed | `SessionService`, `/admin/security/sessions` |
 | D11 | Audit-integrated administrative operations | Completed | Master audit center, JSON export/archive and CRUD/request/delegation audit events |
 | D12 | Approval queue and request lifecycle | Future phase | Existing workflow code is not part of the current read-only release |
@@ -80,33 +80,47 @@ Deliver a safe read-only review increment with:
 - Prepare authorization and user/access acceptance scenarios.
 - Keep official Fieldglass, Roster Lock and downstream template formats pending until next week.
 
-The current objective is employee-level read-only review and evidence. Selective
-reconciliation, canonical mutation, approval and publication are deferred until
-the controlled-change phase is approved.
+The current objective is employee-level evidence review plus controlled manual
+historical import. A detected source file may be promoted from staging into
+employee history, creating a missing employee when the row has a reliable
+identifier. Duplicate resolution, merge, approval and publication remain
+deferred.
+
+Notifications are shared through one JSON event per notification in the
+synchronized SharePoint workspace. The event keeps the original recipient
+snapshot and records each user's read/resolved timestamp, so notification state
+does not require publishing the local runtime database. The in-memory import
+progress card is separate and remains a UI runtime state.
 
 The next requirements increment is Master Roster read-only intake, comparison,
 lineage, duplicate/conflict evidence and export. Its requirements are tracked
 in [`2026-08-27_MASTER_ROSTER_REQUIREMENTS.md`](./2026-08-27_MASTER_ROSTER_REQUIREMENTS.md);
-implementation has not started.
+read-only staging, watcher detection and the sequential manual import timeline
+are implemented; comparison, review views and exports remain pending.
 
-### Future Phase: Controlled changes and publication
+The web tables now use the local DataTables 2.3.5 bundle for search, sorting,
+pagination, all-loaded-row views and CSV/Excel export. Coverage and the
+server-side loading boundary are documented in
+[`2026-08-27_DATATABLE_COVERAGE.md`](./2026-08-27_DATATABLE_COVERAGE.md).
 
-- Add Excel and Fieldglass ingestion as controlled writer operations.
+### Future Phase: Duplicate resolution and publication
+
+- Add duplicate resolution and cross-source consolidation workflows.
 - Validate templates and mappings before import.
 - Route invalid records to quarantine.
 - Add quarantine resolution and ingestion batch history.
 - Generate target exports for Fieldglass and NICE IEX.
-- Review one source file at a time and show only new, changed, duplicate or ambiguous records.
+- Publish approved runtime SQLite or Access changes.
 - Preserve immutable worker versions and source lineage for every approved change.
 
 This phase is not part of the current release.
 
-### Current Phase: Read-only review and validation
+### Current Phase: Historical import and evidence review
 
 - Verify employee directory, profiles, history, lineage, discrepancies and duplicate reports.
 - Verify request/audit visibility and read-only exports.
-- Confirm that browsing and reporting do not mutate canonical employee records.
-- Define the feature gate or deployment separation required before enabling writer workflows.
+- Confirm that duplicate analysis and publication remain disabled.
+- Keep historical import as the only controlled canonical-writing workflow in this increment.
 
 ### Future Phase: Publication and validation
 

@@ -262,3 +262,12 @@
 - Defined Master Roster as an independent source for read-only intake, matching preview, lineage, duplicate/conflict evidence, timeline and exports.
 - Deferred canonical employee mutation, duplicate merge, approval and publication to the future controlled-change phase.
 - Added requirement, dependency and future-phase items to `BACKLOG.md`; no code changes were made.
+
+### Master Roster Read-only Staging - 2026-08-27
+
+- Reviewed the OneDrive workbook `Kaiser_Master_Roster_2026-08-27T0610.xlsx`.
+- Confirmed headers begin on row 4 and identified the two positional `LogonID` fields as NUID and NPN.
+- Implemented read-only staging with independent `nuid_login_id` and `npn_login_id` fields, checksum/idempotency and required-field quarantine.
+- Connected the watcher to `master_roster/*.xlsx` without creating an approval request or applying data to canonical employees.
+- Real staging result: **698 staged, 0 quarantined**; canonical worker count remained **12,040**.
+- Focused verification passed: **18 tests**.

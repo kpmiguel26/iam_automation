@@ -22,6 +22,7 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from sqlalchemy import func, select
 
@@ -38,7 +39,7 @@ from ..infrastructure.sqlite.orm import (
 from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches
 from .worker_history_service import record_worker_version
-from .stable_file_read import read_stable_bytes
+from .stable_file_read import file_modified_at_utc, read_stable_bytes
 from .status_catalog import normalize_accessnow_status, status_rank
 
 
@@ -73,6 +74,7 @@ class AccessNowIngestionService:
         contents = {path: read_stable_bytes(path) for path in paths}
         source_checksum = hashlib.sha256(self.MERGE_SCHEMA_VERSION.encode() + b"\0" + b"".join(path.name.encode() + b"\0" + contents[path] for path in paths)).hexdigest()
         source_file = "; ".join(path.name for path in paths)
+        source_modified_at = max((file_modified_at_utc(path) for path in paths), default="")
         with orm_session(self.database_path) as session:
             existing = session.scalar(select(IngestionRecordModel).where(IngestionRecordModel.source_system == SOURCE_SYSTEM, IngestionRecordModel.source_checksum == source_checksum))
             if existing:
@@ -117,7 +119,7 @@ class AccessNowIngestionService:
                     )
                 ).all()
             }
-            session.add(ImportBatchModel(batch_id=batch_id, filename=source_file, source_type=SOURCE_SYSTEM, status="PROCESSING", total_rows=total_rows, valid_rows=0, quarantine_rows=0, created_by="workspace-watcher", created_at_utc=now))
+            session.add(ImportBatchModel(batch_id=batch_id, filename=source_file, source_type=SOURCE_SYSTEM, status="PROCESSING", total_rows=total_rows, valid_rows=0, quarantine_rows=0, created_by="workspace-watcher", created_at_utc=now, source_modified_at_utc=source_modified_at))
             for row_number, (path, original_row, payload) in enumerate(merged.values(), start=2):
                 source_row_key = (str(path), source_checksum, int(original_row))
                 if source_row_key in existing_source_rows:
@@ -222,7 +224,13 @@ class AccessNowIngestionService:
             return "Missing Employee status."
         return ""
 
-    def apply_approved_records(self, record_ids: list[str], actor: str) -> dict[str, object]:
+    def apply_approved_records(
+        self,
+        record_ids: list[str],
+        actor: str,
+        *,
+        progress_callback: Callable[[int, int, int, int, int], None] | None = None,
+    ) -> dict[str, object]:
         selected = {str(value) for value in record_ids if str(value).strip()}
         if not selected:
             raise ValueError("The AccessNow import request contains no records.")
@@ -231,17 +239,39 @@ class AccessNowIngestionService:
         errors: list[dict[str, str]] = []
         with orm_session(self.database_path) as session:
             records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(selected), IngestionRecordModel.source_system == SOURCE_SYSTEM)).all()
+            handled = 0
             for record in records:
                 if record.status == "APPLIED":
                     reused += 1
+                    handled += 1
+                    if progress_callback:
+                        progress_callback(handled, len(records), created, reused, failed)
                     continue
                 if record.status != "STAGED" or record.match_status not in {"MATCHED", "UNMATCHED"}:
                     errors.append({"record_id": record.record_id, "error": f"Record is not eligible: {record.status}/{record.match_status}."})
                     failed += 1
+                    handled += 1
+                    if progress_callback:
+                        progress_callback(handled, len(records), created, reused, failed)
                     continue
                 try:
                     payload = json.loads(record.normalized_json)
                     worker_id = record.matched_worker_id
+                    # AccessNow files can be staged before the preceding
+                    # sources are imported. Re-evaluate an unmatched record
+                    # at apply time so a late canonical match does not become
+                    # a duplicate employee.
+                    if worker_id is None:
+                        matches, reason = find_worker_matches(session, SOURCE_SYSTEM, payload)
+                        if len(matches) > 1:
+                            record.match_status = "AMBIGUOUS"
+                            record.match_reason = "AccessNow identifiers resolve to multiple canonical employees."
+                            raise ValueError(record.match_reason)
+                        if len(matches) == 1:
+                            worker_id = matches[0]
+                            record.matched_worker_id = worker_id
+                            record.match_status = "MATCHED"
+                            record.match_reason = reason
                     was_created = worker_id is None
                     if was_created:
                         worker_id = str(uuid.uuid4())
@@ -274,11 +304,23 @@ class AccessNowIngestionService:
                     if old_status != worker.status and "status" not in changed:
                         changed.append("status")
                     record_worker_version(session, worker_id, actor=actor, change_type="ACCESSNOW_INITIAL_PROFILE" if was_created else "ACCESSNOW_STATUS_UPDATE", source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, source_record_key=record.source_record_key, changed_fields=changed)
+                    record.matched_worker_id = worker_id
+                    record.match_status = "MATCHED"
+                    if was_created:
+                        record.match_reason = "Canonical employee created during approval"
+                    elif not record.match_reason:
+                        record.match_reason = "Canonical employee updated during approval"
                     record.status = "APPLIED"
+                    record.observation_state = "CURRENT"
+                    record.linked_at_utc = record.linked_at_utc or now
+                    record.last_seen_at_utc = now
                     processed += 1
                 except (ValueError, json.JSONDecodeError) as exc:
                     errors.append({"record_id": record.record_id, "error": str(exc)})
                     failed += 1
+                handled += 1
+                if progress_callback:
+                    progress_callback(handled, len(records), created, reused, failed)
             session.commit()
         if processed:
             mark_publication_pending(self.database_path, actor=actor, reason="AccessNow source update applied locally")

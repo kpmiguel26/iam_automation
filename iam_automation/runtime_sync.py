@@ -17,6 +17,7 @@ import hashlib
 import json
 import shutil
 import sqlite3
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -103,6 +104,34 @@ def checkpoint_runtime_database(path: Path) -> None:
         raise RuntimeDatabaseError(f"SQLite WAL checkpoint failed: {path}: {exc}") from exc
 
 
+def _atomic_replace_with_retry(temporary: Path, destination: Path, *, attempts: int = 8) -> None:
+    """Replace a SQLite snapshot while tolerating short Windows file locks."""
+    last_error: PermissionError | None = None
+    for attempt in range(attempts):
+        try:
+            temporary.replace(destination)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            if attempt + 1 == attempts:
+                break
+            time.sleep(0.25)
+    if last_error is not None:
+        raise last_error
+
+
+def _remove_temporary_sqlite_files(temporary: Path) -> None:
+    """Remove a temporary database and any SQLite sidecars left by validation."""
+    for path in (temporary, temporary.with_name(temporary.name + "-wal"), temporary.with_name(temporary.name + "-shm")):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        except PermissionError:
+            # A later sync can safely retry cleanup; never hide the main result.
+            pass
+
+
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     temporary = path.with_suffix(path.suffix + f".{uuid.uuid4().hex}.tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -166,10 +195,13 @@ def sync_runtime_snapshot(published_path: Path, local_path: Path | None = None) 
         backup_folder = local.parent / "runtime_backups"
         backup_folder.mkdir(parents=True, exist_ok=True)
         shutil.copy2(local, backup_folder / f"runtime_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.sqlite")
-    temporary = local.with_suffix(".sqlite.tmp")
-    shutil.copy2(published_path, temporary)
-    validate_runtime_database(temporary)
-    temporary.replace(local)
+    temporary = local.with_name(f".{local.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        shutil.copy2(published_path, temporary)
+        validate_runtime_database(temporary)
+        _atomic_replace_with_retry(temporary, local)
+    finally:
+        _remove_temporary_sqlite_files(temporary)
     return RuntimeSnapshot(published_path, manifest_path, local, str(manifest["sha256"]), str(manifest.get("schema_version", "unknown")), str(manifest.get("published_at_utc", "")))
 
 
@@ -184,9 +216,12 @@ def publish_runtime_snapshot(local_path: Path, published_path: Path, *, actor: s
         backup_folder = published_path.parent / "backups"
         backup_folder.mkdir(parents=True, exist_ok=True)
         shutil.copy2(published_path, backup_folder / f"{published_path.stem}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.sqlite")
-    temporary = published_path.with_suffix(".sqlite.tmp")
-    shutil.copy2(local_path, temporary)
-    temporary.replace(published_path)
+    temporary = published_path.with_name(f".{published_path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        shutil.copy2(local_path, temporary)
+        _atomic_replace_with_retry(temporary, published_path)
+    finally:
+        _remove_temporary_sqlite_files(temporary)
     checksum = sha256_file(published_path)
     manifest_path = runtime_manifest_path(published_path)
     manifest = {"file": published_path.name, "sha256": checksum, "schema_version": "1.0.0", "published_at_utc": datetime.now(timezone.utc).isoformat(), "published_by": actor}

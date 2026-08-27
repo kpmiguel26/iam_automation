@@ -1,0 +1,51 @@
+<section class="surface p-4 mt-4" id="source-timeline" aria-labelledby="source-timeline-heading">
+  <div class="section-heading">
+    <div><p class="eyebrow mb-1">Import workflow</p><h2 class="h5 mb-0" id="source-timeline-heading">Source import timeline</h2><p class="text-secondary small mb-0">Files are ordered from oldest to newest. Import the next pending file to build the employee history in sequence; duplicate resolution remains separate.</p></div>
+    <span class="small text-secondary">{{ source_timeline|length }} stages</span>
+  </div>
+  <div class="source-import-timeline mt-4">
+    {% if import_error %}<div class="alert alert-danger" role="alert">{{ import_error }}</div>{% endif %}
+    {% if import_message %}<div class="alert alert-success" role="status">{{ import_message }}</div>{% endif %}
+    {% for source in source_timeline %}
+    <article class="source-import-stage {% if source.imported %}is-complete{% elif source.available %}is-ready{% elif source.blocked %}is-blocked{% endif %}">
+      <div class="source-import-marker" aria-hidden="true">{% if source.imported %}&#10003;{% else %}{{ source.step }}{% endif %}</div>
+      <div class="source-import-stage-body">
+        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+          <div><p class="eyebrow mb-1">Stage {{ source.step }}</p><h3 class="h6 mb-1">{{ source.label }}</h3><div class="small text-secondary">{{ source.record_count }} staged row(s) &middot; {{ source.file_count }} detected file(s)</div></div>
+          {% if source.imported %}<span class="badge text-bg-success">Imported</span>{% elif source.available %}<span class="badge text-bg-primary">New</span>{% elif source.blocked %}<span class="badge text-bg-secondary">Waiting for previous stage</span>{% elif not source.files %}<span class="badge text-bg-light">Waiting for file</span>{% else %}<span class="badge text-bg-warning">Ready after previous stage</span>{% endif %}
+        </div>
+        {% if source.files %}
+        <div class="source-import-files mt-3">
+          {% for file in source.files %}
+          {% set task = file.import_task %}
+          {% set active_task = task and task.status in ['QUEUED', 'RUNNING'] %}
+          {% set terminal_task = task and task.status in ['COMPLETED', 'COMPLETED_WITH_WARNINGS'] %}
+          <div class="source-import-file border rounded p-3">
+            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap"><div><strong>{{ file.source_file }}</strong><div class="small text-secondary">{{ file.record_count }} row(s) &middot; file date {{ file.source_modified_at|human_datetime or 'Unavailable' }} &middot; detected {{ file.latest_at|human_datetime }}</div></div><div class="d-flex gap-2 flex-wrap">{% if file.is_latest %}<span class="badge text-bg-info">Latest</span>{% endif %}{% if file.imported or (task and task.status in ['COMPLETED', 'COMPLETED_WITH_WARNINGS']) %}<span class="badge text-bg-success">Imported</span>{% else %}<span class="badge text-bg-warning">New</span>{% endif %}</div></div>
+            <div id="import-task-slot-{{ source.step }}-{{ loop.index }}">{% if active_task %}{% include "employees/_source_import_task.html" with context %}{% endif %}</div>
+            <div class="d-flex gap-2 align-items-center flex-wrap mt-3">
+              {% if task and task.status == 'FAILED' %}<form method="post" action="{{ url_for('employees.import_source_file') }}" hx-post="{{ url_for('employees.import_source_file') }}" hx-target="#source-import-modal-body" hx-swap="innerHTML" hx-on::after-request="if (event.detail.successful) { this.remove(); bootstrap.Modal.getOrCreateInstance(document.getElementById('sourceImportModal')).show(); }" data-no-loader="true"><input type="hidden" name="source_system" value="{{ source.source_system }}"><input type="hidden" name="source_file" value="{{ file.source_file }}"><button class="btn btn-sm btn-primary" type="submit" {% if not file.available %}disabled{% endif %}>Retry import</button>{% if not file.available %}<span class="small text-secondary align-self-center">Import the older pending file first.</span>{% endif %}</form>{% elif not task and not file.imported %}<form method="post" action="{{ url_for('employees.import_source_file') }}" hx-post="{{ url_for('employees.import_source_file') }}" hx-target="#source-import-modal-body" hx-swap="innerHTML" hx-on::after-request="if (event.detail.successful) { this.remove(); bootstrap.Modal.getOrCreateInstance(document.getElementById('sourceImportModal')).show(); }" data-no-loader="true"><input type="hidden" name="source_system" value="{{ source.source_system }}"><input type="hidden" name="source_file" value="{{ file.source_file }}"><button class="btn btn-sm btn-primary" type="submit" {% if not file.available %}disabled{% endif %}>Import file</button>{% if not file.available %}<span class="small text-secondary align-self-center">Import the older pending file first.</span>{% endif %}</form>{% elif file.imported or terminal_task %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.source_updates_overview', source=source.source_system, file=file.source_file) }}">Review history</a>{% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="modal fade" id="sourceImportModal" tabindex="-1" aria-labelledby="sourceImportModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div><p class="eyebrow mb-1">Source import</p><h2 class="modal-title h5 mb-0" id="sourceImportModalLabel">Import file details</h2></div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="source-import-modal-body">
+        <p class="text-secondary mb-0">Select an available file to start the import.</p>
+      </div>
+    </div>
+  </div>
+</div>

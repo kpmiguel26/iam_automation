@@ -58,6 +58,8 @@ iam_automation/
 - `runtime_schema.py` remains the idempotent bootstrap/migration boundary for existing synchronized databases.
 - Flask controllers call application services and render Jinja templates; they do not contain SQL or HTML documents.
 - Bootstrap 5.3.3 is vendored under `static/vendor/bootstrap/` so the local app works without a CDN connection.
+- HTMX 2.0.10 is vendored under `static/vendor/htmx/` for progressive AJAX-style HTML fragment updates; no additional runtime server is required.
+- Shared notifications are stored as one JSON event per notification under the synchronized `notifications/` folder. Each event contains an immutable recipient snapshot and a per-user `read_by`/`resolved_by` marker, so read state does not depend on publishing `runtime.sqlite` and newly added users do not inherit the historical backlog.
 - Brand-specific styling is limited to `static/css/app.css`.
 - Role forms use controlled multi-select values with human-readable labels; controllers never trust free-text role names from the browser.
 - The workstation/VDI identity is recorded for traceability and audit only. It does not carry an application password, application roles or an approval gate. Application authorization is evaluated after the separate IAM account login.
