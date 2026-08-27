@@ -2,18 +2,21 @@
 
 This repository is the feasibility proof of concept for an internal IAM and employee-data automation application.
 
-The current milestone is not the full application. The corrected architecture uses a single-writer approval workflow. Microsoft Access is treated as a versioned master snapshot published to SharePoint, not as a live multi-user database edited directly through OneDrive.
+The current milestone is not the full application. The current phase is **Read-only Employee & Evidence Review**. Microsoft Access and the published runtime SQLite are treated as versioned snapshots, not as live multi-user databases edited directly through OneDrive.
 
-## Current scope
+## Current scope — Read-only review phase
 
 - Validate local OneDrive-synced SharePoint paths.
-- Validate the Windows user against an approved-user list.
-- Allow requester clients to create immutable JSON change request files.
-- Import pending requests only through an Administrator/Writer batch workflow.
-- Reject duplicate `request_id` values through idempotency tracking.
-- Quarantine malformed or suspicious request files.
-- Keep Access master updates restricted to the single-writer batch process.
-- Create backups, audit events, versioned snapshots, and reconciliation reports during administrator processing.
+- Authenticate the IAM application account and record workstation traceability.
+- View canonical employees, engagements, source lineage, history, discrepancies and duplicate evidence.
+- View request, approval, notification and audit evidence where available.
+- Generate read-only reports and CSV/XLSX evidence exports.
+- Detect or stage source observations for review without changing the canonical employee.
+
+Employee creation, updates, deactivation, role changes, approvals, merges,
+Access writes, runtime publication and Data Loader execution are future-phase
+capabilities. Existing workflow code for those capabilities is not part of
+the current read-only release acceptance.
 
 ## First commands
 

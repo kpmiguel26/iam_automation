@@ -19,10 +19,10 @@ This folder is the working control center for implementation planning and projec
 
 ## Current Branch
 
-`feature/worker-identity-history`
+`feature/change-role-submission-visibility` (paused; no implementation planned)
 
 Release baseline: `production`
 
 ## Current Baseline
 
-The local preflight, runtime SQLite synchronization, separate application login, local Flask/Waitress process, Admin Control Center, ingestion foundation and canonical worker history are operational in development. The active branch contains the worker-history increment and the merged Windows ingestion update. Generated runtime fixture data remains local and is excluded from Git. The next objective is selective source reconciliation and employee-level review.
+The local preflight, runtime SQLite synchronization, separate application login, local Flask/Waitress process, Admin Control Center, ingestion foundation and canonical worker history are operational in development. The active release phase is **Read-only Employee & Evidence Review**: employee profiles, source lineage, history, discrepancies, duplicate evidence, requests and audit evidence may be viewed or exported, while canonical mutation, approval, merge and publication are deferred. Generated runtime fixture data remains local and is excluded from Git.

@@ -1,5 +1,19 @@
 # Working Decisions
 
+## DEC-2026-08-27-01: Read-only Employee & Evidence Review Phase
+
+The current release is a read-only review surface over the validated runtime
+SQLite snapshot. It may display employee profiles, source lineage, history,
+discrepancies, duplicate evidence, requests and audit evidence, and may create
+read-only exports. It must not update canonical employees, merge workers,
+approve/apply changes, create change-role submissions, or publish database
+snapshots.
+
+The existing single-writer approval and publication architecture remains a
+future-phase design boundary. Any writer-capable route or service must be
+disabled, feature-gated or separated before production release of the
+read-only phase.
+
 ## DEC-2026-07-23-07: Master Admin Boundary
 
 `MASTER_ADMIN` is the only role allowed to manage administrator accounts, global SLA/security settings, break-glass actions, audit export and audit archive. The last active Master Admin cannot be deactivated or demoted. Authorization is enforced in Flask routes and services; menu visibility is only a usability aid.

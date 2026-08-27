@@ -115,8 +115,8 @@ All items start in `Backlog` and require a dedicated `feature/<name>` branch bef
 ### Priority 1 — target 2026-09-04
 
 - [ ] **Finalize audit events** — 8 h, Miguel; see [`2026-08-26_AUDIT_EVENTS_FINALIZATION.md`](./2026-08-26_AUDIT_EVENTS_FINALIZATION.md).
-- [ ] **Add change-role submission visibility** — 10 h, Miguel; see [`2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md`](./2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md).
-- [~] **Create duplicate-profile export report** — 12 h, Miguel; see [`2026-08-26_DUPLICATE_REPORT.md`](./2026-08-26_DUPLICATE_REPORT.md). Web, CSV and XLSX implementation complete; stakeholder validation remains.
+- [ ] **Add change-role submission visibility** — 10 h, Miguel; see [`2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md`](./2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md). Deferred to the future controlled-change phase; branch exists but implementation is paused.
+- [x] **Create duplicate-profile export report** — 12 h, Miguel; see [`2026-08-26_DUPLICATE_REPORT.md`](./2026-08-26_DUPLICATE_REPORT.md). Engineering scope complete and verified; stakeholder validation remains an external follow-up.
 - [ ] **Validate Salesforce/Data Loader export and application regression** — 6 h Salesforce validation, part of the 14 h combined testing allocation; see [`2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md`](./2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md).
 
 ### Priority 2 — target 2026-09-11
@@ -133,6 +133,13 @@ All items start in `Backlog` and require a dedicated `feature/<name>` branch bef
 - [ ] Sophie Moya Bermudez receives duplicate-roster evidence for the biweekly meeting when requested.
 - [ ] Amanda Madrigal owns the Report Studio roster-lock consolidation test; IAM provides data and defect support if the canonical model is affected.
 - [ ] Vendor communication/access remains delayed as an operational control until the flow is stable.
+
+### Current phase boundary — Read-only Employee & Evidence Review
+
+- [x] Confirm that canonical employee mutation is outside the current release scope.
+- [x] Defer change-role submission creation, approval and application to a future phase.
+- [ ] Add an explicit feature gate or read-only deployment profile before production use.
+- [ ] Confirm read-only UAT scenarios and evidence-export permissions.
 
 ### 2026-08-26 Daily closeout — `bugfix/preflight`
 

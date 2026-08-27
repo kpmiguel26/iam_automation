@@ -2,6 +2,18 @@
 
 ## Direction
 
+### Current phase: Read-only Employee & Evidence Review
+
+The current release is a read-only review surface over the validated local
+runtime SQLite snapshot. Its accepted capabilities are authentication,
+employee/profile viewing, source lineage, history, discrepancies, duplicate
+evidence, request/audit visibility and read-only exports. It does not update
+the canonical employee or publish database changes.
+
+The broader application contains request, approval, ingestion, merge and
+publication services. These are future-phase capabilities and must be
+disabled, feature-gated or separated before a production read-only release.
+
 The local webapp follows a modular MVC structure while preserving the existing local-only process model:
 
 - **Model/domain:** typed business objects and workflow rules.
@@ -10,7 +22,10 @@ The local webapp follows a modular MVC structure while preserving the existing l
 - **Web controllers:** Flask routes and request/response mapping.
 - **Views:** HTML templates and static branding assets.
 
-Flask is an interface adapter only. It must not write directly to the published Access database. The application works against the validated local runtime SQLite snapshot; publication back to the synchronized route remains an explicit controlled operation.
+Flask is an interface adapter only. It must not write directly to the
+published Access database or mutate canonical employee data in the current
+phase. The application works against the validated local runtime SQLite
+snapshot; publication back to the synchronized route is future-phase only.
 
 ## Target Folder Order
 

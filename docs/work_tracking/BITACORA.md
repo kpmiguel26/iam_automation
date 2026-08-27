@@ -241,3 +241,17 @@
 - Full regression verification passed: **141 tests**. A temporary copy of the fixture was migrated and the duplicate detector returned 61 groups / 122 profiles.
 - Added the prevention barrier: RSR approval and Roster Lock promotion revalidate strong cross-source identity inside the write transaction before creating a canonical worker; name-only matches require review.
 - Added regression coverage for stale `UNMATCHED` RSR approval and reverse-order Roster/RSR promotion reuse.
+
+### Duplicate Report Closure and Change-Role Visibility Start - 2026-08-27
+
+- Closed the duplicate-profile report engineering scope; web, CSV and XLSX output are implemented and share the same read-only report rows.
+- Focused verification passed: **18 tests** in `test_worker_history.py` and `test_report_service.py`.
+- Recorded stakeholder approval of duplicate rules, columns and export format as an external follow-up rather than assuming it completed.
+- Created `feature/change-role-submission-visibility` from `production` and marked the work item as in progress.
+
+### Scope Reframing — Read-only Employee & Evidence Review - 2026-08-27
+
+- Reviewed the current architecture and confirmed that the broader codebase contains future writer capabilities, including approval, canonical updates, merge and publication.
+- Defined the current release as a read-only review phase: employee, source, history, discrepancy, duplicate, request and audit evidence only.
+- Deferred change-role submission visibility and all canonical employee mutation to the future controlled-change phase.
+- Updated the architecture, README, operating model, webapp architecture, implementation plan, backlog and decisions to reflect the new scope.
