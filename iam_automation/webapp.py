@@ -27,7 +27,7 @@ import secrets
 import threading
 import webbrowser
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 from urllib.request import Request, urlopen
@@ -180,6 +180,12 @@ def create_app(
             parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
         except ValueError:
             return text
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        else:
+            parsed = parsed.astimezone(timezone.utc)
+        if len(text) == 10 and text[4] == "-" and text[7] == "-":
+            return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}"
         hour = parsed.strftime("%I").lstrip("0") or "0"
         return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}, {hour}:{parsed:%M} {parsed:%p} UTC"
 
@@ -224,7 +230,7 @@ def create_app(
     def shared_template_context():
         roles = tuple(session.get("iam_roles", ()))
         username = str(session.get("iam_user", ""))
-        notification_service = NotificationService(runtime_path) if runtime_path and username and runtime_path.is_file() else None
+        notification_service = NotificationService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path) if runtime_path and username and runtime_path.is_file() else None
         unread_count = notification_service.unread_count(username) if notification_service else 0
         unread_notifications = notification_service.list_for_user(username, unread_only=True) if notification_service else []
         recent_notifications = unread_notifications[:5]
@@ -352,7 +358,7 @@ def create_app(
         username = session.get("iam_user")
         if not username or not runtime_path or not runtime_path.is_file():
             return redirect(url_for("login"))
-        service = NotificationService(runtime_path)
+        service = NotificationService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path)
         return render_template("notifications.html", notifications=service.list_for_user(str(username)))
 
     @app.get("/notifications/<notification_id>/open")
@@ -360,7 +366,7 @@ def create_app(
         username = session.get("iam_user")
         if not username or not runtime_path or not runtime_path.is_file():
             return redirect(url_for("login"))
-        service = NotificationService(runtime_path)
+        service = NotificationService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path)
         item = next((candidate for candidate in service.list_for_user(str(username)) if candidate.notification_id == notification_id), None)
         if item is None:
             return redirect(url_for("notifications_page", notice="Notification was not found.", notice_type="warning"))
@@ -372,7 +378,7 @@ def create_app(
         username = session.get("iam_user")
         if not username or not runtime_path or not runtime_path.is_file():
             return redirect(url_for("login"))
-        NotificationService(runtime_path).mark_read(str(username), notification_id)
+        NotificationService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path).mark_read(str(username), notification_id)
         return redirect(url_for("notifications_page", notice="Notification marked as read.", notice_type="success"))
 
     @app.post("/notifications/<notification_id>/resolve")
@@ -380,7 +386,7 @@ def create_app(
         username = session.get("iam_user")
         if not username or not runtime_path or not runtime_path.is_file():
             return redirect(url_for("login"))
-        NotificationService(runtime_path).resolve(str(username), notification_id)
+        NotificationService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path).resolve(str(username), notification_id)
         return redirect(url_for("notifications_page", notice="Notification resolved.", notice_type="success"))
 
     @app.get("/logout")

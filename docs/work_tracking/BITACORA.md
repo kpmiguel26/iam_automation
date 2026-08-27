@@ -241,3 +241,33 @@
 - Full regression verification passed: **141 tests**. A temporary copy of the fixture was migrated and the duplicate detector returned 61 groups / 122 profiles.
 - Added the prevention barrier: RSR approval and Roster Lock promotion revalidate strong cross-source identity inside the write transaction before creating a canonical worker; name-only matches require review.
 - Added regression coverage for stale `UNMATCHED` RSR approval and reverse-order Roster/RSR promotion reuse.
+
+### Duplicate Report Closure and Change-Role Visibility Start - 2026-08-27
+
+- Closed the duplicate-profile report engineering scope; web, CSV and XLSX output are implemented and share the same read-only report rows.
+- Focused verification passed: **18 tests** in `test_worker_history.py` and `test_report_service.py`.
+- Recorded stakeholder approval of duplicate rules, columns and export format as an external follow-up rather than assuming it completed.
+- Created `feature/change-role-submission-visibility` from `production` and marked the work item as in progress.
+
+### Scope Reframing — Read-only Employee & Evidence Review - 2026-08-27
+
+- Reviewed the current architecture and confirmed that the broader codebase contains future writer capabilities, including approval, canonical updates, merge and publication.
+- Defined the current release as a read-only review phase: employee, source, history, discrepancy, duplicate, request and audit evidence only.
+- Deferred change-role submission visibility and all canonical employee mutation to the future controlled-change phase.
+- Updated the architecture, README, operating model, webapp architecture, implementation plan, backlog and decisions to reflect the new scope.
+
+### Master Roster Requirements Documented - 2026-08-27
+
+- Created `2026-08-27_MASTER_ROSTER_REQUIREMENTS.md` with 15 functional and 10 non-functional requirements derived from the stakeholder-provided Touchpoint summary.
+- Defined Master Roster as an independent source for read-only intake, matching preview, lineage, duplicate/conflict evidence, timeline and exports.
+- Deferred canonical employee mutation, duplicate merge, approval and publication to the future controlled-change phase.
+- Added requirement, dependency and future-phase items to `BACKLOG.md`; no code changes were made.
+
+### Master Roster Read-only Staging - 2026-08-27
+
+- Reviewed the OneDrive workbook `Kaiser_Master_Roster_2026-08-27T0610.xlsx`.
+- Confirmed headers begin on row 4 and identified the two positional `LogonID` fields as NUID and NPN.
+- Implemented read-only staging with independent `nuid_login_id` and `npn_login_id` fields, checksum/idempotency and required-field quarantine.
+- Connected the watcher to `master_roster/*.xlsx` without creating an approval request or applying data to canonical employees.
+- Real staging result: **698 staged, 0 quarantined**; canonical worker count remained **12,040**.
+- Focused verification passed: **18 tests**.

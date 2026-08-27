@@ -1,6 +1,6 @@
 # Change-Role Submission Visibility
 
-**Status:** Backlog  
+**Status:** Deferred — future controlled-change phase
 **Priority:** 1  
 **Owner:** Miguel Fernandez  
 **Target:** 2026-09-04  
@@ -9,9 +9,15 @@
 
 ## Objective
 
-Allow authorized administrators to find and review change-role submissions using operational filters and linked approval/audit evidence.
+Allow authorized administrators to find and review change-role submissions
+using operational filters and linked approval/audit evidence after the
+controlled-change phase is approved.
 
-## Scope
+This feature is not part of the current Read-only Employee & Evidence Review
+release. It must not introduce or imply canonical employee mutation in the
+current phase.
+
+## Future-phase scope
 
 - Review `change_request.py`, `request_service.py`, administrative routes/templates and `master_audit.html`.
 - Define visible states and permitted transitions.

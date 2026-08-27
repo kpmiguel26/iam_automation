@@ -1,5 +1,11 @@
 # IAM Automation Architecture Brief
 
+> **Current phase note — 2026-08-27:** This brief describes the broader
+> single-writer target architecture. The active release is currently
+> **Read-only Employee & Evidence Review**. Approval, canonical employee
+> mutation, merge, Access changes and publication are deferred to a future
+> controlled-change phase.
+
 Prepared for: IAM, Marcelo, Operations, and IT Stakeholders  
 Date: July 17, 2026  
 Status: Corrected proof-of-concept architecture

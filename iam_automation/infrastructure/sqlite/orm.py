@@ -161,6 +161,7 @@ class ImportBatchModel(Base):
     quarantine_rows: Mapped[int] = mapped_column(Integer, default=0)
     created_by: Mapped[str] = mapped_column(String)
     created_at_utc: Mapped[str] = mapped_column(String, default="")
+    source_modified_at_utc: Mapped[str] = mapped_column(String, default="")
     completed_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 

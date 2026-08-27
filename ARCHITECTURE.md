@@ -1,5 +1,19 @@
 # Architecture
 
+## Current Delivery Phase — Read-only Employee & Evidence Review
+
+The current delivery phase is a read-only review increment. The application may
+read the published runtime SQLite snapshot and display employee, source,
+history, discrepancy, duplicate and audit evidence. It must not change the
+canonical employee, merge workers, approve or apply employee changes, or
+publish a new runtime or Access snapshot as part of this phase.
+
+The repository contains write-capable workflow code from the broader target
+architecture. Those paths are future-phase capabilities and are not part of
+the current release acceptance criteria. Before production use, they must be
+disabled, feature-gated, or exposed only in a separately approved writer
+deployment.
+
 ## Corrected Decision
 
 IAM Automation uses a single-writer approval workflow. There is no central API, server, VM, persistent service, or distributed coordinator in the current infrastructure.
@@ -9,19 +23,15 @@ Microsoft Access is treated as a versioned master snapshot published to SharePoi
 ## Conceptual Flow
 
 1. The local PySide6 startup shell discovers and validates the OneDrive-synchronized SharePoint route.
-2. The startup shell verifies both the published Access database and published runtime SQLite snapshot.
-3. The startup shell creates missing SharePoint folders, validates the runtime checksum, and copies SQLite atomically to the ignored project-root `runtime.sqlite`.
-4. The startup shell persists the validated settings and validates the Windows user against the approved-user role list.
+2. The startup shell verifies the published Access database and published runtime SQLite snapshot.
+3. The startup shell validates the runtime checksum and copies SQLite atomically to the ignored project-root `runtime.sqlite`.
+4. The startup shell records workstation traceability and completes separate IAM account authentication.
 5. A local Flask webapp starts on `127.0.0.1` with an ephemeral port and opens in the browser.
-6. Requesters create immutable change requests or approved local SQLite configuration changes.
-7. Request files and published snapshots are written to the SharePoint-synced workspace through controlled operations.
-8. An authorized Administrator/Writer imports pending requests in batches.
-9. Malformed, duplicate, or stale changes are quarantined or rejected.
-10. Requests are reviewed, approved, rejected, or marked as conflict.
-11. Approved employee changes are applied to a local Access copy outside OneDrive.
-12. The batch process validates integrity and generates official Excel outputs.
-13. An authorized administrator can publish the local SQLite runtime snapshot after checksum validation, backup, and optimistic concurrency checks.
-14. A versioned Access snapshot and audit events are recorded.
+6. Authenticated users view employee profiles, engagements, source lineage, history, discrepancies and duplicate evidence.
+7. Authorized users view read-only request, approval, notification and audit evidence where available.
+8. Reports and evidence exports may be generated without modifying canonical employee records.
+9. Source observations may be detected or staged for review, but they must not be promoted into or overwrite the canonical employee in this phase.
+10. Employee changes, approvals, merges, Access updates and snapshot publication remain future-phase operations.
 
 ## Startup MVC Boundary
 
@@ -45,7 +55,7 @@ The package follows a pragmatic Screaming Architecture layout:
 
 The original flat modules remain as compatibility facades during migration so existing scripts and tests do not break. New application code should import from the business-oriented packages above.
 
-## Non-Negotiable Boundary
+## Current-Phase Non-Negotiable Boundary
 
 Client applications must not:
 
@@ -53,6 +63,10 @@ Client applications must not:
 - Replace the Access snapshot.
 - Publish Access master versions.
 - Apply approved changes.
-- Bypass approval.
+- Merge or update the canonical employee.
+- Create or execute change-role submissions.
+- Treat a request, approval or report view as permission to mutate data.
 
-Only Administrator/Writer roles can perform Access batch processing and publication. They may also publish a runtime SQLite snapshot after backup, checksum, and optimistic concurrency validation.
+The current phase exposes no writer workflow as an accepted product capability.
+Administrator/Writer batch processing and publication belong to the future
+controlled-change phase and require separate scope approval.

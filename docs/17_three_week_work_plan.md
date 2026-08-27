@@ -1,5 +1,10 @@
 # Three-Week Work Plan
 
+> **Current phase note — 2026-08-27:** The original three-week plan includes
+> future writer and publication capabilities. The active release has been
+> narrowed to **Read-only Employee & Evidence Review**; those capabilities are
+> deferred and must not be treated as current acceptance scope.
+
 ## Project Capacity
 
 - Duration: 3 weeks

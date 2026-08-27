@@ -14,8 +14,6 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 {% extends "base.html" %}
 {% block title %}Report Studio{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{{ url_for('static', filename='vendor/datatables/css/dataTables.bootstrap5.min.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='vendor/datatables/css/buttons.bootstrap5.min.css') }}">
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell">
   <div class="page-heading">
     <div><p class="eyebrow">Report library</p><h1>Report Studio</h1><p class="text-secondary mb-0">Build a read-only employee report by choosing a source, columns, filters and sort order.</p></div>
@@ -138,13 +136,6 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='vendor/datatables/js/jquery.min.js') }}"></script>
-<script src="{{ url_for('static', filename='vendor/datatables/js/dataTables.min.js') }}"></script>
-<script src="{{ url_for('static', filename='vendor/datatables/js/dataTables.bootstrap5.min.js') }}"></script>
-<script src="{{ url_for('static', filename='vendor/datatables/js/jszip.min.js') }}"></script>
-<script src="{{ url_for('static', filename='vendor/datatables/js/dataTables.buttons.min.js') }}"></script>
-<script src="{{ url_for('static', filename='vendor/datatables/js/buttons.bootstrap5.min.js') }}"></script>
-<script src="{{ url_for('static', filename='vendor/datatables/js/buttons.html5.min.js') }}"></script>
 <script>
   document.querySelectorAll('.select-field-group').forEach(function (button) {
     button.addEventListener('click', function () {

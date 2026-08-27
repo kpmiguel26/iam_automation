@@ -1,13 +1,14 @@
 # Current Implementation Plan
 
 **Project:** IAM Automation  
-**Last updated:** 2026-07-31
-**Branch:** `feature/worker-identity-history`
+**Last updated:** 2026-08-27
+**Current phase:** Read-only Employee & Evidence Review
+**Branch:** `feature/master-roster-read-only` (requirements only; no implementation planned)
 **Release branch:** `production`
 
 ## Objective
 
-Build the first maintainable local web application increment with:
+Deliver a safe read-only review increment with:
 
 - a hard SharePoint/OneDrive preflight gate;
 - a local runtime SQLite working copy;
@@ -16,6 +17,10 @@ Build the first maintainable local web application increment with:
 - SQLAlchemy ORM persistence;
 - separated Jinja templates and local Bootstrap assets;
 - two administrative levels: `MASTER_ADMIN` and `APPLICATION_ADMIN`.
+- employee/profile, source-lineage, history, discrepancy and duplicate evidence views;
+- read-only request and audit visibility;
+- read-only CSV/XLSX evidence exports;
+- no canonical employee mutation or database publication.
 
 ## Deliverables
 
@@ -32,14 +37,14 @@ Build the first maintainable local web application increment with:
 | D09 | Admin control center shell | Completed | `/admin`, `admin_routes.py`, role-aware avatar |
 | D09.1 | Windows identity CRUD | Completed | `/admin/windows-identities`, `IdentityService` |
 | D09.2 | User and access refinement | Completed for current development scope | [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACCESS_REFINEMENT.md) |
-| D10 | Notifications and delegation workflows | Completed | Real avatar counter, read/resolve/expire states, manual reviewer assignment, SLA escalation and delegation expiry |
+| D10 | Notifications and delegation workflows | Completed | Real avatar counter, local and SharePoint JSON-backed read/resolve/expire states, immutable recipient snapshots, manual reviewer assignment, SLA escalation and delegation expiry |
 | D10.1 | Master session revocation | Completed | `SessionService`, `/admin/security/sessions` |
 | D11 | Audit-integrated administrative operations | Completed | Master audit center, JSON export/archive and CRUD/request/delegation audit events |
-| D12 | Approval queue and request lifecycle | Completed | `RequestService`, `/requests`, `/admin/approvals`, delegation reassignment and SLA escalation |
-| D12.1 | Approved request publication queue | In progress | `PublicationService`, `/admin/publication`; controlled writer publication remains |
+| D12 | Approval queue and request lifecycle | Future phase | Existing workflow code is not part of the current read-only release |
+| D12.1 | Approved request publication queue | Future phase | Publication is explicitly outside current scope |
 | D13 | Import, validation, quarantine and templates | In progress | Roster Lock and RSR ingestion foundations are available; selective reconciliation and official Fieldglass mappings remain |
 | D13.1 | Canonical worker identity history | Completed for current increment | Alembic worker-history migration, immutable profile versions and duplicate merge events |
-| D14 | Explicit publication, backup and restore | In progress | Master Admin governance flow, checksum, backup and restore exist; conflict detection remains |
+| D14 | Explicit publication, backup and restore | Future phase | Governance controls are retained as design/reference work |
 | D15 | User acceptance, Windows validation and handoff | Pending | Cross-platform test evidence and sign-off |
 
 ## Work Sequence
@@ -75,31 +80,61 @@ Build the first maintainable local web application increment with:
 - Prepare authorization and user/access acceptance scenarios.
 - Keep official Fieldglass, Roster Lock and downstream template formats pending until next week.
 
-The ingestion foundation was merged into `feature/worker-identity-history`. The next feature should focus on selective source reconciliation and employee-level review.
+The current objective is employee-level evidence review plus controlled manual
+historical import. A detected source file may be promoted from staging into
+employee history, creating a missing employee when the row has a reliable
+identifier. Duplicate resolution, merge, approval and publication remain
+deferred.
 
-### Phase 5: Data operations and selective reconciliation
+Notifications are shared through one JSON event per notification in the
+synchronized SharePoint workspace. The event keeps the original recipient
+snapshot and records each user's read/resolved timestamp, so notification state
+does not require publishing the local runtime database. The in-memory import
+progress card is separate and remains a UI runtime state.
 
-- Add Excel and Fieldglass ingestion.
+The next requirements increment is Master Roster read-only intake, comparison,
+lineage, duplicate/conflict evidence and export. Its requirements are tracked
+in [`2026-08-27_MASTER_ROSTER_REQUIREMENTS.md`](./2026-08-27_MASTER_ROSTER_REQUIREMENTS.md);
+read-only staging, watcher detection and the sequential manual import timeline
+are implemented; comparison, review views and exports remain pending.
+
+The web tables now use the local DataTables 2.3.5 bundle for search, sorting,
+pagination, all-loaded-row views and CSV/Excel export. Coverage and the
+server-side loading boundary are documented in
+[`2026-08-27_DATATABLE_COVERAGE.md`](./2026-08-27_DATATABLE_COVERAGE.md).
+
+### Future Phase: Duplicate resolution and publication
+
+- Add duplicate resolution and cross-source consolidation workflows.
 - Validate templates and mappings before import.
 - Route invalid records to quarantine.
 - Add quarantine resolution and ingestion batch history.
 - Generate target exports for Fieldglass and NICE IEX.
-- Review one source file at a time and show only new, changed, duplicate or ambiguous records.
+- Publish approved runtime SQLite or Access changes.
 - Preserve immutable worker versions and source lineage for every approved change.
 
-### Phase 6: Publication and validation
+This phase is not part of the current release.
+
+### Current Phase: Historical import and evidence review
+
+- Verify employee directory, profiles, history, lineage, discrepancies and duplicate reports.
+- Verify request/audit visibility and read-only exports.
+- Confirm that duplicate analysis and publication remain disabled.
+- Keep historical import as the only controlled canonical-writing workflow in this increment.
+
+### Future Phase: Publication and validation
 
 - Add explicit publication with backup, checksum and manifest.
 - Add restore with integrity validation.
 - Run integration, Windows, macOS and user acceptance tests.
 - Update Smartsheet/Kanban and prepare handoff evidence.
 
-## End-of-Day Position - 2026-07-31
+## End-of-Day Position - 2026-08-27
 
 - Feature and release branches are published.
 - Full regression suite is green at 99 tests.
 - Runtime fixture changes are intentionally local and excluded from Git.
-- IAM implementation work is paused for today; pending work is tracked in `BACKLOG.md` and [`2026-07-31_DAILY_CLOSURE.md`](./2026-07-31_DAILY_CLOSURE.md).
+- IAM is currently in the read-only review phase. Change-role submission implementation is deferred; pending work is tracked in `BACKLOG.md`.
 
 ## Definition Of Done
 

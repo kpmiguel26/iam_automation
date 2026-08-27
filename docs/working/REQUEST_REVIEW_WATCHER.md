@@ -1,5 +1,10 @@
 # Automatic Request Review Workflow
 
+> **Phase boundary — 2026-08-27:** The watcher and source comparison views are
+> used only for read-only review in the current release. Staging may preserve
+> source observations for evidence, but approval, canonical employee updates
+> and runtime publication belong to the future controlled-change phase.
+
 ## Purpose
 
 Files discovered in the shared workspace are reviewable business inputs. Discovery does not silently create or update canonical employees. The watcher stages the source rows, creates one shared pending request, and notifies the eligible reviewers and administrators.

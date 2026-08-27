@@ -25,7 +25,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from ..infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, QuarantineRecordModel, orm_session
-from .stable_file_read import read_stable_bytes
+from .stable_file_read import file_modified_at_utc, read_stable_bytes
 
 
 @dataclass(frozen=True)
@@ -65,7 +65,7 @@ class RosterLockIngestionService:
         quarantined = 0
         seen_keys: set[str] = set()
         with orm_session(self.database_path) as session:
-            session.add(ImportBatchModel(batch_id=batch_id, filename=path.name, source_type="ROSTER_LOCK", status="PROCESSING", total_rows=len(rows), valid_rows=0, quarantine_rows=0, created_by="workspace-watcher", created_at_utc=now))
+            session.add(ImportBatchModel(batch_id=batch_id, filename=path.name, source_type="ROSTER_LOCK", status="PROCESSING", total_rows=len(rows), valid_rows=0, quarantine_rows=0, created_by="workspace-watcher", created_at_utc=now, source_modified_at_utc=file_modified_at_utc(path)))
             for row_number, raw_row in enumerate(rows, start=2):
                 payload = {str(key).strip(): self._json_value(value) for key, value in raw_row.items() if key is not None and str(key).strip()}
                 normalized = self._normalize(payload)

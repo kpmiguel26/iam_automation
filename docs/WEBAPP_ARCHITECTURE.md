@@ -2,6 +2,18 @@
 
 ## Direction
 
+### Current phase: Read-only Employee & Evidence Review
+
+The current release is a read-only review surface over the validated local
+runtime SQLite snapshot. Its accepted capabilities are authentication,
+employee/profile viewing, source lineage, history, discrepancies, duplicate
+evidence, request/audit visibility and read-only exports. It does not update
+the canonical employee or publish database changes.
+
+The broader application contains request, approval, ingestion, merge and
+publication services. These are future-phase capabilities and must be
+disabled, feature-gated or separated before a production read-only release.
+
 The local webapp follows a modular MVC structure while preserving the existing local-only process model:
 
 - **Model/domain:** typed business objects and workflow rules.
@@ -10,7 +22,10 @@ The local webapp follows a modular MVC structure while preserving the existing l
 - **Web controllers:** Flask routes and request/response mapping.
 - **Views:** HTML templates and static branding assets.
 
-Flask is an interface adapter only. It must not write directly to the published Access database. The application works against the validated local runtime SQLite snapshot; publication back to the synchronized route remains an explicit controlled operation.
+Flask is an interface adapter only. It must not write directly to the
+published Access database or mutate canonical employee data in the current
+phase. The application works against the validated local runtime SQLite
+snapshot; publication back to the synchronized route is future-phase only.
 
 ## Target Folder Order
 
@@ -43,6 +58,8 @@ iam_automation/
 - `runtime_schema.py` remains the idempotent bootstrap/migration boundary for existing synchronized databases.
 - Flask controllers call application services and render Jinja templates; they do not contain SQL or HTML documents.
 - Bootstrap 5.3.3 is vendored under `static/vendor/bootstrap/` so the local app works without a CDN connection.
+- HTMX 2.0.10 is vendored under `static/vendor/htmx/` for progressive AJAX-style HTML fragment updates; no additional runtime server is required.
+- Shared notifications are stored as one JSON event per notification under the synchronized `notifications/` folder. Each event contains an immutable recipient snapshot and a per-user `read_by`/`resolved_by` marker, so read state does not depend on publishing `runtime.sqlite` and newly added users do not inherit the historical backlog.
 - Brand-specific styling is limited to `static/css/app.css`.
 - Role forms use controlled multi-select values with human-readable labels; controllers never trust free-text role names from the browser.
 - The workstation/VDI identity is recorded for traceability and audit only. It does not carry an application password, application roles or an approval gate. Application authorization is evaluated after the separate IAM account login.

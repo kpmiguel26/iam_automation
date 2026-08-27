@@ -36,7 +36,7 @@ def create_request_blueprint(database_path: Path, *, sharepoint_root: Path | Non
     service = SharedRequestService(sharepoint_root) if sharepoint_root else RequestService(database_path)
     employees = EmployeeService(database_path)
     users = UserService(database_path)
-    notifications = NotificationService(database_path)
+    notifications = NotificationService(database_path, sharepoint_root=sharepoint_root)
     source_import_operations = {"IMPORT_ROSTER_LOCK", "IMPORT_RSR_SUPPLIER_DETAILS", "IMPORT_ACCESSNOW"}
 
     def authenticated(view):

@@ -29,6 +29,7 @@ _REVISION_TO_LEGACY_VERSION = {
     "0005_rsr_worker_details": "v005_rsr_worker_details",
     "0006_worker_history": "v006_worker_history",
     "0007_source_observations": "v007_source_observations",
+    "0008_source_file_timestamps": "v008_source_file_timestamps",
 }
 _LEGACY_TO_REVISION = {value: key for key, value in _REVISION_TO_LEGACY_VERSION.items()}
 
@@ -77,6 +78,8 @@ def _legacy_version_for_revision(revision: str | None) -> tuple[str, ...]:
         return ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history")
     if revision == "0007_source_observations":
         return ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations")
+    if revision == "0008_source_file_timestamps":
+        return ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps")
     if revision == "0001_baseline":
         return ("v001_initial_schema",)
     return ()

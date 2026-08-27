@@ -85,6 +85,48 @@ class SourceUpdatesTests(unittest.TestCase):
                 self.assertEqual(worker.status, "DEACTIVATED")
                 self.assertEqual(engagement.status, "DEACTIVATED")
 
+    def test_accessnow_is_reconciled_against_late_imported_canonical_identifiers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            record = self._record("access-late", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00")
+            record.match_status = "UNMATCHED"
+            record.normalized_json = json.dumps({
+                "accessnow_employee_id": "3431606",
+                "accessnow_nuid": "L016524",
+                "first_name": "Markisha",
+                "last_name": "Tharp",
+                "email": "markisha@example.com",
+                "accessnow_status": "ACTIVE",
+            })
+            with orm_session(database) as session:
+                session.add(WorkerModel(worker_id="worker-1", first_name="Markisha", last_name="Tharp", display_name="Markisha Tharp", status="ACTIVE"))
+                ensure_source_identifiers(session, "worker-1", "MASTER_ROSTER", {"employee_number": "3431606", "nuid_login_id": "L016524"}, "2026-08-02T00:00:00+00:00")
+                session.add(record)
+
+            result = AccessNowIngestionService(database).apply_approved_records(["access-late"], "qa")
+
+            self.assertEqual(result["created"], 0)
+            self.assertEqual(result["reused"], 1)
+            with orm_session(database) as session:
+                saved = session.get(IngestionRecordModel, "access-late")
+                self.assertEqual(saved.matched_worker_id, "worker-1")
+                self.assertEqual(saved.match_status, "MATCHED")
+
+    def test_conflicting_strong_identifiers_are_not_resolved_by_field_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            with orm_session(database) as session:
+                session.add_all([
+                    WorkerModel(worker_id="worker-nuid", first_name="Ada", last_name="Lovelace", display_name="Ada Lovelace", status="ACTIVE"),
+                    WorkerModel(worker_id="worker-number", first_name="Grace", last_name="Hopper", display_name="Grace Hopper", status="ACTIVE"),
+                ])
+                ensure_source_identifiers(session, "worker-nuid", "MASTER_ROSTER", {"nuid_login_id": "L016524"}, "2026-08-02T00:00:00+00:00")
+                ensure_source_identifiers(session, "worker-number", "MASTER_ROSTER", {"employee_number": "3431606"}, "2026-08-02T00:00:00+00:00")
+                matches, reason = find_worker_matches(session, "ACCESSNOW", {"accessnow_employee_id": "3431606", "accessnow_nuid": "L016524"})
+
+            self.assertEqual(matches, ["worker-nuid", "worker-number"])
+            self.assertEqual(reason, "Conflicting source identifiers")
+
     def test_source_date_parser_accepts_accessnow_timestamp(self):
         self.assertEqual(parse_source_date("9/9/2025 6:7:0 AM PDT"), date(2025, 9, 9))
         self.assertEqual(parse_source_date("2026-08-03T20:14:31+00:00"), date(2026, 8, 3))
@@ -126,6 +168,20 @@ class SourceUpdatesTests(unittest.TestCase):
             self.assertEqual(sum(int(item["record_count"]) for item in files), 2)
             self.assertEqual(service.get_source_file_summary("ROSTER_LOCK", "roster-new.xlsx")["record_count"], 1)
 
+    def test_pending_source_count_excludes_currently_linked_observations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            pending = self._record("pending", "ROSTER_LOCK", "roster.xlsx", "E-100", "2026-08-01T00:00:00+00:00")
+            current = self._record("current", "ROSTER_LOCK", "roster.xlsx", "E-101", "2026-08-01T00:00:01+00:00")
+            current.status = "MATCHED"
+            current.match_status = "MATCHED"
+            current.matched_worker_id = "worker-1"
+            current.observation_state = "CURRENT"
+            with orm_session(database) as session:
+                session.add_all([pending, current])
+
+            self.assertEqual(EmployeeService(database).pending_source_update_count(), 1)
+
     def test_source_rows_are_paginated_and_payload_is_loaded_only_for_page(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
@@ -138,6 +194,10 @@ class SourceUpdatesTests(unittest.TestCase):
             self.assertEqual(len(records), 20)
             self.assertEqual(len({record["source_record_key"] for record in records}), 20)
             self.assertIn("first_name", records[0]["payload"])
+
+            all_records, all_total = EmployeeService(database).list_source_records("ROSTER_LOCK", "roster.xlsx", load_all=True)
+            self.assertEqual(all_total, 120)
+            self.assertEqual(len(all_records), 120)
 
     def test_linking_newer_same_source_record_supersedes_previous_observation(self):
         with tempfile.TemporaryDirectory() as tmp:

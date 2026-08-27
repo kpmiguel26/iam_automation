@@ -1,6 +1,6 @@
 # Duplicate Profile Export Report
 
-**Status:** In Progress
+**Status:** Completed — engineering scope; stakeholder validation pending
 **Priority:** 1  
 **Owner:** Miguel Fernandez  
 **Target:** 2026-09-04  
@@ -52,3 +52,11 @@ Provide an exportable report that gives IAM and stakeholders enough evidence to 
 
 - Incorrect duplicate rules can create unsafe merge recommendations.
 - Final columns and format require stakeholder approval.
+
+## Engineering closure — 2026-08-27
+
+- Implemented authenticated duplicate index and review flow with explicit survivor selection, mandatory reason, transactional merge, audit event and superseded-worker history.
+- Implemented the consolidated read-only duplicate report with stable columns and matching web, CSV and XLSX output.
+- Verified duplicate groups, source evidence, conflict indicators, recommendation rows and authorization behavior.
+- Focused verification passed: **18 tests** in `tests/test_worker_history.py` and `tests/test_report_service.py`.
+- The report is ready for stakeholder review. Final closure depends on approval of duplicate rules, columns and export format; no stakeholder approval is inferred by this technical closure.

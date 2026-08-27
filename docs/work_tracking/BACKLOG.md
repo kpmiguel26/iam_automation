@@ -15,6 +15,7 @@
 - [x] Add Master audit JSON export and append-only archive operation.
 - [x] Add notification unread counter to the avatar and notification resolution routes.
 - [x] Add notification read, resolved and expired states.
+- [x] Share notification events through one JSON per event with per-user read markers and an immutable recipient snapshot.
 - [x] Add delegation queue reassignment without duplicating request IDs.
 - [x] Add manual reviewer assignment and SLA escalation.
 - [x] Add expired delegation administration.
@@ -115,8 +116,8 @@ All items start in `Backlog` and require a dedicated `feature/<name>` branch bef
 ### Priority 1 — target 2026-09-04
 
 - [ ] **Finalize audit events** — 8 h, Miguel; see [`2026-08-26_AUDIT_EVENTS_FINALIZATION.md`](./2026-08-26_AUDIT_EVENTS_FINALIZATION.md).
-- [ ] **Add change-role submission visibility** — 10 h, Miguel; see [`2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md`](./2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md).
-- [~] **Create duplicate-profile export report** — 12 h, Miguel; see [`2026-08-26_DUPLICATE_REPORT.md`](./2026-08-26_DUPLICATE_REPORT.md). Web, CSV and XLSX implementation complete; stakeholder validation remains.
+- [ ] **Add change-role submission visibility** — 10 h, Miguel; see [`2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md`](./2026-08-26_CHANGE_ROLE_SUBMISSIONS_VISIBILITY.md). Deferred to the future controlled-change phase; branch exists but implementation is paused.
+- [x] **Create duplicate-profile export report** — 12 h, Miguel; see [`2026-08-26_DUPLICATE_REPORT.md`](./2026-08-26_DUPLICATE_REPORT.md). Engineering scope complete and verified; stakeholder validation remains an external follow-up.
 - [ ] **Validate Salesforce/Data Loader export and application regression** — 6 h Salesforce validation, part of the 14 h combined testing allocation; see [`2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md`](./2026-08-26_VALIDATION_SALESFORCE_RETENTION_HANDOFF.md).
 
 ### Priority 2 — target 2026-09-11
@@ -133,6 +134,53 @@ All items start in `Backlog` and require a dedicated `feature/<name>` branch bef
 - [ ] Sophie Moya Bermudez receives duplicate-roster evidence for the biweekly meeting when requested.
 - [ ] Amanda Madrigal owns the Report Studio roster-lock consolidation test; IAM provides data and defect support if the canonical model is affected.
 - [ ] Vendor communication/access remains delayed as an operational control until the flow is stable.
+
+### Current phase boundary — Read-only Employee & Evidence Review
+
+- [x] Confirm that canonical employee mutation is outside the current release scope.
+- [x] Defer change-role submission creation, approval and application to a future phase.
+- [ ] Add an explicit feature gate or read-only deployment profile before production use.
+- [ ] Confirm read-only UAT scenarios and evidence-export permissions.
+
+## Master Roster Requirements — 2026-08-27
+
+Working document: [`2026-08-27_MASTER_ROSTER_REQUIREMENTS.md`](./2026-08-27_MASTER_ROSTER_REQUIREMENTS.md)
+
+### Requirements and read-only design
+
+- [ ] Confirm official Master Roster folder, file name, owner and delivery cadence.
+- [ ] Confirm Master Roster workbook sheets, headers, required fields and row boundaries.
+- [x] Define and implement `MASTER_ROSTER` source registration, checksum, batch and lineage staging contract.
+- [x] Connect the watcher to `master_roster/*.xlsx` without creating an approval/apply workflow.
+- [x] Capture NUID and NPN login IDs as separate fields when the workbook repeats `LogonID`.
+- [x] Add sequential manual import from staged source files into employee history.
+- [x] Create a canonical employee when a reliable imported row has no existing history.
+- [x] Add local HTMX timeline, import status badges and request loading indicators.
+- [ ] Define read-only matching preview against the canonical employee.
+- [ ] Define cross-source consolidation view without canonical mutation.
+- [ ] Define duplicate and repeated-identifier report columns and exports.
+- [ ] Define consecutive Master Roster comparison for additions, terminations and changes.
+- [ ] Define conflict view and business review filters.
+- [ ] Define source adapter contract for future sources.
+- [ ] Confirm duplicate rules, identifier precedence, termination and rehire semantics.
+- [ ] Confirm retention, legal-hold and export-evidence requirements.
+- [ ] Add explicit feature-state gate for duplicate resolution and publication before UAT.
+
+### Future controlled-change items
+
+- [ ] Apply source-specific enrichment and lifecycle changes after historical import.
+- [ ] Confirm/merge duplicate canonical workers.
+- [ ] Publish approved runtime SQLite or Access changes.
+- [ ] Generate or execute downstream Data Loader submissions.
+
+### 2026-08-27 DataTable standardization
+
+- [x] Apply local DataTables controls to flat application tables: pagination,
+  all-loaded-row view, sorting, search, Copy, CSV and Excel export.
+- [x] Preserve server-side pagination for large employee/source datasets and
+  provide explicit load-all behavior before client-side export.
+- [x] Document table coverage and the expandable-detail exception in
+  [`2026-08-27_DATATABLE_COVERAGE.md`](./2026-08-27_DATATABLE_COVERAGE.md).
 
 ### 2026-08-26 Daily closeout — `bugfix/preflight`
 

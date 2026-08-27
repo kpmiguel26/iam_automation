@@ -2,6 +2,13 @@
 
 ## Single-Writer Policy
 
+The current product phase is read-only. Users may inspect the synchronized
+runtime snapshot and export evidence, but no user-facing operation may apply a
+change to a canonical employee or publish a new snapshot.
+
+The single-writer policy below describes the future controlled-change phase;
+it is retained as a design boundary, not as current-phase functionality.
+
 Only one Administrator/Writer processes a batch at a time. Because there is no central lock authority, a lock file may be used only as an advisory marker, not as a guarantee of distributed mutual exclusion.
 
 ## Writer Batch Steps

@@ -42,7 +42,7 @@ from ...identity_discovery import list_pending_discoveries
 
 def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None = None, sharepoint_root: Path | None = None, local_runtime_path: Path | None = None, published_runtime_path: Path | None = None, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("admin", __name__, url_prefix="/admin")
-    notifications = NotificationService(database_path)
+    notifications = NotificationService(database_path, sharepoint_root=sharepoint_root)
     delegations = DelegationService(database_path)
     requests = RequestService(database_path)
     shared_requests = SharedRequestService(sharepoint_root) if sharepoint_root else None
@@ -58,7 +58,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         backup_directory=(published_runtime_path or database_path).parent / "backups",
     )
     salesforce = SalesforceExportService(database_path, audit_path=audit_path)
-    automatic_source_types = {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW"}
+    automatic_source_types = {"ROSTER_LOCK", "MASTER_ROSTER", "RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW"}
 
     def imports_page_context(*, message=None, error=None):
         batches = imports.list_batches()

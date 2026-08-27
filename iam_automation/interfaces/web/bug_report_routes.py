@@ -28,7 +28,7 @@ from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OP
 def create_bug_report_blueprint(database_path: Path, sharepoint_root: Path) -> Blueprint:
     blueprint = Blueprint("bug_reports", __name__, url_prefix="/bug-reports")
     service = BugReportService(sharepoint_root)
-    notifications = NotificationService(database_path)
+    notifications = NotificationService(database_path, sharepoint_root=sharepoint_root)
     users = UserService(database_path)
 
     def authenticated(view):

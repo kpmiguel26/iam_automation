@@ -1,0 +1,62 @@
+<div id="import-task-{{ task.task_id }}" class="source-import-task" role="status" aria-live="polite"
+  {% if task.status in ['QUEUED', 'RUNNING'] %}
+  hx-get="{{ url_for('employees.import_source_task_status', task_id=task.task_id) }}" hx-trigger="every 1s" hx-target="this" hx-swap="outerHTML"
+  {% endif %}>
+  <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+    <div>
+      <p class="eyebrow mb-1">Import details</p>
+      <h2 class="h5 mb-1">{% if task.status == 'QUEUED' %}Preparing import{% elif task.status == 'RUNNING' %}Importing source history{% elif task.status == 'COMPLETED' %}Import completed{% elif task.status == 'COMPLETED_WITH_WARNINGS' %}Import completed with warnings{% else %}Import failed{% endif %}</h2>
+      <p class="small text-secondary mb-0">{{ task.message }}</p>
+    </div>
+    <span class="badge {% if task.status == 'COMPLETED' %}text-bg-success{% elif task.status == 'FAILED' %}text-bg-danger{% elif task.status == 'COMPLETED_WITH_WARNINGS' %}text-bg-warning{% else %}text-bg-primary{% endif %}">{{ task.status|replace('_', ' ')|title }}</span>
+  </div>
+
+  <div class="import-detail-grid mt-3">
+    <div><span>Source</span><strong>{{ task.source_label or task.source_system|replace('_', ' ')|title }}</strong></div>
+    <div><span>File</span><strong class="text-break">{{ task.source_file }}</strong></div>
+    <div><span>Detected</span><strong>{{ task.detected_at|human_datetime or 'Not available' }}</strong></div>
+    <div><span>Rows in file</span><strong>{{ task.total|int }}</strong></div>
+  </div>
+
+  {% set total = task.total|int %}
+  {% set processed = task.processed|int %}
+  {% set percent = ((processed * 100) // total) if total else 0 %}
+  <div class="progress mt-4" role="progressbar" aria-label="Import progress for {{ task.source_file }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ percent }}">
+    <div class="progress-bar {% if task.status in ['QUEUED', 'RUNNING'] %}progress-bar-striped progress-bar-animated{% elif task.status == 'FAILED' %}bg-danger{% elif task.status == 'COMPLETED_WITH_WARNINGS' %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ percent }}%">{{ percent }}%</div>
+  </div>
+  <div class="small text-secondary mt-2">{{ processed }} of {{ total }} row(s) processed</div>
+
+  <div class="import-result-grid mt-3">
+    <div class="import-result-stat"><strong>{{ task.created|int }}</strong><span>New employees</span></div>
+    <div class="import-result-stat"><strong>{{ task.reused|int }}</strong><span>Existing employees updated</span></div>
+    <div class="import-result-stat"><strong>{{ task.failed|int }}</strong><span>Errors</span></div>
+  </div>
+
+  {% if task.status in ['COMPLETED', 'COMPLETED_WITH_WARNINGS'] %}
+    <div class="alert {% if task.status == 'COMPLETED_WITH_WARNINGS' %}alert-warning{% else %}alert-success{% endif %} mt-3 mb-0">
+      <strong>Source history saved locally.</strong>
+      <div class="small mt-1">The import does not publish the database. An administrator must publish the runtime for other workstations to receive these records.</div>
+      {% if task.notification_id %}<div class="small mt-1">A notification was sent to your notification center.</div>{% endif %}
+    </div>
+  {% elif task.status == 'FAILED' %}
+    <div class="alert alert-danger mt-3 mb-0">No publication was performed. Review the error details below and retry after correcting the source or runtime issue.</div>
+  {% endif %}
+
+  {% if task.errors %}
+    <details class="import-error-details mt-3">
+      <summary>View {{ task.errors|length }} error detail(s)</summary>
+      <div class="table-responsive mt-2">
+        <table class="table table-sm mb-0 align-middle">
+          <thead><tr><th>Record</th><th>Source key</th><th>Error</th></tr></thead>
+          <tbody>{% for item in task.errors %}<tr><td><code>{{ item.record_id }}</code></td><td>{{ item.source_record_key or '—' }}</td><td class="text-danger">{{ item.error }}</td></tr>{% endfor %}</tbody>
+        </table>
+      </div>
+    </details>
+  {% endif %}
+
+  {% if task.status in ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED'] %}
+    <div class="d-flex gap-2 flex-wrap mt-4">
+      <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="window.location.reload()">Close and refresh timeline</button>
+    </div>
+  {% endif %}
+</div>
