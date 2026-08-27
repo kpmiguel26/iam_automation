@@ -3,7 +3,7 @@
 **Project:** IAM Automation  
 **Last updated:** 2026-08-27
 **Current phase:** Read-only Employee & Evidence Review
-**Branch:** `feature/change-role-submission-visibility` (paused; no implementation planned)
+**Branch:** `feature/master-roster-read-only` (requirements only; no implementation planned)
 **Release branch:** `production`
 
 ## Objective

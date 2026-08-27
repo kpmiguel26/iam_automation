@@ -19,7 +19,7 @@ This folder is the working control center for implementation planning and projec
 
 ## Current Branch
 
-`feature/change-role-submission-visibility` (paused; no implementation planned)
+`feature/master-roster-read-only` (requirements only; no implementation planned)
 
 Release baseline: `production`
 
