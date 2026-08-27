@@ -255,3 +255,10 @@
 - Defined the current release as a read-only review phase: employee, source, history, discrepancy, duplicate, request and audit evidence only.
 - Deferred change-role submission visibility and all canonical employee mutation to the future controlled-change phase.
 - Updated the architecture, README, operating model, webapp architecture, implementation plan, backlog and decisions to reflect the new scope.
+
+### Master Roster Requirements Documented - 2026-08-27
+
+- Created `2026-08-27_MASTER_ROSTER_REQUIREMENTS.md` with 15 functional and 10 non-functional requirements derived from the stakeholder-provided Touchpoint summary.
+- Defined Master Roster as an independent source for read-only intake, matching preview, lineage, duplicate/conflict evidence, timeline and exports.
+- Deferred canonical employee mutation, duplicate merge, approval and publication to the future controlled-change phase.
+- Added requirement, dependency and future-phase items to `BACKLOG.md`; no code changes were made.

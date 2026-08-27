@@ -84,6 +84,11 @@ The current objective is employee-level read-only review and evidence. Selective
 reconciliation, canonical mutation, approval and publication are deferred until
 the controlled-change phase is approved.
 
+The next requirements increment is Master Roster read-only intake, comparison,
+lineage, duplicate/conflict evidence and export. Its requirements are tracked
+in [`2026-08-27_MASTER_ROSTER_REQUIREMENTS.md`](./2026-08-27_MASTER_ROSTER_REQUIREMENTS.md);
+implementation has not started.
+
 ### Future Phase: Controlled changes and publication
 
 - Add Excel and Fieldglass ingestion as controlled writer operations.

@@ -141,6 +141,33 @@ All items start in `Backlog` and require a dedicated `feature/<name>` branch bef
 - [ ] Add an explicit feature gate or read-only deployment profile before production use.
 - [ ] Confirm read-only UAT scenarios and evidence-export permissions.
 
+## Master Roster Requirements — 2026-08-27
+
+Working document: [`2026-08-27_MASTER_ROSTER_REQUIREMENTS.md`](./2026-08-27_MASTER_ROSTER_REQUIREMENTS.md)
+
+### Requirements and read-only design
+
+- [ ] Confirm official Master Roster folder, file name, owner and delivery cadence.
+- [ ] Confirm Master Roster workbook sheets, headers, required fields and row boundaries.
+- [ ] Define `MASTER_ROSTER` source registration, checksum, batch and lineage contract.
+- [ ] Define read-only matching preview against the canonical employee.
+- [ ] Define cross-source consolidation view without canonical mutation.
+- [ ] Define duplicate and repeated-identifier report columns and exports.
+- [ ] Define consecutive Master Roster comparison for additions, terminations and changes.
+- [ ] Define conflict view and business review filters.
+- [ ] Define source adapter contract for future sources.
+- [ ] Confirm duplicate rules, identifier precedence, termination and rehire semantics.
+- [ ] Confirm retention, legal-hold and export-evidence requirements.
+- [ ] Add explicit read-only feature gate before implementation/UAT.
+
+### Future controlled-change items
+
+- [ ] Promote approved Master Roster observations into canonical employees.
+- [ ] Apply Master Roster enrichment and lifecycle changes.
+- [ ] Confirm/merge duplicate canonical workers.
+- [ ] Publish approved runtime SQLite or Access changes.
+- [ ] Generate or execute downstream Data Loader submissions.
+
 ### 2026-08-26 Daily closeout — `bugfix/preflight`
 
 - [x] Unify the desktop preflight and Waitress output into one startup log.
