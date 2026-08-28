@@ -1,9 +1,9 @@
 <!--
 File: iam_automation/templates/employees/list.html
 Purpose: Provides the list component of IAM Automation.
-Responsibilities: Provides the file-level implementation used by the application.
+Responsibilities: Provides an on-demand employee directory with server-side search and filtering.
 Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
-Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Inputs/outputs: Inputs: search and filter criteria. Outputs: paged canonical employee results.
 Author / implementation: Miguel Fernandez.
 Developed for: Kaiser Permanente NSES GWFM.
 Project implementation and integration: Miguel Fernandez.
@@ -16,29 +16,57 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 {% block content %}
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell employee-directory-page">
   <div class="page-heading">
-    <div><p class="eyebrow">Operations</p><h1>Employee directory</h1><p class="text-secondary mb-0">Search, filter, sort and export the canonical IAM employee population.</p></div>
-    <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end"><a class="btn btn-outline-danger d-inline-flex align-items-center gap-2" href="{{ url_for('employees.canonical_duplicates') }}">Canonical duplicates</a><a class="btn {% if pending_source_updates %}btn-warning source-update-alert{% else %}btn-outline-primary{% endif %} d-inline-flex align-items-center gap-2" href="{{ url_for('employees.source_updates_overview') }}" title="{{ pending_source_updates }} source record(s) waiting for individual review"><span class="shield-mark" aria-hidden="true">&#10003;</span>Updates{% if pending_source_updates %}<span class="badge rounded-pill text-bg-danger">{{ pending_source_updates }}</span>{% endif %}</a>{% if rehire_alert_count %}<a class="btn btn-danger rehire-alert-button d-inline-flex align-items-center gap-2" href="{{ url_for('employees.source_updates_overview', source='ROSTER_LOCK') }}" title="{{ rehire_alert_count }} critical rehire alert(s)"><span aria-hidden="true">!</span>Alerts<span class="badge rounded-pill bg-white text-danger">{{ rehire_alert_count }}</span></a>{% endif %}<span class="status-pill status-active"><span></span>{% if has_query %}{{ total_workers }} shown{% else %}On-demand · no data loaded{% endif %}</span></div>
+    <div>
+      <p class="eyebrow">Operations</p>
+      <h1>Employee directory</h1>
+      <p class="text-secondary mb-0">Search the canonical IAM employee population when you need it.</p>
+    </div>
+    <div class="employee-header-actions">
+      <a class="btn btn-outline-danger d-inline-flex align-items-center gap-2" href="{{ url_for('employees.canonical_duplicates') }}">Canonical duplicates</a>
+      <a class="btn {% if pending_source_updates %}btn-warning source-update-alert{% else %}btn-outline-primary{% endif %} d-inline-flex align-items-center gap-2" href="{{ url_for('employees.source_updates_overview') }}" title="{{ pending_source_updates }} source record(s) waiting for individual review"><span class="shield-mark" aria-hidden="true">&#10003;</span>Updates{% if pending_source_updates %}<span class="badge rounded-pill text-bg-danger">{{ pending_source_updates }}</span>{% endif %}</a>
+      {% if rehire_alert_count %}<a class="btn btn-danger rehire-alert-button d-inline-flex align-items-center gap-2" href="{{ url_for('employees.source_updates_overview', source='ROSTER_LOCK') }}" title="{{ rehire_alert_count }} critical rehire alert(s)"><span aria-hidden="true">!</span>Alerts<span class="badge rounded-pill bg-white text-danger">{{ rehire_alert_count }}</span></a>{% endif %}
+      <span class="status-pill status-active"><span></span>{% if has_query %}{{ total_workers }} shown{% else %}On-demand · no data loaded{% endif %}</span>
+    </div>
   </div>
 
-  <section class="surface employee-search-panel mt-4" aria-label="Employee directory filters">
-    <form method="get" class="employee-search-row" id="employeeDirectoryFilters">
-      <div class="employee-search-field">
-        <label class="form-label small text-secondary" for="employeeSearch">Search the directory</label>
-        <div class="input-group"><span class="input-group-text directory-search-icon" aria-hidden="true">⌕</span><input id="employeeSearch" class="form-control" name="q" value="{{ filters.q }}" placeholder="Name, email, vendor ID or vendor" autocomplete="off"></div>
+  <section class="surface employee-search-panel mt-4" aria-label="Employee directory search">
+    <div class="employee-search-panel-header">
+      <div>
+        <p class="eyebrow mb-1">Find a worker</p>
+        <h2 class="h5 mb-1">Search and filter</h2>
+        <p class="small text-secondary mb-0">Choose a search or filter to load up to 25 records.</p>
       </div>
-      <div><label class="form-label small text-secondary" for="employeeStatus">Profile status</label><select id="employeeStatus" class="form-select" name="status"><option value="ALL">All statuses</option><option value="NON_ACTIVE"{% if filters.status == 'NON_ACTIVE' %} selected{% endif %}>Pending / inactive</option>{% for item in statuses %}<option value="{{ item }}"{% if filters.status == item %} selected{% endif %}>{{ item.replace('_', ' ').title() }}</option>{% endfor %}</select></div>
-      <div><label class="form-label small text-secondary" for="employeeVendor">Vendor group</label><select id="employeeVendor" class="form-select" name="vendor"><option value="ALL">All vendors</option><option value="NONE"{% if filters.vendor == 'NONE' %} selected{% endif %}>Without vendor</option>{% for item in vendors %}<option value="{{ item }}"{% if filters.vendor == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
-      <div><label class="form-label small text-secondary" for="employeeSource">Source</label><select id="employeeSource" class="form-select" name="source"><option value="ALL">All sources</option>{% for item in sources %}<option value="{{ item }}"{% if filters.source == item %} selected{% endif %}>{{ item.replace('_', ' ').title() }}</option>{% endfor %}</select></div>
-      <div><label class="form-label small text-secondary" for="employeeUpdated">Last updated</label><select id="employeeUpdated" class="form-select" name="updated"><option value="ALL">Any time</option><option value="LAST_24_HOURS"{% if filters.updated == 'LAST_24_HOURS' %} selected{% endif %}>Last 24 hours</option><option value="LAST_7_DAYS"{% if filters.updated == 'LAST_7_DAYS' %} selected{% endif %}>Last 7 days</option><option value="LAST_30_DAYS"{% if filters.updated == 'LAST_30_DAYS' %} selected{% endif %}>Last 30 days</option><option value="LAST_90_DAYS"{% if filters.updated == 'LAST_90_DAYS' %} selected{% endif %}>Last 90 days</option></select></div>
-      <div><label class="form-label small text-secondary" for="employeeSort">Sort by</label><select id="employeeSort" class="form-select" name="sort"><option value="UPDATED_DESC"{% if filters.sort == 'UPDATED_DESC' %} selected{% endif %}>Recently updated</option><option value="UPDATED_ASC"{% if filters.sort == 'UPDATED_ASC' %} selected{% endif %}>Oldest update</option><option value="NAME_ASC"{% if filters.sort == 'NAME_ASC' %} selected{% endif %}>Name A–Z</option><option value="NAME_DESC"{% if filters.sort == 'NAME_DESC' %} selected{% endif %}>Name Z–A</option></select></div>
-      <div class="d-flex gap-2 flex-wrap"><button class="btn btn-primary" type="submit">Search employees</button><a class="btn btn-light employee-reset" href="{{ url_for('employees.employee_directory') }}">Clear</a>{% if not has_query %}<a class="btn btn-outline-secondary" href="{{ url_for('employees.employee_directory', all='1') }}" title="Loads the complete directory and may take longer">Load all employees</a>{% elif has_query and not filters.all %}<a class="btn btn-outline-secondary" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, source=filters.source, engagement=filters.engagement, review=filters.review, updated=filters.updated, sort=filters.sort, all='1') }}" title="Loads all matching records and may take longer">Load all for DataTable</a>{% elif has_query and filters.all %}<a class="btn btn-outline-secondary" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, source=filters.source, engagement=filters.engagement, review=filters.review, updated=filters.updated, sort=filters.sort, all='0') }}">Use server pagination</a>{% endif %}</div>
-      <details class="employee-advanced-filter"{% if filters.engagement %} open{% endif %}>
-        <summary>Advanced filters</summary>
-        <div class="employee-advanced-grid mt-3">
-          <div><label class="form-label small text-secondary" for="employeeEngagement">Vendor engagement</label><input id="employeeEngagement" class="form-control" name="engagement" value="{{ filters.engagement }}" placeholder="Vendor, program, project, LOB or role"></div>
-          <div class="small text-secondary employee-advanced-help">Searches engagement data stored in SQLite, including statement of work and work location.</div>
+      {% if has_query %}<span class="employee-query-state">Results loaded on demand</span>{% else %}<span class="employee-query-state employee-query-state-idle">Ready when you are</span>{% endif %}
+    </div>
+
+    <form method="get" class="employee-search-row" id="employeeDirectoryFilters">
+      <div class="employee-search-primary">
+        <div class="employee-search-field">
+          <label class="form-label small text-secondary" for="employeeSearch">Name, email or identifier</label>
+          <div class="input-group"><span class="input-group-text directory-search-icon" aria-hidden="true">⌕</span><input id="employeeSearch" class="form-control" name="q" value="{{ filters.q }}" placeholder="e.g. Jasmine Brito or 3411588" autocomplete="off"></div>
         </div>
-      </details>
+        <button class="btn btn-primary employee-search-submit" type="submit">Search employees</button>
+      </div>
+
+      <div class="employee-quick-filters" aria-label="Quick filters">
+        <div><label class="form-label small text-secondary" for="employeeStatus">Profile status</label><select id="employeeStatus" class="form-select" name="status"><option value="ALL">All statuses</option><option value="NON_ACTIVE"{% if filters.status == 'NON_ACTIVE' %} selected{% endif %}>Pending / inactive</option>{% for item in statuses %}<option value="{{ item }}"{% if filters.status == item %} selected{% endif %}>{{ item.replace('_', ' ').title() }}</option>{% endfor %}</select></div>
+        <div><label class="form-label small text-secondary" for="employeeVendor">Vendor group</label><select id="employeeVendor" class="form-select" name="vendor"><option value="ALL">All vendors</option><option value="NONE"{% if filters.vendor == 'NONE' %} selected{% endif %}>Without vendor</option>{% for item in vendors %}<option value="{{ item }}"{% if filters.vendor == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+        <div><label class="form-label small text-secondary" for="employeeSource">Source system</label><select id="employeeSource" class="form-select" name="source"><option value="ALL">All sources</option>{% for item in sources %}<option value="{{ item }}"{% if filters.source == item %} selected{% endif %}>{{ item.replace('_', ' ').title() }}</option>{% endfor %}</select></div>
+      </div>
+
+      <div class="employee-search-actions">
+        <a class="btn btn-light employee-reset" href="{{ url_for('employees.employee_directory') }}">Clear</a>
+        {% if not has_query %}<a class="btn btn-outline-secondary" href="{{ url_for('employees.employee_directory', all='1') }}" title="Loads the complete directory and may take longer">Load all employees</a>{% elif not filters.all %}<a class="btn btn-outline-secondary" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, source=filters.source, engagement=filters.engagement, review=filters.review, updated=filters.updated, sort=filters.sort, all='1') }}" title="Loads all matching records and may take longer">Load all for DataTable</a>{% else %}<a class="btn btn-outline-secondary" href="{{ url_for('employees.employee_directory', q=filters.q, status=filters.status, vendor=filters.vendor, source=filters.source, engagement=filters.engagement, review=filters.review, updated=filters.updated, sort=filters.sort, all='0') }}">Use server pagination</a>{% endif %}
+        <details class="employee-advanced-filter"{% if filters.engagement or filters.review or filters.updated != 'ALL' or filters.sort != 'UPDATED_DESC' %} open{% endif %}>
+          <summary>More filters</summary>
+          <div class="employee-advanced-grid mt-3">
+            <div><label class="form-label small text-secondary" for="employeeEngagement">Engagement</label><input id="employeeEngagement" class="form-control" name="engagement" value="{{ filters.engagement }}" placeholder="Vendor, program, project or role"></div>
+            <div><label class="form-label small text-secondary" for="employeeUpdated">Last updated</label><select id="employeeUpdated" class="form-select" name="updated"><option value="ALL">Any time</option><option value="LAST_24_HOURS"{% if filters.updated == 'LAST_24_HOURS' %} selected{% endif %}>Last 24 hours</option><option value="LAST_7_DAYS"{% if filters.updated == 'LAST_7_DAYS' %} selected{% endif %}>Last 7 days</option><option value="LAST_30_DAYS"{% if filters.updated == 'LAST_30_DAYS' %} selected{% endif %}>Last 30 days</option><option value="LAST_90_DAYS"{% if filters.updated == 'LAST_90_DAYS' %} selected{% endif %}>Last 90 days</option></select></div>
+            <div><label class="form-label small text-secondary" for="employeeReview">Review state</label><select id="employeeReview" class="form-select" name="review"><option value="ALL">All records</option><option value="OPEN"{% if filters.review == 'OPEN' %} selected{% endif %}>Open discrepancies</option></select></div>
+            <div><label class="form-label small text-secondary" for="employeeSort">Sort results</label><select id="employeeSort" class="form-select" name="sort"><option value="UPDATED_DESC"{% if filters.sort == 'UPDATED_DESC' %} selected{% endif %}>Recently updated</option><option value="UPDATED_ASC"{% if filters.sort == 'UPDATED_ASC' %} selected{% endif %}>Oldest update</option><option value="NAME_ASC"{% if filters.sort == 'NAME_ASC' %} selected{% endif %}>Name A–Z</option><option value="NAME_DESC"{% if filters.sort == 'NAME_DESC' %} selected{% endif %}>Name Z–A</option></select></div>
+          </div>
+        </details>
+      </div>
     </form>
     <div class="employee-filter-summary"><span>{% if filters.review == 'OPEN' %}Showing employees with open discrepancies{% elif filters.status == 'NON_ACTIVE' %}Showing pending / inactive employees{% elif filters.vendor == 'NONE' %}Showing employees without a vendor{% elif filters.engagement %}Showing engagement matches for “{{ filters.engagement }}”{% elif filters.source != 'ALL' %}Showing {{ filters.source.replace('_', ' ').title() }} employees{% elif filters.vendor != 'ALL' %}Showing {{ filters.vendor }} employees{% elif filters.q %}Showing matches for “{{ filters.q }}”{% elif not has_query %}Choose a filter or enter a search to load employees{% elif filters.all %}Showing all canonical employees{% else %}Showing filtered employees{% endif %}</span>{% if has_query and filters.all %}<span class="small text-secondary">{{ total_workers }} result(s) loaded · DataTables controls pagination, search, fields and export</span>{% elif has_query %}<span class="small text-secondary">Page {{ page }} of {{ page_count }} · 25 records per page</span>{% else %}<span class="small text-secondary">Filter options are ready · employee records remain unloaded</span>{% endif %}</div>
   </section>

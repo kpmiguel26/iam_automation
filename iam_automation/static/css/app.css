@@ -257,15 +257,26 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .action-card h3 { color: var(--kp-navy); }
 .action-card p { min-height: 2.5rem; }
 .profile-grid { display: grid; gap: 1.25rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.employee-search-panel { padding: 1rem 1.15rem .8rem; }
-.employee-search-row { align-items: end; display: grid; gap: .8rem; grid-template-columns: minmax(280px, 1fr) repeat(5, minmax(145px, 180px)) auto; }
+.employee-search-panel { padding: 1.35rem 1.4rem 1rem; }
+.employee-header-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
+.employee-search-panel-header { align-items: center; display: flex; gap: 1rem; justify-content: space-between; margin-bottom: 1.15rem; }
+.employee-search-panel-header h2 { color: var(--kp-navy); }
+.employee-query-state { background: #e8f6ee; border-radius: 999px; color: #17613d; font-size: .72rem; font-weight: 700; padding: .4rem .7rem; white-space: nowrap; }
+.employee-query-state-idle { background: #f1f4f7; color: #667181; }
+.employee-search-row { display: block; }
+.employee-search-primary { align-items: end; display: grid; gap: .8rem; grid-template-columns: minmax(280px, 1fr) auto; }
+.employee-search-submit { min-height: 38px; white-space: nowrap; }
+.employee-quick-filters { display: grid; gap: .8rem; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 1rem; }
+.employee-search-actions { align-items: center; border-top: 1px solid #edf0f4; display: flex; flex-wrap: wrap; gap: .55rem; margin-top: 1rem; padding-top: 1rem; }
+.employee-search-actions .employee-advanced-filter { border-top: 0; margin: 0 0 0 auto; padding: 0; }
+.employee-search-actions .employee-advanced-filter summary { color: #536174; font-size: .78rem; }
 .employee-search-field { min-width: 0; }
 .directory-search-icon { background: #fff; color: var(--kp-teal); font-size: 1.1rem; }
 .employee-reset { white-space: nowrap; }
 .employee-filter-summary { align-items: center; border-top: 1px solid #edf0f4; color: var(--kp-teal); display: flex; font-size: .8rem; font-weight: 600; justify-content: space-between; margin-top: .85rem; padding-top: .75rem; }
 .employee-advanced-filter { border-top: 1px solid #edf0f4; margin-top: .9rem; padding-top: .75rem; }
 .employee-advanced-filter summary { color: var(--kp-navy); cursor: pointer; font-size: .85rem; font-weight: 700; list-style-position: inside; }
-.employee-advanced-grid { align-items: end; display: grid; gap: .8rem; grid-template-columns: minmax(280px, 420px) 1fr; }
+.employee-advanced-grid { align-items: end; display: grid; gap: .8rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .employee-advanced-help { padding-bottom: .55rem; }
 .employee-table-surface { overflow: hidden; }
 .employee-directory-table { min-width: 900px; }
@@ -408,9 +419,9 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .modal-header { border-bottom-color: #edf0f4; padding: 1.25rem 1.5rem; }
 .modal-body { padding: 1.5rem; }
 .modal-footer { border-top-color: #edf0f4; padding: 1rem 1.5rem; }
-@media (max-width: 900px) { .office-nav-inner { gap: .2rem; overflow-x: auto; flex-wrap: nowrap; } .nav-menu-group { flex: 0 0 auto; border-right: 0; } .nav-group-label { display: inline; } }
+@media (max-width: 900px) { .office-nav-inner { gap: .2rem; overflow-x: auto; flex-wrap: nowrap; } .nav-menu-group { flex: 0 0 auto; border-right: 0; } .nav-group-label { display: inline; } .employee-search-primary { grid-template-columns: 1fr; } .employee-quick-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .employee-advanced-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .employee-search-actions .employee-advanced-filter { margin-left: 0; } }
 @media (max-width: 900px) { .employee-search-row { grid-template-columns: 1fr 1fr; } .employee-search-field { grid-column: 1 / -1; } .employee-reset { width: 100%; } }
-@media (max-width: 640px) { .table-toolbar { align-items: stretch; flex-direction: column; } .search-box { max-width: none; } .kp-product-name { font-size: .9rem; padding-left: .75rem; } .kp-header-label { display: none; } .kp-logo { width: 155px; } .notification-menu { min-width: min(340px, calc(100vw - 2rem)); } .page-heading { align-items: flex-start; flex-direction: column; } .profile-grid { grid-template-columns: 1fr; } .profile-wide { grid-column: auto; } .alert-action { align-items: flex-start; flex-direction: column; } .notification-filters { grid-template-columns: 1fr; } .notification-filters .btn { width: 100%; } .employee-search-row { grid-template-columns: 1fr; } .employee-advanced-grid { grid-template-columns: 1fr; } .employee-filter-summary { align-items: flex-start; flex-direction: column; gap: .35rem; } }
+@media (max-width: 640px) { .table-toolbar { align-items: stretch; flex-direction: column; } .search-box { max-width: none; } .kp-product-name { font-size: .9rem; padding-left: .75rem; } .kp-header-label { display: none; } .kp-logo { width: 155px; } .notification-menu { min-width: min(340px, calc(100vw - 2rem)); } .page-heading { align-items: flex-start; flex-direction: column; } .employee-header-actions { justify-content: flex-start; width: 100%; } .profile-grid { grid-template-columns: 1fr; } .profile-wide { grid-column: auto; } .alert-action { align-items: flex-start; flex-direction: column; } .notification-filters { grid-template-columns: 1fr; } .notification-filters .btn { width: 100%; } .employee-search-row { grid-template-columns: 1fr; } .employee-quick-filters, .employee-advanced-grid { grid-template-columns: 1fr; } .employee-search-actions { align-items: stretch; flex-direction: column; } .employee-search-actions .employee-advanced-filter { width: 100%; } .employee-search-actions .btn { width: 100%; } .employee-filter-summary { align-items: flex-start; flex-direction: column; gap: .35rem; } }
 @media (max-width: 760px) { .employee-hero { align-items: flex-start; flex-direction: column; } .employee-hero-actions { justify-content: flex-start; width: 100%; } .employee-action-bar { align-items: stretch; flex-direction: column; top: 0; } .employee-action-bar .btn { width: 100%; } }
 .pending-panel { border-left: 4px solid #c57b13; }
 .pending-row { align-items: center; border-top: 1px solid #edf0f4; display: flex; justify-content: space-between; gap: 1rem; padding-top: .85rem; }
