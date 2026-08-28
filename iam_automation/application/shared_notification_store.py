@@ -1,7 +1,7 @@
 """
 File: iam_automation/application/shared_notification_store.py
-Purpose: Stores notification events in the synchronized SharePoint workspace.
-Responsibilities: Publishes one JSON per notification and tracks per-user reads.
+Purpose: Stores the database publication signal in the synchronized SharePoint workspace.
+Responsibilities: Publishes the single global database snapshot event and tracks per-user reads.
 Dependencies: Python standard library.
 """
 
@@ -21,7 +21,7 @@ _STORE_LOCK = threading.RLock()
 
 
 class SharedNotificationStore:
-    """Small file-backed event store for notifications shared through OneDrive."""
+    """Small file-backed store reserved for the global publication signal."""
 
     def __init__(self, sharepoint_root: Path):
         self.notifications_root = (sharepoint_root / "notifications").resolve()

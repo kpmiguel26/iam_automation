@@ -19,6 +19,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable
 
 from sqlalchemy import func, insert, select
 
@@ -27,6 +28,7 @@ from .shared_notification_store import SharedNotificationStore
 
 
 REHIRE_NOTIFICATION_LOCK = threading.RLock()
+GLOBAL_NOTIFICATION_TYPES = frozenset({"DATABASE_SNAPSHOT_PUBLISHED"})
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,7 @@ class NotificationService:
 
     def unread_count(self, username: str) -> int:
         self.expire(username)
-        shared_count = len(self.shared_store.list_for_user(username, unread_only=True)) if self.shared_store else 0
+        shared_count = len(self._shared_notifications_for_user(username, unread_only=True))
         with orm_session(self.database_path) as session:
             local_count = int(session.scalar(select(func.count(NotificationModel.notification_id)).where(
                 NotificationModel.recipient_username == username,
@@ -68,7 +70,7 @@ class NotificationService:
             statement = statement.where(NotificationModel.status == "UNREAD")
         with orm_session(self.database_path) as session:
             local_items = [self._to_notification(row) for row in session.scalars(statement).all()]
-        shared_records = self.shared_store.list_for_user(username) if self.shared_store else []
+        shared_records = self._shared_notifications_for_user(username)
         shared_items = [
             self._from_shared_notification(item)
             for item in shared_records
@@ -93,41 +95,81 @@ class NotificationService:
                 row.status = "READ"
                 row.read_at_utc = now
             local_count = len(rows)
-        return local_count + (self.shared_store.mark_all_read(username) if self.shared_store else 0)
+        shared_count = 0
+        for item in self._shared_notifications_for_user(username, unread_only=True):
+            if self.shared_store and self.shared_store.mark_read(str(item["notification_id"]), username):
+                shared_count += 1
+        return local_count + shared_count
 
     def create(self, recipient_username: str, notification_type: str, title: str, message: str, *, severity: str = "INFO", target_route: str = "", entity_type: str = "", entity_id: str = "", expires_at_utc: str | None = None, notification_id: str | None = None) -> str:
         notification_id = str(notification_id or uuid.uuid4())
         created_at = datetime.now(timezone.utc).isoformat()
-        if self.shared_store:
-            self.shared_store.publish(
-                notification_id=notification_id,
-                notification_type=notification_type,
-                title=title,
-                message=message,
-                recipients=[recipient_username],
-                severity=severity,
-                target_route=target_route,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                created_at_utc=created_at,
-                expires_at_utc=expires_at_utc,
-            )
-            return notification_id
         with orm_session(self.database_path) as session:
-            session.add(NotificationModel(
-                notification_id=notification_id,
-                recipient_username=recipient_username,
-                notification_type=notification_type,
-                severity=severity,
-                title=title,
-                message=message,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                target_route=target_route,
-                status="UNREAD",
-                created_at_utc=created_at,
-                expires_at_utc=expires_at_utc,
-            ))
+            existing = session.get(NotificationModel, notification_id)
+            if existing is None:
+                session.add(NotificationModel(
+                    notification_id=notification_id,
+                    recipient_username=recipient_username,
+                    notification_type=notification_type,
+                    severity=severity,
+                    title=title,
+                    message=message,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    target_route=target_route,
+                    status="UNREAD",
+                    created_at_utc=created_at,
+                    expires_at_utc=expires_at_utc,
+                ))
+            else:
+                # Retry-safe notifications refresh their content without
+                # resetting the user's READ/RESOLVED decision.
+                existing.recipient_username = recipient_username
+                existing.notification_type = notification_type
+                existing.severity = severity
+                existing.title = title
+                existing.message = message
+                existing.entity_type = entity_type
+                existing.entity_id = entity_id
+                existing.target_route = target_route
+                existing.expires_at_utc = expires_at_utc
+        return notification_id
+
+    def publish_database_snapshot(
+        self,
+        snapshot_checksum: str,
+        *,
+        actor: str,
+        recipients: Iterable[str],
+        reconciled_count: int = 0,
+    ) -> str:
+        """Publish the only notification that is intentionally global.
+
+        All operational notifications are local SQLite records. A published
+        runtime snapshot is the exception because other workstations need a
+        shared signal that they can refresh their local copy.
+        """
+        if not self.shared_store:
+            raise RuntimeError("A SharePoint workspace is required for the database publication notification.")
+        snapshot_checksum = str(snapshot_checksum).strip()
+        if not snapshot_checksum:
+            raise ValueError("A database snapshot checksum is required for the publication notification.")
+        notification_id = hashlib.sha256(f"database-snapshot:{snapshot_checksum}".encode("utf-8")).hexdigest()
+        self.shared_store.publish(
+            notification_id=notification_id,
+            notification_type="DATABASE_SNAPSHOT_PUBLISHED",
+            severity="CRITICAL",
+            title="Critical: new database snapshot published",
+            message=(
+                f"A new runtime SQLite snapshot was published by {actor}. "
+                f"Other workstations can refresh to receive the approved changes. "
+                f"{reconciled_count} request(s) were applied locally before publication."
+            ),
+            recipients=set(recipients),
+            entity_type="runtime_snapshot",
+            entity_id=snapshot_checksum,
+            target_route="/admin/governance",
+        )
         return notification_id
 
     def notify_request_reviewers(
@@ -162,21 +204,6 @@ class NotificationService:
                 )
             ).all()
             recipients = {row.username for row in rows}
-            if self.shared_store:
-                notification_id = hashlib.sha256(f"request-review-event:{request_id}".encode("utf-8")).hexdigest()
-                self.shared_store.publish(
-                    notification_id=notification_id,
-                    notification_type="REQUEST_REVIEW_REQUIRED",
-                    severity="WARNING",
-                    title="Request ready for review",
-                    message=message,
-                    recipients=recipients,
-                    entity_type="change_request",
-                    entity_id=request_id,
-                    target_route="/admin/approvals",
-                    created_at_utc=now,
-                )
-                return len(recipients)
             for username in recipients:
                 notification_id = hashlib.sha256(
                     f"request-review:{username.lower()}:{request_id}".encode("utf-8")
@@ -197,8 +224,8 @@ class NotificationService:
                         created_at_utc=now,
                     ))
                 else:
-                    # Re-publishing the same shared request must not reset a
-                    # user's READ/RESOLVED decision back to UNREAD.
+                    # Re-processing the same request must not reset a user's
+                    # READ/RESOLVED decision back to UNREAD.
                     existing.message = message
         return len(recipients)
 
@@ -215,24 +242,6 @@ class NotificationService:
                 )
             ).all()
             recipients = {row.username for row in rows}
-            if self.shared_store:
-                notification_id = hashlib.sha256(f"source-update-event:{request_id}".encode("utf-8")).hexdigest()
-                self.shared_store.publish(
-                    notification_id=notification_id,
-                    notification_type="SOURCE_UPDATE_AVAILABLE",
-                    severity="WARNING",
-                    title="Source update ready for individual review",
-                    message=(
-                        f"{record_count} source record(s) from {operation_type.replace('_', ' ').title()} "
-                        "are waiting in Employee Updates. No employee was created automatically."
-                    ),
-                    recipients=recipients,
-                    entity_type="change_request",
-                    entity_id=request_id,
-                    target_route="/employees/source-updates",
-                    created_at_utc=now,
-                )
-                return len(recipients)
             for username in recipients:
                 notification_id = hashlib.sha256(
                     f"source-update:{username.lower()}:{request_id}".encode("utf-8")
@@ -261,49 +270,8 @@ class NotificationService:
             return len(recipients)
 
     def notify_rehire_alerts(self, alerts: list[dict[str, object]]) -> int:
-        if self.shared_store:
-            return self._notify_shared_rehire_alerts(alerts)
         with REHIRE_NOTIFICATION_LOCK:
             return self._notify_rehire_alerts(alerts)
-
-    def _notify_shared_rehire_alerts(self, alerts: list[dict[str, object]]) -> int:
-        role_names = ("REVIEWER", "APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR", "ADMINISTRATOR")
-        unique_alerts = {str(alert["alert_id"]): alert for alert in alerts}
-        active_event_ids = {
-            hashlib.sha256(f"rehire-alert-event:{alert_id}".encode("utf-8")).hexdigest()
-            for alert_id in unique_alerts
-        }
-        self.shared_store.deactivate_type_except("REHIRE_30_DAY_ALERT", active_event_ids)
-        with orm_session(self.database_path) as session:
-            recipients = {row.username for row in session.scalars(
-                select(AppUserModel).join(UserRoleModel).where(
-                    AppUserModel.active.is_(True),
-                    AppUserModel.status == "ACTIVE",
-                    UserRoleModel.role_name.in_(role_names),
-                )
-            ).all()}
-        created = 0
-        for alert_id, alert in unique_alerts.items():
-            remaining = int(alert.get("business_days_remaining", 0))
-            notification_id = hashlib.sha256(f"rehire-alert-event:{alert_id}".encode("utf-8")).hexdigest()
-            created += int(self.shared_store.publish(
-                notification_id=notification_id,
-                notification_type="REHIRE_30_DAY_ALERT",
-                severity="CRITICAL",
-                title="Critical 30-day rehire alert",
-                message=(
-                    f"{alert.get('worker_name', 'Employee')} appears in Roster Lock while AccessNow shows "
-                    f"{str(alert.get('status', 'TERMINATED')).lower()}. The 30-business-day rehire hold "
-                    f"has not elapsed ({remaining} business day(s) remaining)."
-                ),
-                recipients=recipients,
-                entity_type="ingestion_record",
-                entity_id=alert_id,
-                target_route="/employees/source-updates",
-                created_at_utc=datetime.now(timezone.utc).isoformat(),
-                active=True,
-            ))
-        return created
 
     def _notify_rehire_alerts(self, alerts: list[dict[str, object]]) -> int:
         """Reconcile critical rehire notifications with the current alert set."""
@@ -371,7 +339,7 @@ class NotificationService:
         return created
 
     def mark_read(self, username: str, notification_id: str) -> None:
-        if self.shared_store and self.shared_store.mark_read(notification_id, username):
+        if self._shared_notification_belongs_to_user(notification_id, username) and self.shared_store and self.shared_store.mark_read(notification_id, username):
             return
         with orm_session(self.database_path) as session:
             row = session.scalar(select(NotificationModel).where(
@@ -383,7 +351,7 @@ class NotificationService:
                 row.read_at_utc = datetime.now(timezone.utc).isoformat()
 
     def resolve(self, username: str, notification_id: str) -> None:
-        if self.shared_store and self.shared_store.resolve(notification_id, username):
+        if self._shared_notification_belongs_to_user(notification_id, username) and self.shared_store and self.shared_store.resolve(notification_id, username):
             return
         with orm_session(self.database_path) as session:
             row = session.scalar(select(NotificationModel).where(NotificationModel.notification_id == notification_id, NotificationModel.recipient_username == username))
@@ -401,6 +369,20 @@ class NotificationService:
             for row in rows:
                 row.status = "EXPIRED"
             return len(rows)
+
+    def _shared_notifications_for_user(self, username: str, *, unread_only: bool = False) -> list[dict[str, object]]:
+        if not self.shared_store:
+            return []
+        return [
+            item for item in self.shared_store.list_for_user(username, unread_only=unread_only)
+            if str(item.get("notification_type", "")) in GLOBAL_NOTIFICATION_TYPES
+        ]
+
+    def _shared_notification_belongs_to_user(self, notification_id: str, username: str) -> bool:
+        return any(
+            str(item.get("notification_id", "")) == str(notification_id)
+            for item in self._shared_notifications_for_user(username)
+        )
 
     @staticmethod
     def _to_notification(row: NotificationModel) -> Notification:

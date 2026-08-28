@@ -75,7 +75,9 @@ class FileWatchService:
     def __init__(self, database_path: Path, sharepoint_root: Path):
         self.database_path = database_path
         self.sharepoint_root = sharepoint_root
-        self.notifications = NotificationService(database_path, sharepoint_root=sharepoint_root)
+        # File and ingestion notifications belong to this workstation. The
+        # only global notification is emitted explicitly by database publish.
+        self.notifications = NotificationService(database_path)
 
     def start(self, interval_seconds: float = 1.0) -> "FileWatcher":
         watcher = FileWatcher(self, interval_seconds)

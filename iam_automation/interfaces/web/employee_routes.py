@@ -95,7 +95,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             stable_notification_id = hashlib.sha256(
                 f"source-file-import:{actor.casefold()}:{source_system}:{source_file}:{task.get('source_checksum', '')}".encode("utf-8")
             ).hexdigest()
-            return NotificationService(database_path, sharepoint_root=sharepoint_root).create(
+            return NotificationService(database_path).create(
                 actor,
                 notification_type,
                 title,
@@ -224,7 +224,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         if has_query and page != requested_page:
             workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size)
         rehire_alerts = service.rehire_alerts()
-        NotificationService(database_path, sharepoint_root=sharepoint_root).notify_rehire_alerts(rehire_alerts)
+        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
         return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "updated": updated, "sort": sort, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=service.pending_source_update_count(), rehire_alert_count=len(rehire_alerts))
 
     @blueprint.get("/source-updates")
@@ -253,7 +253,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             records, total_records = service.list_source_records(source_system, source_file, page=page, per_page=50, result_order=result_order, load_all=load_all)
         duplicate_summary = service.source_duplicate_summary(source_file=source_file) if mode == "duplicates" else None
         rehire_alerts = service.rehire_alerts(source_file if source_system == "ROSTER_LOCK" else "")
-        NotificationService(database_path, sharepoint_root=sharepoint_root).notify_rehire_alerts(rehire_alerts)
+        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
         return render_template(
             "employees/source_updates_overview.html",
             sources=sources,
@@ -406,7 +406,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         current_user = CurrentUser(actor, "local-web", tuple(session.get("iam_roles", ())))
         item = requests.create(current_user, operation_type, entity_id, payload, reason)
         request_id = item.request_id
-        NotificationService(database_path, sharepoint_root=sharepoint_root).notify_request_reviewers(request_id, operation_type, actor, record_count=len(payload.get("record_ids", [])))
+        NotificationService(database_path).notify_request_reviewers(request_id, operation_type, actor, record_count=len(payload.get("record_ids", [])))
         record_audit(audit_path, actor, "SOURCE_CHANGE_REQUEST_CREATED", "change_request", request_id, new_values={"operation_type": operation_type, "record_count": len(payload.get("record_ids", []))})
         return request_id
 
@@ -442,7 +442,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             return render_template("errors/404.html"), 404
         current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
         rehire_alerts = [item for item in service.rehire_alerts() if str(item.get("worker_id", "")) == worker_id]
-        NotificationService(database_path, sharepoint_root=sharepoint_root).notify_rehire_alerts(rehire_alerts)
+        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
         return render_template("employees/source_updates.html", preview=preview, rehire_alerts=rehire_alerts, can_apply=current_user.can_decide_requests, message=request.args.get("notice"), error=request.args.get("error"))
 
     @blueprint.post("/source-updates/<worker_id>/apply")

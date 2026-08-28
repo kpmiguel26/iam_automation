@@ -86,11 +86,12 @@ employee history, creating a missing employee when the row has a reliable
 identifier. Duplicate resolution, merge, approval and publication remain
 deferred.
 
-Notifications are shared through one JSON event per notification in the
-synchronized SharePoint workspace. The event keeps the original recipient
-snapshot and records each user's read/resolved timestamp, so notification state
-does not require publishing the local runtime database. The in-memory import
-progress card is separate and remains a UI runtime state.
+Operational notifications are local records in each workstation's runtime
+SQLite database. The synchronized `notifications/` folder is reserved for one
+global critical event when a new `runtime.sqlite` snapshot is published; that
+event tells other workstations to refresh and records each user's read/resolved
+timestamp. The in-memory import progress card is separate and remains a UI
+runtime state.
 
 The next requirements increment is Master Roster read-only intake, comparison,
 lineage, duplicate/conflict evidence and export. Its requirements are tracked

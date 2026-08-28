@@ -381,11 +381,18 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                 except ValueError as exc:
                     skipped.append(f"{item.request_id[:8]} ({exc})")
                     record_audit(audit_path, str(session["iam_user"]), "REQUEST_RECONCILIATION_SKIPPED", "worker", item.entity_id, result="WARNING", new_values={"request_id": item.request_id, "error": str(exc)})
-            governance.publish(str(session["iam_user"]), request.form.get("expected_checksum", ""))
-            published_message = f"A new runtime SQLite snapshot was published by {session['iam_user']}."
-            for user in users.list_users():
-                if user.active and user.status == "ACTIVE":
-                    notifications.create(user.username, "DATABASE_SNAPSHOT_PUBLISHED", "New database snapshot published", f"{published_message} Other workstations can refresh to receive the approved changes. {reconciled} request(s) were applied locally before publication.", severity="WARNING", target_route="/admin/governance", entity_type="runtime_snapshot", entity_id=str(session["iam_user"]))
+            snapshot = governance.publish(str(session["iam_user"]), request.form.get("expected_checksum", ""))
+            active_users = [
+                user.username
+                for user in users.list_users()
+                if user.active and user.status == "ACTIVE"
+            ]
+            notifications.publish_database_snapshot(
+                snapshot.checksum,
+                actor=str(session["iam_user"]),
+                recipients=active_users,
+                reconciled_count=reconciled,
+            )
             notice = f"Database published. {reconciled} approved request(s) were applied locally and added to employee history."
             if skipped:
                 notice += f" Skipped {len(skipped)} request(s) because the employee is not present locally: {', '.join(skipped)}. Refresh this runtime or resolve those requests before retrying."

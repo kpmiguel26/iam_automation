@@ -67,6 +67,51 @@ class ApplicationAdminOperationsTests(unittest.TestCase):
             self.assertEqual(statuses[first_id], "READ")
             self.assertEqual(statuses[second_id], "READ")
 
+    def test_retrying_a_stable_notification_does_not_reset_read_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            service = NotificationService(database)
+
+            notification_id = service.create("admin", "TEST", "First", "First event", notification_id="stable-event")
+            service.mark_read("admin", notification_id)
+            service.create("admin", "TEST", "Updated", "Updated event", notification_id="stable-event")
+
+            notification = service.list_for_user("admin")[0]
+            self.assertEqual(notification.title, "Updated")
+            self.assertEqual(notification.status, "READ")
+
+    def test_normal_notifications_stay_local_when_sharepoint_root_is_configured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            database = initialize_runtime_database(base / "runtime.sqlite")
+            service = NotificationService(database, sharepoint_root=base / "sharepoint")
+
+            notification_id = service.create("admin", "TEST", "Local", "Local event")
+
+            self.assertEqual(service.list_for_user("admin")[0].notification_id, notification_id)
+            self.assertFalse((base / "sharepoint" / "notifications").exists())
+
+    def test_only_database_publication_is_written_to_shared_notifications(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            database = initialize_runtime_database(base / "runtime.sqlite")
+            service = NotificationService(database, sharepoint_root=base / "sharepoint")
+
+            notification_id = service.publish_database_snapshot(
+                "checksum-001",
+                actor="admin",
+                recipients=["admin", "reviewer"],
+                reconciled_count=2,
+            )
+
+            self.assertTrue((base / "sharepoint" / "notifications" / f"{notification_id}.json").exists())
+            notification = service.list_for_user("admin")[0]
+            self.assertEqual(notification.notification_type, "DATABASE_SNAPSHOT_PUBLISHED")
+            self.assertEqual(notification.severity, "CRITICAL")
+
+            service.create("admin", "TEST", "Local", "Local event")
+            self.assertEqual(len(list((base / "sharepoint" / "notifications").glob("*.json"))), 1)
+
     def test_republishing_request_review_does_not_reset_read_status(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
