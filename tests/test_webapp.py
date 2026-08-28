@@ -93,14 +93,15 @@ class WebAppTests(unittest.TestCase):
                 session["iam_user"] = "directory.user"
                 session["iam_roles"] = ["REQUESTER"]
 
-            blocked_query = {"side_effect": AssertionError("empty directory request must not query employees")}
-            with patch.object(EmployeeService, "filter_values", **blocked_query), \
+            blocked_query = {"side_effect": AssertionError("empty directory request must not load employee rows")}
+            with patch.object(EmployeeService, "filter_values", return_value=(["ACTIVE"], ["Vendor A"], ["ACCESSNOW"])), \
                 patch.object(EmployeeService, "list_workers_page", **blocked_query), \
                 patch.object(EmployeeService, "rehire_alerts", **blocked_query), \
                 patch.object(EmployeeService, "pending_source_update_count", **blocked_query):
                 response = client.get("/employees")
                 self.assertEqual(response.status_code, 200)
                 self.assertIn(b"Search to view employees", response.data)
+                self.assertIn(b"Vendor A", response.data)
                 long_empty_url = "/employees?q=&status=ALL&vendor=ALL&source=ALL&updated=ALL&sort=UPDATED_DESC&engagement=&review="
                 canonical = client.get(long_empty_url)
                 self.assertEqual(canonical.status_code, 302)

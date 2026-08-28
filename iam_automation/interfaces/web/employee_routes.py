@@ -214,19 +214,20 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         except ValueError:
             requested_page = 1
         page = requested_page
+        # Filter options are metadata, not an employee directory load. Keep
+        # them available on the empty screen without loading employee rows.
+        statuses, vendors, sources = service.filter_values()
         has_query = bool(show_all or search.strip() or engagement.strip() or review or updated != "ALL" or status != "ALL" or vendor != "ALL" or source != "ALL" or sort != "UPDATED_DESC")
         if not has_query:
             # Collapse browser-generated forms containing only empty/default
             # values back to the short canonical URL and avoid all DB work.
             if request.args:
                 return redirect(url_for("employees.employee_directory"))
-            statuses, vendors, sources = [], [], []
             workers, total_workers = [], 0
             page_count = 1
             pending_source_updates = 0
             rehire_alerts = []
         else:
-            statuses, vendors, sources = service.filter_values()
             page_size = None if show_all else 25
             workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size)
             page_count = 1 if show_all else max(1, (total_workers + 24) // 25)

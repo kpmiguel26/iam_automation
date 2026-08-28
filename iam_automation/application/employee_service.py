@@ -208,9 +208,9 @@ class EmployeeService:
 
     def filter_values(self) -> tuple[list[str], list[str], list[str]]:
         with orm_session(self.database_path) as session:
-            statuses = sorted({value for value in session.scalars(select(WorkerModel.status)).all() if value})
-            vendors = sorted({value for value in session.scalars(select(WorkerEngagementModel.vendor_name)).all() if value})
-            sources = sorted({value for value in session.scalars(select(WorkerIdentifierModel.source_system).where(WorkerIdentifierModel.active.is_(True))).all() if value})
+            statuses = list(session.scalars(select(WorkerModel.status).where(WorkerModel.status.is_not(None), func.trim(WorkerModel.status) != "").distinct().order_by(WorkerModel.status)).all())
+            vendors = list(session.scalars(select(WorkerEngagementModel.vendor_name).where(WorkerEngagementModel.vendor_name.is_not(None), func.trim(WorkerEngagementModel.vendor_name) != "").distinct().order_by(WorkerEngagementModel.vendor_name)).all())
+            sources = list(session.scalars(select(WorkerIdentifierModel.source_system).where(WorkerIdentifierModel.active.is_(True), WorkerIdentifierModel.source_system.is_not(None), func.trim(WorkerIdentifierModel.source_system) != "").distinct().order_by(WorkerIdentifierModel.source_system)).all())
             return statuses, vendors, sources
 
     def list_canonical_duplicates(self) -> list[dict[str, object]]:
