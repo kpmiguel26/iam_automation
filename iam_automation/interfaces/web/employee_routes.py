@@ -205,27 +205,38 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         sort = request.args.get("sort", "UPDATED_DESC").strip().upper()
         if sort not in {"UPDATED_DESC", "UPDATED_ASC", "NAME_ASC", "NAME_DESC"}:
             sort = "UPDATED_DESC"
-        # The employee directory is a DataTables view by default.  Keep an
-        # explicit all=0 escape hatch for very large result sets, while normal
-        # filtered links load the complete result set so client-side search,
-        # ordering, column visibility and export operate on every match.
-        show_all = request.args.get("all", "1") != "0"
+        # Do not query the directory until the user supplies a search/filter
+        # or explicitly requests the complete result set. Empty GET forms are
+        # intentionally treated as the initial, on-demand state.
+        show_all = request.args.get("all", "0") == "1"
         try:
             requested_page = max(1, int(request.args.get("page", "1")))
         except ValueError:
             requested_page = 1
         page = requested_page
-        statuses, vendors, sources = service.filter_values()
         has_query = bool(show_all or search.strip() or engagement.strip() or review or updated != "ALL" or status != "ALL" or vendor != "ALL" or source != "ALL" or sort != "UPDATED_DESC")
-        page_size = None if show_all else 25
-        workers, total_workers = (service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size) if has_query else ([], 0))
-        page_count = 1 if show_all else max(1, (total_workers + 24) // 25)
-        page = min(page, page_count)
-        if has_query and page != requested_page:
+        if not has_query:
+            # Collapse browser-generated forms containing only empty/default
+            # values back to the short canonical URL and avoid all DB work.
+            if request.args:
+                return redirect(url_for("employees.employee_directory"))
+            statuses, vendors, sources = [], [], []
+            workers, total_workers = [], 0
+            page_count = 1
+            pending_source_updates = 0
+            rehire_alerts = []
+        else:
+            statuses, vendors, sources = service.filter_values()
+            page_size = None if show_all else 25
             workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size)
-        rehire_alerts = service.rehire_alerts()
-        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
-        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "updated": updated, "sort": sort, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=service.pending_source_update_count(), rehire_alert_count=len(rehire_alerts))
+            page_count = 1 if show_all else max(1, (total_workers + 24) // 25)
+            page = min(page, page_count)
+            if page != requested_page:
+                workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size)
+            rehire_alerts = service.rehire_alerts()
+            NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
+            pending_source_updates = service.pending_source_update_count()
+        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "updated": updated, "sort": sort, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=pending_source_updates, rehire_alert_count=len(rehire_alerts))
 
     @blueprint.get("/source-updates")
     @authenticated

@@ -13,11 +13,13 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 
 from __future__ import annotations
 
-import unittest
 import tempfile
+import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from iam_automation import webapp
+from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.notification_service import NotificationService
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN
@@ -72,6 +74,37 @@ class WebAppTests(unittest.TestCase):
     def test_reports_requires_login(self):
         app = webapp.create_app(self.make_result(True))
         self.assertEqual(app.test_client().get("/reports").status_code, 302)
+
+    def test_employee_directory_stays_empty_until_user_requests_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            settings = StartupSettings(
+                database.parent / "sharepoint",
+                database.parent / "database.accdb",
+                database.parent / "published.sqlite",
+                database,
+                database.parent / "workspace",
+                database.parent / "backups",
+                database.parent / "audit",
+            )
+            app = webapp.create_app(PreflightResult(StartupState.READY, True, "ready", settings))
+            client = app.test_client()
+            with client.session_transaction() as session:
+                session["iam_user"] = "directory.user"
+                session["iam_roles"] = ["REQUESTER"]
+
+            blocked_query = {"side_effect": AssertionError("empty directory request must not query employees")}
+            with patch.object(EmployeeService, "filter_values", **blocked_query), \
+                patch.object(EmployeeService, "list_workers_page", **blocked_query), \
+                patch.object(EmployeeService, "rehire_alerts", **blocked_query), \
+                patch.object(EmployeeService, "pending_source_update_count", **blocked_query):
+                response = client.get("/employees")
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(b"Search to view employees", response.data)
+                long_empty_url = "/employees?q=&status=ALL&vendor=ALL&source=ALL&updated=ALL&sort=UPDATED_DESC&engagement=&review="
+                canonical = client.get(long_empty_url)
+                self.assertEqual(canonical.status_code, 302)
+                self.assertEqual(canonical.headers["Location"], "/employees")
 
     def test_notification_pages_use_one_canonical_center(self):
         with tempfile.TemporaryDirectory() as tmp:
