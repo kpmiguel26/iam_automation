@@ -81,23 +81,6 @@ class EmployeeResetService:
                             connection.execute(f"DELETE FROM {table} WHERE request_id IN ({placeholders})", removed_request_ids)
                     counts["change_requests"] = len(removed_request_ids)
                     connection.execute(f"DELETE FROM change_requests WHERE request_id IN ({placeholders})", removed_request_ids)
-                    if "notifications" in tables:
-                        notification_conditions = [f"entity_id IN ({placeholders})"]
-                        notification_parameters: list[str] = list(removed_request_ids)
-                        notification_conditions.append("lower(entity_type) IN ('employee', 'worker', 'ingestion_record', 'import_batch')")
-                        notification_conditions.append("upper(notification_type) LIKE 'IMPORT_%'")
-                        notification_conditions.append("upper(notification_type) LIKE '%EMPLOYEE%'")
-                        notification_where = " OR ".join(notification_conditions)
-                        counts["employee_notifications"] = int(
-                            connection.execute(
-                                f"SELECT COUNT(*) FROM notifications WHERE {notification_where}",
-                                notification_parameters,
-                            ).fetchone()[0]
-                        )
-                        connection.execute(
-                            f"DELETE FROM notifications WHERE {notification_where}",
-                            notification_parameters,
-                        )
 
             connection.commit()
             connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")

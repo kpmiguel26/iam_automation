@@ -169,7 +169,7 @@
 ### Operational Watcher and Workspace Overview - 2026-07-24
 
 - Added a background file watcher in the local Flask/Waitress process for pending JSON requests, configuration files and identity-discovery snapshots.
-- The watcher persists file signatures in SQLite and creates one in-app notification per new or changed file; it never imports or executes files automatically.
+- The watcher persists file signatures in SQLite and creates one local file-backed in-app notification per new or changed file; it never imports or executes files automatically.
 - Changed delegation creation from free-text usernames to active application-user selection, with backend validation and retained delegation history.
 - Added SQLite-backed workspace metrics for request lifecycle, unread alerts, quarantine, publication queue, imports and active delegations.
 - Added a request lifecycle bar chart and data-readiness panel to the workspace overview.

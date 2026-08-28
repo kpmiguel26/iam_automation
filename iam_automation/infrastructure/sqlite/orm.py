@@ -1,7 +1,7 @@
 """
 File: iam_automation/infrastructure/sqlite/orm.py
 Purpose: Provides SQLite persistence infrastructure for orm.
-Responsibilities: Exposes or coordinates: Base, AppUserModel, UserRoleModel, ApprovedUserModel, RoleModel, NotificationModel, ….
+Responsibilities: Exposes or coordinates: Base, AppUserModel, UserRoleModel, ApprovedUserModel, RoleModel, ….
 Dependencies: sqlalchemy
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
 Author / implementation: Miguel Fernandez.
@@ -59,24 +59,6 @@ class RoleModel(Base):
     role_name: Mapped[str] = mapped_column(String, primary_key=True)
     description: Mapped[str] = mapped_column(String, default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-
-
-class NotificationModel(Base):
-    __tablename__ = "notifications"
-
-    notification_id: Mapped[str] = mapped_column(String, primary_key=True)
-    recipient_username: Mapped[str] = mapped_column(String)
-    notification_type: Mapped[str] = mapped_column(String)
-    severity: Mapped[str] = mapped_column(String, default="INFO")
-    title: Mapped[str] = mapped_column(String)
-    message: Mapped[str] = mapped_column(String)
-    entity_type: Mapped[str] = mapped_column(String, default="")
-    entity_id: Mapped[str] = mapped_column(String, default="")
-    target_route: Mapped[str] = mapped_column(String, default="")
-    status: Mapped[str] = mapped_column(String, default="UNREAD")
-    created_at_utc: Mapped[str] = mapped_column(String, default="")
-    read_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
-    expires_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class DelegationModel(Base):

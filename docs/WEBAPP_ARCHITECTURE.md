@@ -59,7 +59,7 @@ iam_automation/
 - Flask controllers call application services and render Jinja templates; they do not contain SQL or HTML documents.
 - Bootstrap 5.3.3 is vendored under `static/vendor/bootstrap/` so the local app works without a CDN connection.
 - HTMX 2.0.10 is vendored under `static/vendor/htmx/` for progressive AJAX-style HTML fragment updates; no additional runtime server is required.
-- Operational notifications are stored locally in each workstation's runtime SQLite database. The synchronized `notifications/` folder is reserved for the single global `DATABASE_SNAPSHOT_PUBLISHED` critical event, which tells other workstations that a new runtime snapshot is ready to refresh. That event contains an immutable recipient snapshot and per-user `read_by`/`resolved_by` markers.
+- Operational notifications are stored locally as JSON files under `.iam_notifications/`, outside the runtime SQLite database and outside the synchronized workspace. The synchronized `notifications/` folder is reserved for the single global `DATABASE_SNAPSHOT_PUBLISHED` critical event, which tells other workstations that a new runtime snapshot is ready to refresh. That event contains an immutable recipient snapshot and per-user `read_by`/`resolved_by` markers.
 - Brand-specific styling is limited to `static/css/app.css`.
 - Role forms use controlled multi-select values with human-readable labels; controllers never trust free-text role names from the browser.
 - The workstation/VDI identity is recorded for traceability and audit only. It does not carry an application password, application roles or an approval gate. Application authorization is evaluated after the separate IAM account login.

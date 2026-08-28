@@ -17,12 +17,14 @@ from pathlib import Path
 
 from sqlalchemy import func, select
 
-from ..infrastructure.sqlite.orm import ChangeRequestModel, DelegationModel, ImportBatchModel, NotificationModel, PublicationQueueModel, QuarantineRecordModel, WorkerDiscrepancyModel, WorkerModel, orm_session
+from ..infrastructure.sqlite.orm import ChangeRequestModel, DelegationModel, ImportBatchModel, PublicationQueueModel, QuarantineRecordModel, WorkerDiscrepancyModel, WorkerModel, orm_session
+from .notification_service import NotificationService
 
 
 class OverviewService:
-    def __init__(self, database_path: Path):
+    def __init__(self, database_path: Path, *, sharepoint_root: Path | None = None):
         self.database_path = database_path
+        self.notifications = NotificationService(database_path, sharepoint_root=sharepoint_root)
 
     def snapshot(self, username: str) -> dict:
         if not self.database_path.exists():
@@ -48,7 +50,7 @@ class OverviewService:
                 "open_quarantine": int(session.scalar(select(func.count(QuarantineRecordModel.quarantine_id)).where(QuarantineRecordModel.status == "OPEN")) or 0),
                 "pending_publication": int(session.scalar(select(func.count(PublicationQueueModel.publication_id)).where(PublicationQueueModel.status == "PENDING_PUBLICATION")) or 0),
                 "active_delegations": int(session.scalar(select(func.count(DelegationModel.delegation_id)).where(DelegationModel.status == "ACTIVE")) or 0),
-                "unread_notifications": int(session.scalar(select(func.count(NotificationModel.notification_id)).where(NotificationModel.recipient_username == username, NotificationModel.status == "UNREAD")) or 0),
+                "unread_notifications": self.notifications.unread_count(username),
                 "import_batches": int(session.scalar(select(func.count(ImportBatchModel.batch_id))) or 0),
                 "employees": int(session.scalar(select(func.count(WorkerModel.worker_id))) or 0),
                 "employee_discrepancies": int(session.scalar(select(func.count(WorkerDiscrepancyModel.discrepancy_id)).where(WorkerDiscrepancyModel.status == "OPEN")) or 0),

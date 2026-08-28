@@ -171,6 +171,20 @@ class SharedNotificationStore:
                     payload["closed_at_utc"] = datetime.now(timezone.utc).isoformat()
                     self._write(path, payload)
 
+    def latest_active(self, notification_type: str) -> dict[str, object] | None:
+        """Return the most recently updated active event of a given type."""
+        latest: dict[str, object] | None = None
+        with _STORE_LOCK:
+            for path in self.notifications_root.glob("*.json"):
+                payload = self._read(path)
+                if not payload or payload.get("notification_type") != notification_type or not payload.get("active", True):
+                    continue
+                marker = str(payload.get("updated_at_utc") or payload.get("created_at_utc") or "")
+                current_marker = str((latest or {}).get("updated_at_utc") or (latest or {}).get("created_at_utc") or "")
+                if latest is None or marker > current_marker:
+                    latest = payload
+        return latest
+
     def _mark_user(self, notification_id: str, username: str, *, resolved: bool) -> bool:
         path = self._path(notification_id)
         user_key = self._user_key(username)

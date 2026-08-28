@@ -49,7 +49,6 @@ class EmployeeResetTests(unittest.TestCase):
                 INSERT INTO change_requests(request_id, created_at_utc, created_by, computer_name, application_version, operation_type, entity_type, entity_id, payload_json, reason) VALUES ('request-1', 'now', 'admin', 'test', 'local', 'IMPORT_ROSTER_LOCK', 'import_batch', 'batch-1', '{}', 'test');
                 INSERT INTO approval_assignments(assignment_id, request_id, assigned_to, assigned_by, reason) VALUES ('assignment-1', 'request-1', 'admin', 'admin', 'test');
                 INSERT INTO publication_queue(publication_id, request_id, queued_by, queued_at_utc) VALUES ('publication-1', 'request-1', 'admin', 'now');
-                INSERT INTO notifications(notification_id, recipient_username, notification_type, title, message, entity_type, entity_id) VALUES ('notification-1', 'admin', 'IMPORT_READY', 'Import', 'Review', 'import_batch', 'request-1');
                 """
             )
             connection.commit()

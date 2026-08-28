@@ -11,7 +11,8 @@ from iam_automation.application.master_roster_ingestion_service import MasterRos
 from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.file_watch_service import FileWatchService
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.infrastructure.sqlite.orm import ChangeRequestModel, ImportBatchModel, IngestionRecordModel, NotificationModel, orm_session
+from iam_automation.application.notification_service import NotificationService
+from iam_automation.infrastructure.sqlite.orm import ChangeRequestModel, ImportBatchModel, IngestionRecordModel, orm_session
 
 
 class MasterRosterIngestionTests(unittest.TestCase):
@@ -122,9 +123,8 @@ class MasterRosterIngestionTests(unittest.TestCase):
             service._active_admins = lambda: ("admin",)
 
             self.assertEqual(service.scan_once(), 1)
-            with orm_session(database) as session:
-                notification = session.query(NotificationModel).filter_by(notification_type="FILE_DETECTED").one()
-                self.assertEqual(notification.title, "Master Roster ingested")
+            notification = next(item for item in NotificationService(database).list_for_user("admin") if item.notification_type == "FILE_DETECTED")
+            self.assertEqual(notification.title, "Master Roster ingested")
 
 
 if __name__ == "__main__":

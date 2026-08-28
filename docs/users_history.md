@@ -82,7 +82,7 @@ No user reaches the application dashboard before the environment gate succeeds.
 
 | ID | User story | Acceptance criteria | Status |
 |---|---|---|---|
-| US-023 | As a user, I want a notification indicator in the avatar so that I can see pending action without leaving my current page. | The avatar shows the real unread count from SQLite. | Complete |
+| US-023 | As a user, I want a notification indicator in the avatar so that I can see pending action without leaving my current page. | The avatar shows the real unread count from the local notification store. | Complete |
 | US-024 | As an administrator, I want to mark, resolve and review notifications so that operational work has a clear end state. | Notifications support unread, read, resolved and expired states. | Complete |
 | US-025 | As an administrator, I want alerts for identity discovery, SLA escalation, quarantine, conflicts and publication errors so that exceptions are visible in-app. | Notifications link to the affected route or object where available. | Complete / expanding |
 

@@ -35,4 +35,4 @@ Rejections require a decision note. Both decisions and publication requests rema
 
 ## Failure Handling
 
-The watcher confirms file observations before opening the ingestion transaction, uses a process write lock, retries transient SQLite contention, and records ingestion failures as notifications. A single malformed file or temporary database lock must not terminate the watcher thread.
+The watcher confirms file observations before opening the ingestion transaction, uses a process write lock, retries transient SQLite contention, and records ingestion failures as local file-backed notifications. A single malformed file or temporary database lock must not terminate the watcher thread.

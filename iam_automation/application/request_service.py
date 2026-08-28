@@ -13,6 +13,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from dataclasses import dataclass
@@ -23,7 +24,8 @@ from sqlalchemy import select
 
 from ..identity import CurrentUser
 from ..change_request import ChangeRequest, submit_request
-from ..infrastructure.sqlite.orm import ApprovalAssignmentModel, ChangeRequestModel, NotificationModel, SystemProfileModel, orm_session
+from ..infrastructure.sqlite.orm import ApprovalAssignmentModel, ChangeRequestModel, SystemProfileModel, orm_session
+from .notification_service import NotificationService
 from .publication_service import PublicationService
 
 
@@ -148,6 +150,7 @@ class RequestService:
 
     def reassign_for_delegation(self, principal: str, delegate: str, assigned_by: str, reason: str) -> int:
         count = 0
+        notifications: list[tuple[str, str]] = []
         with orm_session(self.database_path) as session:
             rows = session.scalars(select(ChangeRequestModel).where(ChangeRequestModel.status.in_(("PENDING", "UNDER_REVIEW")), (ChangeRequestModel.assigned_to.is_(None)) | (ChangeRequestModel.assigned_to == principal))).all()
             now = datetime.now(timezone.utc).isoformat()
@@ -156,23 +159,50 @@ class RequestService:
                 row.assigned_to = delegate
                 row.updated_at_utc = now
                 session.add(ApprovalAssignmentModel(assignment_id=str(uuid.uuid4()), request_id=row.request_id, assigned_to=delegate, assigned_by=assigned_by, assigned_at_utc=now, reason=reason))
-                session.add(NotificationModel(notification_id=str(uuid.uuid4()), recipient_username=row.created_by, notification_type="REQUEST_REASSIGNED", severity="WARNING", title="Request reassigned", message=f"Request {row.request_id[:8]} was reassigned for approval coverage.", target_route="/admin/approvals", status="UNREAD", created_at_utc=now))
+                notifications.append((row.created_by, row.request_id))
                 count += 1
+        notification_service = NotificationService(self.database_path)
+        for recipient, reassigned_request_id in notifications:
+            notification_service.create(
+                recipient,
+                "REQUEST_REASSIGNED",
+                "Request reassigned",
+                f"Request {reassigned_request_id[:8]} was reassigned for approval coverage.",
+                severity="WARNING",
+                target_route="/admin/approvals",
+                entity_type="change_request",
+                entity_id=reassigned_request_id,
+                notification_id=hashlib.sha256(f"request-reassigned:{recipient.casefold()}:{reassigned_request_id}:{delegate}".encode("utf-8")).hexdigest(),
+            )
         return count
 
     def escalate_overdue(self, recipients: tuple[str, ...]) -> int:
         count = 0
         now = datetime.now(timezone.utc)
+        notifications: list[tuple[str, str]] = []
         with orm_session(self.database_path) as session:
             rows = session.scalars(select(ChangeRequestModel).where(ChangeRequestModel.status.in_(("PENDING", "UNDER_REVIEW")))).all()
             for row in rows:
                 due = datetime.fromisoformat(row.created_at_utc) + timedelta(hours=self._sla_hours().get(row.operation_type, 24))
                 if due < now:
                     for recipient in recipients:
-                        session.add(NotificationModel(notification_id=str(uuid.uuid4()), recipient_username=recipient, notification_type="SLA_BREACH", severity="CRITICAL", title="Approval SLA breached", message=f"Request {row.request_id[:8]} is overdue for review.", target_route="/admin/approvals", status="UNREAD", created_at_utc=now.isoformat()))
+                        notifications.append((recipient, row.request_id))
                     row.status = "UNDER_REVIEW"
                     row.updated_at_utc = now.isoformat()
                     count += 1
+        notification_service = NotificationService(self.database_path)
+        for recipient, overdue_request_id in notifications:
+            notification_service.create(
+                recipient,
+                "SLA_BREACH",
+                "Approval SLA breached",
+                f"Request {overdue_request_id[:8]} is overdue for review.",
+                severity="CRITICAL",
+                target_route="/admin/approvals",
+                entity_type="change_request",
+                entity_id=overdue_request_id,
+                notification_id=hashlib.sha256(f"sla-breach:{recipient.casefold()}:{overdue_request_id}".encode("utf-8")).hexdigest(),
+            )
         return count
 
     @staticmethod

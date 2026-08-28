@@ -23,7 +23,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from ..infrastructure.sqlite.orm import AppUserModel, FileObservationModel, NotificationModel, UserRoleModel, orm_session
+from ..infrastructure.sqlite.orm import AppUserModel, FileObservationModel, UserRoleModel, orm_session
 from ..change_request import load_request_file
 from ..identity import CurrentUser, ROLE_REQUESTER, computer_name
 from .employee_service import EmployeeService
@@ -116,8 +116,8 @@ class FileWatchService:
             observations = self._discover_files()
             if not observations:
                 return 0
-            # The watcher itself writes observations and notifications to the
-            # local runtime. Preserve a genuine user edit, but advance the
+            # The watcher itself writes observations to the local runtime and
+            # notifications to the local file store. Preserve a genuine user edit, but advance the
             # sidecar after an automatic scan that started from a clean state.
             sidecar = local_runtime_checksum_path(self.database_path)
             watcher_started_clean = sidecar.is_file() and sidecar.read_text(encoding="utf-8").strip() == hashlib.sha256(self.database_path.read_bytes()).hexdigest()
@@ -173,6 +173,7 @@ class FileWatchService:
             # The observation is committed only after ingestion succeeds. A transient
             # OneDrive or SQLite failure is therefore retried on the next poll.
             admins = self._active_admins()
+            pending_notifications: list[tuple[str, FileObservation]] = []
             with orm_session(self.database_path) as session:
                 for observation in changed:
                     if observation.path not in successful_ingestions:
@@ -190,9 +191,20 @@ class FileWatchService:
                             # File notifications use a deterministic ID so a
                             # repeated scan cannot create duplicates. Preserve
                             # an existing READ/RESOLVED status on retry.
-                            notification = self._notification(username, observation)
-                            if session.get(NotificationModel, notification.notification_id) is None:
-                                session.add(notification)
+                            pending_notifications.append((username, observation))
+            for username, observation in pending_notifications:
+                notification = self._notification(username, observation)
+                self.notifications.create(
+                    username,
+                    notification["notification_type"],
+                    notification["title"],
+                    notification["message"],
+                    severity=notification["severity"],
+                    target_route=notification["target_route"],
+                    entity_type=notification["entity_type"],
+                    entity_id=notification["entity_id"],
+                    notification_id=notification["notification_id"],
+                )
             # Roster Lock can reveal a rehire hold as soon as the source file
             # is staged. The deterministic notification is safe to repeat.
             self.notifications.notify_rehire_alerts(EmployeeService(self.database_path).rehire_alerts())
@@ -273,21 +285,18 @@ class FileWatchService:
 
     def _record_ingestion_failure(self, observation: FileObservation, error: Exception, *, unexpected: bool) -> None:
         admins = self._active_admins()
-        with orm_session(self.database_path) as session:
-            for username in admins:
-                session.merge(NotificationModel(
-                    notification_id=hashlib.sha256(f"{username}:{observation.path}:{observation.signature}:failure".encode()).hexdigest(),
-                    recipient_username=username,
-                    notification_type="INGESTION_ERROR",
-                    severity="ERROR",
-                    title=f"{observation.file_kind.replace('_', ' ').title()} {'unexpected failure' if unexpected else 'ingestion failed'}",
-                    message=f"The workbook could not be staged and will be retried: {type(error).__name__}: {error}",
-                    entity_type="file",
-                    entity_id=observation.path,
-                    target_route="/admin/imports",
-                    status="UNREAD",
-                    created_at_utc=datetime.now(timezone.utc).isoformat(),
-                ))
+        for username in admins:
+            self.notifications.create(
+                username,
+                "INGESTION_ERROR",
+                f"{observation.file_kind.replace('_', ' ').title()} {'unexpected failure' if unexpected else 'ingestion failed'}",
+                f"The workbook could not be staged and will be retried: {type(error).__name__}: {error}",
+                severity="ERROR",
+                entity_type="file",
+                entity_id=observation.path,
+                target_route="/admin/imports",
+                notification_id=hashlib.sha256(f"{username}:{observation.path}:{observation.signature}:failure".encode()).hexdigest(),
+            )
 
     def _sync_approved_import(self, path: Path) -> None:
         """Register an approved source file for individual review.
@@ -362,42 +371,35 @@ class FileWatchService:
         fingerprint = hashlib.sha256(f"{type(error).__name__}:{error}".encode("utf-8")).hexdigest()
         now = datetime.now(timezone.utc).isoformat()
         admins = self._active_admins()
-        with orm_session(self.database_path) as session:
-            for username in admins:
-                notification_id = hashlib.sha256(f"watcher-cycle:{username}:{fingerprint}".encode("utf-8")).hexdigest()
-                notification = session.get(NotificationModel, notification_id)
-                if notification is None:
-                    session.add(NotificationModel(
-                        notification_id=notification_id,
-                        recipient_username=username,
-                        notification_type="WATCHER_CYCLE_FAILURE",
-                        severity="CRITICAL",
-                        title="File watcher is repeatedly failing",
-                        message=f"The watcher has failed {consecutive_failures} consecutive cycle(s) and will keep retrying: {type(error).__name__}: {error}",
-                        entity_type="file_watcher",
-                        entity_id="iam-file-watcher",
-                        target_route="/admin/imports",
-                        status="UNREAD",
-                        created_at_utc=now,
-                    ))
-                elif notification.status in {"RESOLVED", "EXPIRED"}:
-                    notification.status = "UNREAD"
-                    notification.read_at_utc = None
+        for username in admins:
+            notification_id = hashlib.sha256(f"watcher-cycle:{username}:{fingerprint}".encode("utf-8")).hexdigest()
+            existing = self.notifications.local_store.get(username, notification_id)
+            if existing and str(existing.get("status")) in {"RESOLVED", "EXPIRED"}:
+                self.notifications.local_store.set_status(username, notification_id, "UNREAD")
+            self.notifications.create(
+                username,
+                "WATCHER_CYCLE_FAILURE",
+                "File watcher is repeatedly failing",
+                f"The watcher has failed {consecutive_failures} consecutive cycle(s) and will keep retrying: {type(error).__name__}: {error}",
+                severity="CRITICAL",
+                entity_type="file_watcher",
+                entity_id="iam-file-watcher",
+                target_route="/admin/imports",
+                notification_id=notification_id,
+            )
 
     def record_watcher_recovery(self) -> None:
         """Resolve open watcher failure notifications after a healthy cycle."""
-        with orm_session(self.database_path) as session:
-            rows = session.scalars(select(NotificationModel).where(
-                NotificationModel.notification_type == "WATCHER_CYCLE_FAILURE",
-                NotificationModel.status.in_(("UNREAD", "READ")),
-            )).all()
-            for row in rows:
-                row.status = "RESOLVED"
+        for item in self.notifications.local_store.list_all(notification_type="WATCHER_CYCLE_FAILURE"):
+            if str(item.get("status")) in {"UNREAD", "READ"}:
+                self.notifications.local_store.set_status(
+                    str(item.get("recipient_username", "")),
+                    str(item.get("notification_id", "")),
+                    "RESOLVED",
+                )
 
     @staticmethod
-    def _notification(username: str, observation: FileObservation):
-        from ..infrastructure.sqlite.orm import NotificationModel
-
+    def _notification(username: str, observation: FileObservation) -> dict[str, str]:
         labels = {
             "PENDING_REQUEST": ("New request file detected", "A new JSON request is waiting in the pending folder."),
             "CONFIGURATION": ("Configuration file detected", "A configuration file changed and is ready for review."),
@@ -410,20 +412,16 @@ class FileWatchService:
             "APPROVED_IMPORT": ("Employee updates ready", "Approved source records are ready for individual matching and review. No employee was created automatically."),
         }
         title, message = labels[observation.file_kind]
-        now = datetime.now(timezone.utc).isoformat()
-        return NotificationModel(
-            notification_id=hashlib.sha256(f"{username}:{observation.path}:{observation.signature}".encode()).hexdigest(),
-            recipient_username=username,
-            notification_type="FILE_DETECTED",
-            severity="WARNING" if observation.file_kind != "CONFIGURATION" else "INFO",
-            title=title,
-            message=f"{message} File: {Path(observation.path).name}",
-            entity_type="file",
-            entity_id=observation.path,
-            target_route=("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/employees/source-updates" if observation.file_kind in {"APPROVED_IMPORT", "ACCESSNOW"} else "/admin/imports" if observation.file_kind in {"ROSTER_LOCK", "MASTER_ROSTER", "RSR_SUPPLIER_WORKER_DETAILS"} else "/admin"),
-            status="UNREAD",
-            created_at_utc=now,
-        )
+        return {
+            "notification_id": hashlib.sha256(f"{username}:{observation.path}:{observation.signature}".encode()).hexdigest(),
+            "notification_type": "FILE_DETECTED",
+            "severity": "WARNING" if observation.file_kind != "CONFIGURATION" else "INFO",
+            "title": title,
+            "message": f"{message} File: {Path(observation.path).name}",
+            "entity_type": "file",
+            "entity_id": observation.path,
+            "target_route": ("/admin/approvals" if observation.file_kind == "PENDING_REQUEST" else "/dashboard" if observation.file_kind == "PUBLISHED_RUNTIME" else "/employees/source-updates" if observation.file_kind in {"APPROVED_IMPORT", "ACCESSNOW"} else "/admin/imports" if observation.file_kind in {"ROSTER_LOCK", "MASTER_ROSTER", "RSR_SUPPLIER_WORKER_DETAILS"} else "/admin"),
+        }
 
 
 class FileWatcher:

@@ -302,7 +302,7 @@ def create_app(
         if not username:
             return redirect(url_for("login"))
         workspace = WorkspaceRefreshService(runtime_path, preflight_result.settings.published_runtime_db_path, preflight_result.settings.sharepoint_root_path)
-        return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path).snapshot(str(username)), workspace_version=workspace.version(), workspace_message=request.args.get("refreshed"))
+        return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path).snapshot(str(username)), workspace_version=workspace.version(), workspace_message=request.args.get("refreshed"))
 
     @app.get("/workspace/status")
     def workspace_status():
@@ -333,7 +333,7 @@ def create_app(
                 session["is_admin"] = bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & set(current.roles))
             return redirect(url_for("dashboard", refreshed=f"Workspace refreshed successfully. {exported} pending request(s) preserved."))
         except Exception as exc:
-            return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=str(username), roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path).snapshot(str(username)), workspace_version=workspace.version(), workspace_error=str(exc)), 409
+            return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=str(username), roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path).snapshot(str(username)), workspace_version=workspace.version(), workspace_error=str(exc)), 409
 
     @app.get("/profile")
     def profile():

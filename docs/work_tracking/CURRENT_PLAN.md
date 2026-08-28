@@ -86,8 +86,9 @@ employee history, creating a missing employee when the row has a reliable
 identifier. Duplicate resolution, merge, approval and publication remain
 deferred.
 
-Operational notifications are local records in each workstation's runtime
-SQLite database. The synchronized `notifications/` folder is reserved for one
+Operational notifications are local JSON records under `.iam_notifications/`,
+outside each workstation's runtime SQLite database. The synchronized
+`notifications/` folder is reserved for one
 global critical event when a new `runtime.sqlite` snapshot is published; that
 event tells other workstations to refresh and records each user's read/resolved
 timestamp. The in-memory import progress card is separate and remains a UI
