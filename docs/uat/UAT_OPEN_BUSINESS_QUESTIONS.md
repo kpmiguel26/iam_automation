@@ -2,11 +2,22 @@
 
 Every question below requires an accountable stakeholder decision before the related UAT result can be signed off. The “current assumption” column describes repository behavior, not an approved requirement.
 
+## Scope classification index
+
+| Scope | Question IDs |
+|---|---|
+| PHASE1_CORE | Q-001–Q-015, Q-018–Q-025, Q-027–Q-034, Q-039–Q-040 |
+| PHASE1_PLATFORM | Q-035–Q-037, Q-043–Q-047, Q-049 |
+| PHASE2_WRITER | Q-016, Q-017, Q-026, Q-038 |
+| FUTURE_INTEGRATION | Q-041–Q-042, Q-048 |
+
+Q-035 is a resolved scope decision, not an open business question. It remains in this historical question register only to show the correction from the previous package. The remaining open-question count is 48. Questions classified `PHASE2_WRITER` or `FUTURE_INTEGRATION` are deferred and must not block Phase 1 sign-off.
+
 ## Identity matching
 
 | ID | Question | Why it matters / dependent behavior | Current assumption in code | Risk if undefined | Recommended stakeholder |
 |---|---|---|---|---|---|
-| Q-001 | Which identifier is the authoritative identity key across all sources? | Controls matching, canonical creation, rehire, merge, and export. | Multiple strong IDs are accepted and some are aliased. | Wrong identity joins or splits. | IAM Identity Owner |
+| Q-001 | Which identifier is the authoritative identity key across all sources? | Controls matching, analytical identity representation, rehire findings, duplicate candidates, and export. | Multiple strong IDs are accepted and some are aliased. | Wrong identity joins or splits. | IAM Identity Owner |
 | Q-002 | Are NUID, NPN, Employee Number, Vendor Employee ID, Worker ID, and Buyer Reference truly equivalent, or only source-local? | Controls cross-source joins. | `_match_types` aliases several values. | Unrelated people can merge. | IAM Data Owner |
 | Q-003 | May email match an employee when no strong identifier matches? | Controls fallback matching. | Email is a fallback signal. | Reused/shared email causes false merge. | IAM Identity + Security |
 | Q-004 | May exact first/last name match an employee? Under what extra evidence? | Controls ambiguous and common-name cases. | Exact normalized names are fallback signals. | Same-name people merge. | IAM Identity Owner |
@@ -17,9 +28,9 @@ Every question below requires an accountable stakeholder decision before the rel
 | ID | Question | Why it matters / dependent behavior | Current assumption in code | Risk if undefined | Recommended stakeholder |
 |---|---|---|---|---|---|
 | Q-006 | What exactly is a Worker versus an Employee in business terms? | Defines grain of canonical views, exports, and reporting. | Worker is stable identity; Employee is a view. | Wrong row counts and lifecycle model. | IAM Solution Owner |
-| Q-007 | When may an unmatched source record create a canonical Worker? | Controls unauthorized identity creation. | Approved RSR unmatched rows can create ACTIVE Workers. | False employees enter master data. | IAM Identity Owner |
-| Q-008 | Does every new Worker require human approval, and which role may approve? | Controls promotion and audit. | Promotion/admin routes exist; role policy is inconsistent. | Unapproved records become canonical. | IAM Governance Owner |
-| Q-009 | What fields are mandatory for canonical creation versus source staging? | Defines valid record and quarantine behavior. | Required fields are source-specific. | Incomplete employees are exported. | IAM Data Owner |
+| Q-007 | What evidence is sufficient to represent an unmatched observation as an internal canonical analytical identity? | Controls analytical identity resolution without creating an authoritative employee. | Approved RSR unmatched rows can create ACTIVE Workers through a writer path. | A finding may be mistaken for an approved employee. | IAM Identity Owner |
+| Q-008 | What review evidence is required before an analytical identity is treated as a stable reconciliation subject? | Controls analytical continuity and auditability. | Promotion/admin routes exist; they are not Phase 1 acceptance. | Weak evidence produces false identity continuity. | IAM Governance Owner |
+| Q-009 | What fields are mandatory for analytical identity representation versus source staging? | Defines valid evidence and quarantine behavior without creating an authoritative employee. | Required fields are source-specific. | Incomplete analytical identities are exported. | IAM Data Owner |
 
 ## Source precedence
 
@@ -36,8 +47,8 @@ Every question below requires an accountable stakeholder decision before the rel
 |---|---|---|---|---|---|
 | Q-014 | What is an exact duplicate: same ID, same full row, same normalized identity, or same business event? | Defines duplicate reports and supersession. | Normalized signals and newest created time are used. | Corrections or duplicates are misclassified. | IAM Data Owner |
 | Q-015 | Should the newest record always win, or only when its effective date is newer? | Controls current profile selection. | Newest same-source created-time record wins. | Bad late row overrides valid data. | Source Owners |
-| Q-016 | Who can merge two Workers, what evidence is required, and is merge reversible? | Controls permanent identity consequences. | Merge route exists and preserves evidence; approval policy is open. | Irreversible false merge. | IAM Identity + Audit |
-| Q-017 | What happens to requests, access, audit, exports, and identifiers after a merge? | Defines downstream referential integrity. | Evidence is preserved; all downstream behavior is not defined. | Broken references and audit gaps. | IAM Solution Owner |
+| Q-016 | Which future writer role may execute an authoritative merge after Phase 1 presents duplicate evidence? | Separates analytical duplicate detection from authoritative action. | Merge route exists and preserves evidence; Phase 1 must not execute it. | Phase 1 users may be treated as identity decision-makers. | IAM Identity + Audit |
+| Q-017 | What happens to authoritative requests, access, audit, exports, and identifiers after a future writer merge? | Defines future downstream referential integrity. | Evidence is preserved; writer behavior is not defined. | Broken references and audit gaps in a later phase. | IAM Solution Owner |
 
 ## Rehire
 
@@ -55,8 +66,8 @@ Every question below requires an accountable stakeholder decision before the rel
 | ID | Question | Why it matters / dependent behavior | Current assumption in code | Risk if undefined | Recommended stakeholder |
 |---|---|---|---|---|---|
 | Q-024 | What is the authoritative no-hire/blacklist source and matching key? | Controls eligibility. | No complete enforcement found. | Ineligible person onboarded. | IAM Compliance Owner |
-| Q-025 | Does a possible match block onboarding or only require review? | Defines false-positive treatment. | No rule. | Either unsafe onboarding or unfair blocking. | IAM Compliance + HR |
-| Q-026 | Who may override a no-hire decision and what evidence is retained? | Controls governance and audit. | No rule. | Unauthorized exception or audit failure. | IAM Governance Owner |
+| Q-025 | How should a possible no-hire match be classified as evidence: expected difference, insufficient evidence, discrepancy, or policy-relevant finding? | Keeps Phase 1 analytical and prevents false-positive business action. | No rule. | Either alert noise or missed evidence. | IAM Compliance + HR |
+| Q-026 | Which future writer role may override or enforce a no-hire decision, and what evidence is retained? | Controls future authoritative action. | No rule; enforcement is not Phase 1. | Unauthorized exception or audit failure. | IAM Governance Owner |
 
 ## Non-standard onboarding
 
@@ -80,19 +91,19 @@ Every question below requires an accountable stakeholder decision before the rel
 
 | ID | Question | Why it matters / dependent behavior | Current assumption in code | Risk if undefined | Recommended stakeholder |
 |---|---|---|---|---|---|
-| Q-035 | Is Phase 1 strictly read-only, or are promotion, merge, approval, publish, and restore allowed? | Determines whether writer routes must be disabled. | Docs say read-only; routes expose writers. | Unauthorized production changes. | IAM Security + Product Owner |
-| Q-036 | Which role may decide requests and approve publication? | Controls separation of duties. | Service permits admins; role catalog says reviewers decide. | Privilege conflict. | IAM Governance Owner |
+| Q-035 | **RESOLVED SCOPE DECISION:** Is Phase 1 read-only with respect to authoritative source systems? | Defines the technical acceptance boundary. | Earlier documents mixed read-only scope with writer routes; current approved answer is yes. | If not enforced technically, an auditor platform could mutate source truth. | Product + Security Owners |
+| Q-036 | Which role may publish the analytical snapshot and access sensitive findings? | Controls technical distribution and data access, not business approval. | Service permits admin publication; role catalog and request service differ. | Unauthorized data exposure or inconsistent snapshots. | IAM Governance Owner |
 | Q-037 | What production authentication and user-provisioning method is mandatory? | Controls user identity and authorization. | Local login/CSV; dev auto-approval defaults true. | Unauthorized access. | IAM Security Owner |
-| Q-038 | May an administrator approve their own request or merge? | Controls segregation of duties. | No explicit self-approval rule found. | Fraud/compliance exposure. | IAM Governance Owner |
+| Q-038 | Which future writer role may approve its own request or merge, if any? | Controls future separation of duties. | No explicit self-approval rule found; not a Phase 1 action. | Future fraud/compliance exposure. | IAM Governance Owner |
 
 ## Export and reporting
 
 | ID | Question | Why it matters / dependent behavior | Current assumption in code | Risk if undefined | Recommended stakeholder |
 |---|---|---|---|---|---|
-| Q-039 | What is the required export grain: Worker, engagement, source row, or request? | Defines completeness and duplicate expectations. | Canonical report is one row per Worker; Salesforce uses latest approved request. | Consumers misread files. | IAM Reporting Owner |
+| Q-039 | What is the required analytical evidence export grain: Worker, engagement, source observation, or finding? | Defines completeness and duplicate expectations. | Canonical report is one row per Worker; writer request export is not Phase 1. | Consumers misread files. | IAM Reporting Owner |
 | Q-040 | Which statuses and exception states are included or excluded from each export? | Controls access and downstream actions. | Filters vary by report/export path. | Inactive or unresolved users exported. | IAM Data Owner |
 | Q-041 | Are Salesforce defaults (US, Pacific time, `en_US`, generated alias/federation ID) approved? | Prevents incorrect downstream identity data. | Defaults are hardcoded. | Bad Salesforce accounts. | Salesforce Owner |
-| Q-042 | Is Salesforce handoff manual XLSX only for Phase 1, or is API provisioning expected? | Sets acceptance boundary. | No API; export-only implementation. | False production-readiness sign-off. | Salesforce + IAM Solution Owners |
+| Q-042 | For a future Salesforce integration, is the handoff manual XLSX only, or is API provisioning expected? | Sets a future integration boundary; it is not required for Phase 1 evidence exports. | No API; export-only implementation. | False production-readiness sign-off. | Salesforce + IAM Solution Owners |
 
 ## Audit and evidence
 
@@ -113,22 +124,9 @@ Every question below requires an accountable stakeholder decision before the rel
 
 | ID | Question | Why it matters / dependent behavior | Current assumption in code | Risk if undefined | Recommended stakeholder |
 |---|---|---|---|---|---|
-| Q-048 | Which downstream integrations are genuinely required for Phase 1 sign-off? | Defines technical dependencies and exclusions. | AD/Azure, Salesforce, CXOne, NICE, SQL, orchestrator are future/placeholder areas. | Incomplete launch with hidden dependencies. | IAM Solution Owner |
+| Q-048 | Which downstream integrations are planned for a future phase, and what evidence handoff is needed from Phase 1? | Separates future connectors from current audit acceptance. | AD/Azure, Salesforce, CXOne, NICE, SQL, orchestrator are future/placeholder areas. | Incomplete launch with hidden dependencies. | IAM Solution Owner |
 | Q-049 | What are the recovery RPO/RTO, backup retention, and publication rollback requirements? | Determines operational readiness. | Backups/checksums/restore exist; target objectives are absent. | Prolonged outage or wrong snapshot restored. | IAM Operations Owner |
 
-## TOP QUESTIONS FOR NEXT IAM MEETING
+## Secondary question backlog — not the next-meeting agenda
 
-1. Which identifier is authoritative across every source, and which identifiers are merely source-local?
-2. What evidence is required before two source records may be treated as the same person?
-3. Is Phase 1 strictly read-only, and if so, which promotion, merge, approval, publish, and restore routes must be disabled?
-4. What is the field-by-field source precedence matrix for status, name, manager, email, role, identifiers, and dates?
-5. Does the 30-day rehire rule use calendar days or business days, and which boundaries/dates are included?
-6. Does a rehire reuse the existing Worker with a new engagement, or create a new Worker?
-7. What is the approved no-hire source, matching rule, override process, and audit requirement?
-8. Who may create an unknown canonical Worker, and what approval/evidence is mandatory?
-9. What is the approved policy for exact and possible duplicates, including merge authority and reversibility?
-10. Which statuses and exception states are eligible for each export, and must every eligible Worker appear exactly once?
-11. Who owns missing-source and conflicting-data exceptions, and what are the resolution SLAs?
-12. Which role may approve requests and publication, and is self-approval prohibited?
-13. Is Salesforce Phase 1 export-only XLSX, or is live API provisioning required for sign-off?
-14. What audit retention and tamper-evidence standard is required, including local notification files?
+The prioritized ten-decision agenda is maintained in [UAT_NEXT_MEETING_DECISIONS.md](UAT_NEXT_MEETING_DECISIONS.md). The detailed backlog above should not be presented as 49 equally urgent questions; Q-035 is already resolved as an approved scope decision.

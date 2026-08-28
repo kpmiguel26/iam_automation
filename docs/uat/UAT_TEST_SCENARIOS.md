@@ -2,6 +2,47 @@
 
 These scenarios are discovery-oriented. “Actual behavior” records what the current repository does; it is not automatically the expected business result. Any unresolved policy is marked **BUSINESS DECISION REQUIRED**.
 
+## Scope classification matrix
+
+| UAT ID | Scope classification | Phase 1 sign-off treatment |
+|---|---|---|
+| UAT-001 | PHASE1_CORE | In scope |
+| UAT-002 | PHASE1_CORE | In scope; analytical identity only |
+| UAT-003 | PHASE1_CORE | In scope |
+| UAT-004 | PHASE1_CORE | In scope |
+| UAT-005 | PHASE1_CORE | In scope |
+| UAT-006 | PHASE1_CORE | In scope |
+| UAT-007 | PHASE1_CORE | In scope |
+| UAT-008 | PHASE1_CORE | In scope |
+| UAT-009 | PHASE1_CORE | In scope; unmatched analytical finding only |
+| UAT-010 | PHASE1_CORE | In scope |
+| UAT-011 | PHASE1_CORE | In scope; detection only |
+| UAT-012 | PHASE1_CORE | In scope; detection only |
+| UAT-013 | PHASE1_CORE | In scope; finding only, no enforcement |
+| UAT-014 | PHASE1_CORE | In scope |
+| UAT-015 | PHASE1_CORE | In scope |
+| UAT-016 | PHASE1_CORE | In scope |
+| UAT-017 | PHASE1_CORE | In scope |
+| UAT-018 | PHASE1_CORE | In scope |
+| UAT-019 | PHASE1_CORE | In scope |
+| UAT-020 | PHASE1_CORE | In scope |
+| UAT-021 | PHASE2_WRITER | Deferred; must not block Phase 1 |
+| UAT-022 | PHASE1_CORE | In scope; finding only |
+| UAT-023 | PHASE1_CORE | In scope; finding only |
+| UAT-024 | PHASE1_CORE | In scope |
+| UAT-025 | PHASE1_CORE | In scope |
+| UAT-026 | PHASE1_PLATFORM | In scope |
+| UAT-027 | PHASE1_PLATFORM | In scope; technical gate |
+| UAT-028 | PHASE1_PLATFORM | In scope |
+| UAT-029 | PHASE1_PLATFORM | In scope |
+| UAT-030 | PHASE1_PLATFORM | In scope |
+| UAT-031 | PHASE2_WRITER | Deferred; must not block Phase 1 |
+| UAT-032 | PHASE1_CORE | In scope; human review of findings |
+| UAT-033 | FUTURE_INTEGRATION | Deferred; Salesforce-specific handoff does not block Phase 1 |
+| UAT-034 | FUTURE_INTEGRATION | Deferred; must not block Phase 1 |
+| UAT-035 | PHASE1_PLATFORM | In scope |
+| UAT-036 | PHASE1_PLATFORM | In scope for technical snapshot distribution |
+
 ## Status legend
 
 - **Ready for UAT** — executable with representative data and no unresolved decision that changes the expected result.
@@ -24,15 +65,15 @@ These scenarios are discovery-oriented. “Actual behavior” records what the c
 - **Owner / evidence:** IAM Data Owner; files, batch IDs, row counts, screenshots, logs.
 - **Status:** Ready for UAT.
 
-#### UAT-002 — Canonical employee creation from one unambiguous record
-- **Objective:** Confirm the approved path from a single valid source record to one canonical Worker.
-- **Preconditions:** A source record with a unique approved identifier; promotion permission available.
+#### UAT-002 — Canonical analytical identity resolution from one unambiguous record
+- **Objective:** Confirm that a single valid source observation can be represented by one internal canonical analytical identity.
+- **Preconditions:** A source record with a unique approved identifier; no authoritative source write capability.
 - **Test data:** New employee with no existing Worker and complete required fields.
-- **Steps:** Stage; review; promote/approve using the documented path; inspect Worker, identifier, engagement, and history.
-- **Expected result:** One Worker is created with traceability and no duplicate.
-- **Actual behavior currently implemented:** `_promote_record` and RSR approval can create an ACTIVE Worker.
-- **Pass / failure:** Pass if creation is authorized, idempotent, and fully evidenced; fail if duplicate or unapproved creation occurs.
-- **Owner / evidence:** IAM Data Owner / Reviewer; Worker ID, source record, audit event, before/after export.
+- **Steps:** Stage; reconcile; resolve the match; inspect analytical Worker, identifier, source observation, lineage, and history.
+- **Expected result:** One analytical identity is represented with traceability and no duplicate; no authoritative employee or lifecycle decision is made.
+- **Actual behavior currently implemented:** Existing promotion paths can create an ACTIVE Worker; this is a future writer concern and must not be used as Phase 1 acceptance.
+- **Pass / failure:** Pass if analytical representation is deterministic and evidenced; fail if the result implies hire, provisioning, or source mutation.
+- **Owner / evidence:** IAM Data Owner / Reviewer; analytical Worker ID, source record, match trace, audit event, evidence export.
 - **Status:** Ready for UAT.
 
 #### UAT-003 — Multiple source records for the same employee
@@ -101,16 +142,16 @@ These scenarios are discovery-oriented. “Actual behavior” records what the c
 - **Owner / evidence:** Source Owner; rejected file, row-level reason, batch log.
 - **Status:** Ready for UAT (source-specific field list still needs confirmation).
 
-#### UAT-009 — Unknown employee
-- **Objective:** Confirm an unknown source person cannot become canonical without the required review.
+#### UAT-009 — Unknown source observation
+- **Objective:** Confirm an unknown source observation is surfaced as an analytical unmatched finding/candidate and is not treated as an authoritative employee.
 - **Preconditions:** Source record has no Worker match.
 - **Test data:** Valid-looking new RSR/AccessNow record and an unauthorized/ambiguous record.
-- **Steps:** Stage; inspect unmatched status; try approval/promotion; inspect Worker and audit.
-- **Expected result:** **BUSINESS DECISION REQUIRED** — define who may create a Worker and required evidence.
-- **Actual behavior currently implemented:** RSR unmatched records can be approved into an ACTIVE Worker; generic promotion path exists.
-- **Pass / failure:** Fail on automatic or unauthorized creation.
-- **Owner / evidence:** IAM Identity Owner; approval, Worker creation event, source lineage.
-- **Status:** Blocked by business decision.
+- **Steps:** Stage; inspect unmatched finding; inspect candidate evidence, lineage, and audit; verify no authoritative action is available.
+- **Expected result:** Unmatched evidence remains visible as `INSUFFICIENT_EVIDENCE` or another approved finding; no hire/reject/provisioning action occurs.
+- **Actual behavior currently implemented:** RSR unmatched records can be promoted into an ACTIVE Worker through an existing writer path; that path is **DEFERRED — PHASE2_WRITER**.
+- **Pass / failure:** Pass if only an analytical finding/candidate exists; fail on automatic or authoritative creation.
+- **Owner / evidence:** IAM Identity Owner; unmatched record, match trace, finding, source lineage.
+- **Status:** Blocked by technical dependency.
 
 #### UAT-010 — Employee outside standard roster flow
 - **Objective:** Determine how contractors, transfers, exceptions, and non-standard workers enter reconciliation.
@@ -169,25 +210,25 @@ These scenarios are discovery-oriented. “Actual behavior” records what the c
 - **Owner / evidence:** IAM Data Owner; snapshots, coverage report, discrepancy assignment.
 - **Status:** Blocked by business decision.
 
-#### UAT-015 — Source precedence
-- **Objective:** Confirm a conflicting field resolves from the business-approved source for that field.
+#### UAT-015 — Source conflict and field-level classification
+- **Objective:** Confirm a conflicting field is classified as authority, discrepancy, expected difference, source latency, or insufficient evidence only when evidence supports it.
 - **Preconditions:** Same Worker with conflicting source values.
 - **Test data:** Conflicting names, manager, status, email, role, and dates by source.
 - **Steps:** Reconcile; generate canonical/report/export views; compare selected values.
-- **Expected result:** **BUSINESS DECISION REQUIRED** — field-level precedence matrix.
-- **Actual behavior currently implemented:** Report engagement preference uses Roster Lock > RSR > AccessNow plus completeness/recency; this is not a full approved matrix.
-- **Pass / failure:** Fail if selection is undocumented or differs by screen/export.
+- **Expected result:** Without an approved field-level authority rule, both observations remain visible as `DISCREPANCY`, `EXPECTED_DIFFERENCE`, `SOURCE_LATENCY`, or `INSUFFICIENT_EVIDENCE`; the platform does not silently overwrite evidence.
+- **Actual behavior currently implemented:** Report engagement preference uses Roster Lock > RSR > AccessNow plus completeness/recency; this is an encoded heuristic, not an approved universal winner.
+- **Pass / failure:** Pass if the classification and evidence are consistent; fail if an unapproved source silently wins.
 - **Owner / evidence:** IAM Data Owner; precedence matrix, report, export, audit.
 - **Status:** Blocked by business decision.
 
-#### UAT-016 — Source freshness / timestamp conflict
+#### UAT-016 — Source freshness, latency, and timestamp conflict
 - **Objective:** Confirm stale and current records are handled predictably.
 - **Preconditions:** Source records with different created, updated, effective, and received timestamps.
 - **Test data:** Late-arriving correction, stale active record, future-dated change, missing timestamp.
 - **Steps:** Load in varying order; compare canonical/report/history output.
-- **Expected result:** **BUSINESS DECISION REQUIRED** — identify authoritative timestamp per event.
-- **Actual behavior currently implemented:** Some paths use created time, updated time, or effective fields; no global policy found.
-- **Pass / failure:** Fail if order-dependent result is unexplained.
+- **Expected result:** Snapshot date, effective date, received/imported date, and data age remain distinct; a mismatch is `SOURCE_LATENCY` until the approved window expires, not automatically a discrepancy.
+- **Actual behavior currently implemented:** Some paths use created time, updated time, or effective fields; no global policy found — **ASSUMPTION CURRENTLY ENCODED**.
+- **Pass / failure:** Pass if results expose temporal evidence and approved latency semantics; fail if load order alone creates a business conclusion.
 - **Owner / evidence:** IAM Data Owner; timestamps, run order, selected value, history.
 - **Status:** Blocked by business decision.
 
@@ -235,16 +276,16 @@ These scenarios are discovery-oriented. “Actual behavior” records what the c
 - **Owner / evidence:** IAM Data Owner; before/after, source timestamp, approval.
 - **Status:** Blocked by business decision.
 
-#### UAT-021 — Role/access change
+#### UAT-021 — Role/access change request (deferred writer scenario)
 - **Objective:** Distinguish a recorded request from an actual downstream access change.
 - **Preconditions:** Requester/reviewer accounts; downstream sandbox if required.
 - **Test data:** Create, update, deactivate, and role-change requests.
 - **Steps:** Submit and approve request; inspect status, publication queue, and downstream result.
-- **Expected result:** Phase 1 records/reports the change only; live ITSM/AD/Salesforce writes are out of scope unless enabled explicitly.
+- **Expected result:** **DEFERRED — PHASE2_WRITER.** Phase 1 may report a role/access observation or finding only; it does not approve, apply, or execute the change.
 - **Actual behavior currently implemented:** Request operations and approval/publication structures exist; downstream live integrations are future.
 - **Pass / failure:** Fail if UAT claims access changed when only a request/export exists.
 - **Owner / evidence:** IAM Process Owner; request JSON, approval, queue, downstream handoff.
-- **Status:** Not implemented for live downstream application.
+- **Status:** Deferred — PHASE2_WRITER; does not block Phase 1.
 
 #### UAT-022 — Deactivated employee
 - **Objective:** Confirm deactivation is visible and does not get undone by stale active data.
@@ -270,13 +311,13 @@ These scenarios are discovery-oriented. “Actual behavior” records what the c
 
 ### Outputs, security, and operations
 
-#### UAT-024 — Export generation
-- **Objective:** Confirm authorized users can generate the required Phase 1 report and Salesforce handoff file.
+#### UAT-024 — Analytical evidence export generation
+- **Objective:** Confirm authorized users can generate the required Phase 1 reports and evidence exports.
 - **Preconditions:** Approved test data; export directory; authorized role.
 - **Test data:** Workers with complete, incomplete, duplicate, conflict, inactive, and historical records.
-- **Steps:** Generate canonical/report and Salesforce XLSX exports; inspect naming, format, and audit.
+- **Steps:** Generate canonical/reconciliation and evidence exports; inspect naming, format, population, and audit.
 - **Expected result:** Export completes, has stable schema, and does not write live downstream systems.
-- **Actual behavior currently implemented:** Report service and export-only Salesforce XLSX exist; only latest approved CREATE/UPDATE request per entity is selected.
+- **Actual behavior currently implemented:** Report service provides analytical report output; Salesforce-specific export is documented separately as future integration.
 - **Pass / failure:** Pass if format, scope, and authorization meet signed specification.
 - **Owner / evidence:** IAM Data/Reporting Owner; files, checksums, row counts, audit event.
 - **Status:** Ready for UAT (business format/sign-off still required).
@@ -287,32 +328,32 @@ These scenarios are discovery-oriented. “Actual behavior” records what the c
 - **Test data:** Full fixture plus unmatched, quarantined, duplicate, inactive, and missing-source cases.
 - **Steps:** Generate export; reconcile row count and IDs to expected population; inspect exclusions.
 - **Expected result:** **BUSINESS DECISION REQUIRED** — define eligible population and treatment of exceptions/inactive workers.
-- **Actual behavior currently implemented:** Reports target one row per canonical Worker; Salesforce export filters approved requests.
+- **Actual behavior currently implemented:** Reports target one row per canonical Worker; Salesforce-specific request export is deferred and not used for Phase 1 completeness.
 - **Pass / failure:** Fail on unexplained omission, duplicate, or inclusion.
 - **Owner / evidence:** IAM Data Owner; control totals, exception list, exported IDs.
 - **Status:** Blocked by business decision.
 
-#### UAT-026 — Audit trail
-- **Objective:** Confirm ingestion, review, promotion, merge, approval, publication, export, and recovery events are attributable.
+#### UAT-026 — Audit trail for Phase 1 platform actions
+- **Objective:** Confirm ingestion, reconciliation, finding review, evidence export, analytical snapshot publication, and recovery events are attributable.
 - **Preconditions:** Audit logging enabled; test users with distinct roles.
-- **Test data:** One successful and one failed action in each flow.
+- **Test data:** One successful and one failed action in each Phase 1 flow.
 - **Steps:** Execute actions; query JSONL audit; compare actor, entity, before/after, result, error, correlation ID.
-- **Expected result:** **BUSINESS DECISION REQUIRED** — define retention, immutability, required events, and access.
+- **Expected result:** Required Phase 1 platform actions have actor, entity, result, evidence, and correlation data; retention, immutability, required event catalog, and access remain **BUSINESS DECISION REQUIRED**.
 - **Actual behavior currently implemented:** Append-oriented daily JSONL includes the listed fields; cryptographic immutability/retention are not complete.
 - **Pass / failure:** Fail on missing actor, outcome, or correlation for a material action.
 - **Owner / evidence:** IAM Audit/Compliance Owner; audit files, event IDs, retention proof.
 - **Status:** Blocked by business decision.
 
-#### UAT-027 — Read-only enforcement
-- **Objective:** Prove Phase 1 users cannot mutate employee data or publish changes outside approved scope.
+#### UAT-027 — Authoritative mutation prevention
+- **Objective:** Prove Phase 1 technically prevents authoritative lifecycle mutation while allowing internal analytical/runtime mutation.
 - **Preconditions:** Production-like deployment, read-only role, administrator role, and audit access.
 - **Test data:** Existing Worker and source records.
-- **Steps:** Attempt promote, apply, merge, approve, publish, restore, and direct API mutation as each role.
-- **Expected result:** **BUSINESS DECISION REQUIRED** — confirm whether writer routes are disabled, gated, or intentionally in scope.
-- **Actual behavior currently implemented:** Routes exist for promotion, apply, merge, approval, publish, and restore; architecture says read-only.
-- **Pass / failure:** Fail on unauthorized mutation or if documented phase scope cannot be enforced.
+- **Steps:** Attempt hire/reject, terminate/reactivate, provision/deprovision, source-platform writes, automatic business decisions, and direct API mutation; separately verify ingestion, reconciliation, lineage, review state, evidence, snapshot publication, and restore.
+- **Expected result:** Authoritative business mutation is technically impossible from Phase 1. Analytical/technical mutation is permitted. Technical publication of the read-only analytical database is not business-change publication.
+- **Actual behavior currently implemented:** Routes exist for promotion, apply, merge, approval, publish, and restore; architecture says read-only. This is a repository contradiction requiring a gate/composition boundary, not a Phase 1 business decision.
+- **Pass / failure:** Pass only when no authoritative mutation path is reachable; fail on any source-system write or automatic business outcome.
 - **Owner / evidence:** IAM Security Owner; permission matrix, API responses, audit, database diff.
-- **Status:** Blocked by technical dependency and business decision.
+- **Status:** Blocked by technical dependency.
 
 #### UAT-028 — Unauthorized user access
 - **Objective:** Confirm unapproved users cannot log in or access sensitive employee data.
@@ -347,21 +388,21 @@ These scenarios are discovery-oriented. “Actual behavior” records what the c
 - **Owner / evidence:** IAM Operations Owner; checksums, backup manifest, restore log, record counts.
 - **Status:** Ready for UAT (retention and local-notification policy still required).
 
-#### UAT-031 — Duplicate merge behavior
+#### UAT-031 — Duplicate merge execution (deferred writer scenario)
 - **Objective:** Confirm an approved merge preserves evidence and makes supersession clear.
 - **Preconditions:** Two candidate Workers; authorized merge role; backup.
 - **Test data:** Matching identity, conflicting profiles, engagements, identifiers, discrepancies, and audit events.
 - **Steps:** Review merge plan; require reason/approval; execute; inspect survivor, superseded Worker, lineage, reports, and history.
-- **Expected result:** No evidence is deleted; outcome is reversible or recoverable; downstream references are defined.
+- **Expected result:** **DEFERRED — PHASE2_WRITER.** Phase 1 only presents duplicate candidates and evidence; it does not execute an authoritative merge.
 - **Actual behavior currently implemented:** Merge route/service exists and preserves evidence, but automatic merge is not authorized and read-only scope conflicts.
 - **Pass / failure:** Fail on unapproved merge or broken references.
 - **Owner / evidence:** IAM Identity/Audit Owner; plan, approval, before/after IDs, backup.
-- **Status:** Not implemented as an approved Phase 1 business flow.
+- **Status:** Deferred — PHASE2_WRITER; does not block Phase 1.
 
 #### UAT-032 — Manual review / exception handling
 - **Objective:** Confirm conflicts, unmatched rows, quarantine, and overdue items have an owner, status, reason, and disposition.
 - **Preconditions:** Reviewer and administrator test users; exception fixtures.
-- **Test data:** Quarantined row, conflict, unmatched worker, duplicate candidate, overdue request.
+- **Test data:** Quarantined row, conflict, unmatched observation, duplicate candidate, source-latency finding, and policy-relevant finding.
 - **Steps:** Open exception; assign/review; record decision; resolve/reject/escalate; inspect history and notification.
 - **Expected result:** **BUSINESS DECISION REQUIRED** — define SLA, owners, dispositions, and escalation.
 - **Actual behavior currently implemented:** Quarantine, under-review, rejected, conflict, and overdue notification paths exist, but policy is incomplete.
@@ -369,32 +410,32 @@ These scenarios are discovery-oriented. “Actual behavior” records what the c
 - **Owner / evidence:** IAM Operations Owner; exception ID, assignment, decision note, audit.
 - **Status:** Blocked by business decision.
 
-#### UAT-033 — Salesforce access assumptions
-- **Objective:** Confirm stakeholders understand and accept the Salesforce Phase 1 boundary and handoff contract.
-- **Preconditions:** Approved export template and Salesforce sandbox contact.
+#### UAT-033 — Salesforce evidence export boundary (deferred)
+- **Objective:** Confirm the future Salesforce-format file is an evidence/handoff export and not live Salesforce provisioning.
+- **Preconditions:** Future-phase export template and Salesforce sandbox contact.
 - **Test data:** Approved CREATE/UPDATE requests, duplicate employee requests, missing mapping fields.
 - **Steps:** Generate XLSX; validate mappings, latest-request selection, alias/federation values, and manual handoff.
-- **Expected result:** **BUSINESS DECISION REQUIRED** — confirm no API write, template defaults, and downstream acceptance.
+- **Expected result:** **DEFERRED — FUTURE_INTEGRATION.** Any future Salesforce file must be a reproducible handoff; no Salesforce API write or account decision occurs. Template mappings/defaults require separate validation.
 - **Actual behavior currently implemented:** Export-only XLSX; no Salesforce API/authentication; default country/timezone/locale and generated alias/federation mapping.
 - **Pass / failure:** Fail if consumers expect live provisioning or reject mappings.
 - **Owner / evidence:** Salesforce Owner + IAM Reporting Owner; file, mapping sign-off, handoff receipt.
-- **Status:** Blocked by technical dependency and business decision.
+- **Status:** Deferred — FUTURE_INTEGRATION; does not block Phase 1.
 
-#### UAT-034 — Current Phase 1 integration assumptions
+#### UAT-034 — Future integration boundaries
 - **Objective:** Confirm future AD/Azure, CXOne, NICE, SQL, orchestrator, and ITSM integrations are excluded or separately accepted.
 - **Preconditions:** Phase scope and handoff owners documented.
 - **Test data:** One record for each future integration boundary.
 - **Steps:** Attempt to locate live connector, execute export/handoff, record actual endpoint and owner.
-- **Expected result:** Phase 1 has no unapproved live write; each future dependency has an owner and readiness criterion.
+- **Expected result:** **DEFERRED — FUTURE_INTEGRATION.** Phase 1 has no live write; each future dependency is separately owned and must not block Phase 1 sign-off.
 - **Actual behavior currently implemented:** Requirements and README describe integrations as future/placeholders; live ITSM writes are not evident.
 - **Pass / failure:** Fail if undocumented live side effects exist or a required handoff has no owner.
 - **Owner / evidence:** IAM Solution Owner; architecture, connection inventory, handoff evidence.
-- **Status:** Blocked by technical dependency.
+- **Status:** Deferred — FUTURE_INTEGRATION; does not block Phase 1.
 
 #### UAT-035 — Local versus global notifications
 - **Objective:** Confirm operational alerts stay with the local user and only database publication creates a global signal.
 - **Preconditions:** Two local users/computers, shared publication folder, notification fixtures.
-- **Test data:** Ingestion error, discrepancy, overdue item, database publication, repeated publication within five minutes.
+- **Test data:** Ingestion error, discrepancy, source-latency finding, analytical database publication, repeated publication within five minutes.
 - **Steps:** Trigger each event; inspect each local notification store and shared folder; repeat publication.
 - **Expected result:** Local events are not visible to another user; publication signal is global, critical, and throttled to five minutes.
 - **Actual behavior currently implemented:** Local operational JSON store under `.iam_notifications`; shared `DATABASE_SNAPSHOT_PUBLISHED` signal with five-minute throttle.
@@ -402,12 +443,12 @@ These scenarios are discovery-oriented. “Actual behavior” records what the c
 - **Owner / evidence:** IAM Operations Owner; per-user files, shared signal, timestamps.
 - **Status:** Ready for UAT.
 
-#### UAT-036 — Publication and version visibility
-- **Objective:** Confirm publishing a database snapshot is authorized, versioned, checksum-checked, and visible to other users only as a global publication event.
+#### UAT-036 — Analytical snapshot publication and version visibility
+- **Objective:** Confirm technical publication of a read-only analytical database is authorized, versioned, checksum-checked, and visible to other users only as a global publication event.
 - **Preconditions:** Approved snapshot, publisher role, expected checksum, second user environment.
 - **Test data:** Valid snapshot, stale checksum, concurrent update, repeated publication.
 - **Steps:** Publish; inspect backup, checksum, database version, global notification, and second user refresh.
-- **Expected result:** Only authorized publication succeeds; stale/concurrent publication fails safely; global signal is not duplicated inside five minutes.
+- **Expected result:** Only authorized technical snapshot publication succeeds; stale/concurrent publication fails safely; global signal is not duplicated inside five minutes. This is not business-change publication.
 - **Actual behavior currently implemented:** Publish route requires Application/Master role, uses checksum/concurrency checks, backups, and global signal.
 - **Pass / failure:** Fail on overwrite, unauthorized publish, wrong version, or local operational leakage.
 - **Owner / evidence:** IAM Operations/Security Owner; checksum, backup, route response, notifications.
@@ -415,4 +456,4 @@ These scenarios are discovery-oriented. “Actual behavior” records what the c
 
 ## Coverage notes
 
-The scenarios intentionally separate “the code has a path” from “IAM has approved the business outcome.” The most important blocked scenarios are UAT-003 through UAT-007, UAT-011 through UAT-016, UAT-018 through UAT-020, UAT-022/023, UAT-025/026, UAT-027, UAT-029, UAT-032/033. These should not be converted to passing tests by choosing a convenient expected result in the test script.
+The scenarios intentionally separate “the code has a path” from “IAM has approved the analytical interpretation.” The highest-impact Phase 1 blockers are UAT-003 through UAT-007, UAT-011 through UAT-016, UAT-018 through UAT-020, UAT-022/023, UAT-025/026, UAT-029, and UAT-032. UAT-027 is a technical release gate. UAT-021 and UAT-031 are deferred writer scenarios; UAT-034 is a deferred integration scenario. These must not block Phase 1 sign-off and must not be converted to passing tests by choosing a convenient expected result.

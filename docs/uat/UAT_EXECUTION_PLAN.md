@@ -2,105 +2,115 @@
 
 ## Executive summary
 
-The repository contains meaningful Phase 1 implementation, but the highest-risk decisions are still business-owned. Identity matching, canonical promotion, source precedence, rehire, no-hire, export eligibility, and read-only scope must be settled before UAT can become a sign-off exercise.
+IAM Automation Phase 1 is accepted in this package as a read-only identity reconciliation and audit product. It detects, classifies, preserves, and explains evidence. Humans decide; authoritative source platforms execute.
 
 | Measure | Result |
 |---|---:|
-| Confirmed rules | 13 |
-| Implied rules | 13 |
-| Assumptions encoded in code | 14 explicit inventory rows marked **ASSUMPTION CURRENTLY ENCODED**; several overlap with implied/partial classifications |
-| Business decisions still required | 49 open questions |
-| UAT scenarios ready | 9 |
-| Scenarios blocked by business decision | 21 exclusively business-blocked; 2 additional scenarios have both business and technical blockers |
-| Scenarios blocked technically | 3 technically impacted scenarios (two also require business decisions) |
-| Scenarios not implemented | 3 |
+| Phase 1 Core rules | 34 |
+| Phase 1 Platform rules | 8 |
+| Phase 2 Writer rules | 5 |
+| Future Integration rules | 4 |
+| Out-of-scope rules | 1 |
+| Phase 1 UAT scenarios ready | 9 |
+| Phase 1 scenarios blocked by business decisions | 20 |
+| Phase 1 scenarios blocked technically | 3 |
+| Phase 1 scenarios not implemented | 1 |
+| Phase 2 scenarios deferred | 2 |
+| Future-integration scenarios deferred | 2 |
+| Business questions remaining | 48 |
+| Questions in next-meeting agenda | 10 |
 
-The counts are intentionally non-exclusive where a scenario has both a technical and a business blocker. “Assumptions encoded” is a marker count, not a separate rule classification; it overlaps with implied and partially implemented rules.
+The scenario counts are based on the scope matrix in `UAT_TEST_SCENARIOS.md`; deferred Phase2/Future scenarios do not block Phase 1 sign-off. The three technical blockers include two scenarios marked “Blocked by technical dependency” and one Phase 1 capability marked “Not implemented.” Some scenarios may be technically runnable while their expected finding interpretation remains a business decision.
 
-## Recommended execution waves
+## Previously identified blockers that disappeared after the scope clarification
 
-### Wave 1 — Core identity
+- “Is Phase 1 read-only?” is no longer an open business question. It is an approved scope decision and a technical acceptance gate.
+- Promotion, authoritative employee creation, merge execution, apply, approval, ITSM, provisioning, and downstream source mutation no longer block Phase 1; they are deferred writer/future capabilities.
+- Rehire, no-hire, deactivation, and reactivation are no longer treated as Phase 1 actions. They remain detection/finding scenarios only.
+- Salesforce live API provisioning no longer blocks Phase 1. The Phase 1 boundary is evidence export/manual handoff; live API is future integration.
+- A source conflict no longer automatically requires a winning source. The platform may report discrepancy, expected difference, latency, insufficient evidence, or policy-relevant finding.
+- Canonical Worker creation is no longer described as hiring or authoritative employee creation. It is an internal analytical identity representation.
 
-Run UAT-001, UAT-002, UAT-003, UAT-006, UAT-008, UAT-009, and UAT-017. First approve identity keys, required fields, canonical Worker grain, and creation authority. Use a controlled golden dataset with stable IDs, deliberate conflicts, missing fields, and history.
+## Execution waves
 
-**Exit criteria:** identity decision matrix approved; no unexplained canonical creation, split, or merge; every source row has batch and lineage evidence.
+### Wave 1 — Ingestion & lineage
 
-### Wave 2 — Duplicate and reconciliation
+Run UAT-001, UAT-008, UAT-009, UAT-010, and UAT-017.
 
-Run UAT-004, UAT-005, UAT-007, UAT-014, UAT-015, and UAT-016. Include exact duplicates, near duplicates, source-only records, conflicting fields, and reordered/late-arriving files.
+Verify source files, batch identity, schema validation, quarantine, row counts, no silent loss, source snapshot metadata, lineage, analytical unmatched findings, and historical evidence. Use privacy-safe fixtures from every approved source.
 
-**Exit criteria:** duplicate definition, possible-match threshold, field-level precedence, freshness policy, and exception ownership are approved; results are order-independent where required.
+**Exit criteria:** every input row is accepted, quarantined, or rejected with evidence; batch/file/source metadata is reproducible; no authoritative source is changed.
 
-### Wave 3 — Exception and lifecycle handling
+### Wave 2 — Identity reconciliation
 
-Run UAT-011, UAT-012, UAT-013, UAT-018, UAT-019, UAT-020, UAT-022, UAT-023, and UAT-032. Include rehire boundary dates, holidays, identifier/name changes, deactivation/reactivation, no-hire, and manual review.
+Run UAT-002, UAT-003, UAT-004, UAT-005, UAT-018, and UAT-019.
 
-**Exit criteria:** rehire calendar and Worker/engagement policy approved; no-hire policy exists or is explicitly deferred with risk acceptance; exceptions have owners, SLAs, and disposition evidence.
+Verify strong identifiers, approved aliases, fallback signals, deterministic match explanations, ambiguity, exact duplicates, possible duplicates, identifier changes, and name changes. A canonical identity is analytical only.
 
-### Wave 4 — Security and read-only enforcement
+**Exit criteria:** approved identity evidence matrix exists; uncertain matches are surfaced; no silent merge, split, hire, or provisioning decision occurs.
 
-Run UAT-027, UAT-028, and UAT-029 in a production-like configuration. Test both UI and protected endpoints, including direct mutation attempts. Confirm development auto-approval is disabled.
+### Wave 3 — Cross-source audit
 
-**Exit criteria:** signed role/permission matrix; separation of duties; read-only boundary technically enforced or writer scope explicitly approved; no unauthorized mutation.
+Run UAT-006, UAT-007, UAT-014, UAT-015, UAT-016, UAT-020, UAT-024, and UAT-025.
 
-### Wave 5 — Export and audit
+Verify coverage, source conflicts, timestamps, refresh cadence, data age, source latency, expected differences, finding classification, report grain, control totals, and reproducibility. Do not force a winner without an approved field-level authority rule.
 
-Run UAT-024, UAT-025, UAT-026, UAT-033, and UAT-035. Reconcile control totals, row grain, inclusion/exclusion, Salesforce mappings, audit events, and local/global notification behavior.
+**Exit criteria:** every comparison has temporal context and one of `CONSISTENT`, `EXPECTED_DIFFERENCE`, `SOURCE_LATENCY`, `INSUFFICIENT_EVIDENCE`, `DISCREPANCY`, or `POLICY_RELEVANT_FINDING`.
 
-**Exit criteria:** export contract and eligibility matrix signed; Salesforce boundary accepted; audit event/retention standard approved; local notifications never become shared database data; only publication generates global signal.
+### Wave 4 — Lifecycle findings
 
-### Wave 6 — Production readiness
+Run UAT-011, UAT-012, UAT-013, UAT-022, UAT-023, and UAT-032.
 
-Run UAT-030, UAT-031, UAT-034, and UAT-036. Validate backup/restore, merge recovery, integration boundaries, checksum/concurrency, publication, and five-minute global publication throttling.
+Verify potential rehire detection, conflicting status observations, missing-source conditions, no-hire findings, and human review of findings. The system must not approve/reject hire, terminate, reactivate, change access, or enforce policy.
 
-**Exit criteria:** RPO/RTO/retention agreed; integration inventory has owners; publication/rollback approvals documented; release checklist and residual-risk acceptance complete.
+**Exit criteria:** rehire/date/calendar parameters are approved; source latency and absence windows are approved; findings contain enough evidence for human action outside Phase 1.
+
+### Wave 5 — Review, evidence & exports
+
+Run UAT-026 and UAT-035.
+
+Verify human review state, evidence/history, audit trace, report completeness, and local-versus-global notifications. Salesforce-specific output is deferred and is not a Phase 1 account change.
+
+**Exit criteria:** evidence is complete, reproducible, and attributable; local operational notifications do not enter shared/database state; only analytical snapshot publication creates the global signal.
+
+### Wave 6 — Platform safety
+
+Run UAT-027, UAT-028, UAT-029, UAT-030, and UAT-036.
+
+Verify authoritative mutation prevention, production authentication, least privilege, audit logging, backup/recovery, checksums, versioned data, and technical publication/distribution of the read-only analytical database.
+
+**Exit criteria:** no Phase 1 path can mutate authoritative lifecycle/source data or execute a business decision; approved users can review only what their role permits; technical snapshot distribution is distinguishable from business-change publication.
 
 ## Entry criteria
 
-- A versioned test build and disposable database/snapshot are available.
-- Representative, privacy-safe fixtures exist for every source and lifecycle case.
-- Stakeholder owners are named for Identity, Data, Lifecycle, Security, Reporting, Audit, Operations, Salesforce, and Product.
-- The current requirements tracker has been reconciled with repository evidence.
-- The expected result for each scenario is either approved or explicitly marked blocked.
+- Versioned Phase 1 build and disposable analytical database/snapshot.
+- Privacy-safe fixtures for all approved source formats and lifecycle observations.
+- Named owners for identity, data, lifecycle, security, reporting, audit, operations, and product decisions.
+- Approved finding-class vocabulary and initial source refresh/latency inventory.
+- Production-like authentication with development auto-approval disabled.
 
-## Test data and evidence standard
+## Evidence standard
 
-Each UAT run should retain source files, file hashes, import batch IDs, row/control totals, match signals, discrepancy IDs, Worker/engagement/identifier IDs, before/after snapshots, approval notes, audit events, notification files, export files, checksums, and screenshots of role/access results. Use synthetic identifiers and never place production personal data in the repository.
+Retain source files and hashes, batch IDs, row/control totals, schema/quarantine outcomes, match signals, canonical analytical IDs, source observations, snapshot/effective/received timestamps, finding class, discrepancy IDs, review notes, audit events, local notification files, export files, checksums, and screenshots of access-control results. Do not use production personal data in the test repository.
 
-## Defect and decision handling
+## Sign-off gates
 
-1. Log a technical defect when actual behavior differs from an approved expected result.
-2. Log a business decision when the repository makes a choice but stakeholders have not approved it.
-3. Do not close a business ambiguity by changing the test expected result.
-4. For an unresolved critical identity/security/export risk, mark the scenario blocked and obtain named risk acceptance before release.
-5. Link each final decision to the relevant rule, question, scenario, and implementation change.
+Phase 1 sign-off requires:
 
-## UAT sign-off recommendation
+1. Identity keys, aliases, fallback behavior, and ambiguity treatment approved.
+2. Cross-source coverage expectations, latency windows, and absence semantics approved.
+3. Conflict classification and expected differences approved; no unapproved silent overwrite.
+4. Rehire detection parameters approved, with detection explicitly separated from action.
+5. Finding severity and review evidence requirements approved.
+6. Export grain, completeness, exclusions, and reproducibility approved.
+7. Technical read-only enforcement proven for authoritative systems.
+8. Authentication, authorization, audit, recovery, and analytical snapshot distribution proven.
+9. Phase2 writer and future integrations recorded as deferred and non-blocking.
 
-Phase 1 should not be signed off until Q-001, Q-007, Q-010, Q-018, Q-021, Q-024, Q-035, Q-036, Q-039, Q-042, and Q-043 are answered. If any is deferred, the Product Owner and the affected IAM owner must record scope, workaround, residual risk, and target phase.
+## Deferred scenarios
 
-## Top 10 questions for the next stakeholder meeting
+See [PHASE2_WRITER_DEFERRED_SCENARIOS.md](future/PHASE2_WRITER_DEFERRED_SCENARIOS.md). Those scenarios must not be included in the Phase 1 exit gate.
 
-1. Which identifier is authoritative across every source, and which identifiers are source-local?
-2. What evidence is required before two records may be treated as the same person?
-3. Is Phase 1 strictly read-only, and which writer routes must be disabled?
-4. What is the field-by-field source precedence matrix?
-5. Does the 30-day rehire rule use calendar or business days, and which boundaries are included?
-6. Does a rehire reuse the Worker with a new engagement, or create a new Worker?
-7. What is the no-hire source, match rule, override process, and audit requirement?
-8. Who may create an unknown Worker, and what evidence is mandatory?
-9. What is the exact/possible duplicate policy, including merge authority and reversibility?
-10. Which statuses and exception states are eligible for each export, and must each eligible Worker appear exactly once?
+## Top stakeholder decisions
 
-## Final checklist
-
-- [ ] Identity matching and identifier equivalence approved.
-- [ ] Canonical Worker/Employee model and creation authority approved.
-- [ ] Source precedence, freshness, and duplicate policy approved.
-- [ ] Rehire, no-hire, non-standard onboarding, and lifecycle rules approved.
-- [ ] Missing/conflicting data ownership and SLA approved.
-- [ ] Read-only boundary and role matrix technically verified.
-- [ ] Export grain, completeness, Salesforce boundary, and mappings approved.
-- [ ] Audit, retention, local notification, and recovery policy approved.
-- [ ] Future integration dependencies explicitly excluded or accepted.
-- [ ] Critical residual risks accepted by named owners.
+See [UAT_NEXT_MEETING_DECISIONS.md](UAT_NEXT_MEETING_DECISIONS.md) for the reduced ten-item agenda. The detailed 48-question backlog remains in [UAT_OPEN_BUSINESS_QUESTIONS.md](UAT_OPEN_BUSINESS_QUESTIONS.md).
