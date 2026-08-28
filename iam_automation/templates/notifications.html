@@ -1,17 +1,84 @@
 <!--
 File: iam_automation/templates/notifications.html
-Purpose: Provides the notifications component of IAM Automation.
-Responsibilities: Provides the file-level implementation used by the application.
-Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
-Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
+Purpose: Provides the single user-facing notification center.
+Responsibilities: Shows local operational notifications and the explicitly global database publication signal.
+Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets.
+Inputs/outputs: Inputs: filtered notification records. Outputs: read and resolve actions for the current user.
 Author / implementation: Miguel Fernandez.
 Developed for: Kaiser Permanente NSES GWFM.
 Project implementation and integration: Miguel Fernandez.
 Third-party source, libraries, and dependencies retain their original licenses.
-Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
 -->
 
 {% extends "base.html" %}
 {% block title %}Notifications{% endblock %}
-{% block content %}<div class="container-fluid px-4 px-lg-5 py-4 page-shell"><div class="page-heading"><div><p class="eyebrow">Workspace activity</p><h1>Notifications</h1><p class="text-secondary mb-0">Review changes, assignments and actions that need your attention.</p></div><span class="badge text-bg-light border">{{ notifications|length }} events</span></div><div class="notification-list mt-4">{% for item in notifications %}<article class="surface notification-card {% if item.status == 'UNREAD' %}notification-unread{% endif %}"><div class="notification-card-icon severity-{{ item.severity|lower }}" aria-hidden="true">{% if item.severity in ('CRITICAL', 'ERROR', 'WARNING') %}!{% else %}i{% endif %}</div><div class="notification-card-body"><div class="d-flex justify-content-between gap-3"><div><h2 class="h6 mb-1">{{ item.title }}</h2><p class="small text-secondary mb-2">{{ item.notification_type|replace('_', ' ')|title }} · {{ item.status|replace('_', ' ')|title }}</p></div><span class="badge text-bg-light">{{ item.severity }}</span></div><p class="mb-3">{{ item.message }}</p><div class="d-flex flex-wrap gap-2">{% if item.target_route %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('notification_open', notification_id=item.notification_id) }}">Open related item</a>{% endif %}{% if item.status == 'UNREAD' %}<form method="post" action="{{ url_for('notification_read', notification_id=item.notification_id) }}"><button class="btn btn-sm btn-outline-secondary" type="submit">Mark as read</button></form>{% endif %}{% if item.status not in ('RESOLVED', 'EXPIRED') %}<form method="post" action="{{ url_for('notification_resolve', notification_id=item.notification_id) }}"><button class="btn btn-sm btn-outline-success" type="submit">Resolve</button></form>{% endif %}</div></div></article>{% else %}<div class="surface empty-state"><div class="empty-state-icon">✓</div><h2 class="h5">You are all caught up</h2><p class="text-secondary mb-0">New workspace activity will appear here.</p></div>{% endfor %}</div></div>{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <a class="back-link" href="{{ url_for('dashboard') }}">Back to workspace</a>
+  <div class="page-heading mt-3">
+    <div>
+      <p class="eyebrow mb-1">Local workspace inbox</p>
+      <h1>Notifications</h1>
+      <p class="text-secondary mb-0">Review operational activity and findings for this workstation.</p>
+    </div>
+    <div class="page-actions">
+      <span class="badge text-bg-light border">{{ notifications|length }} shown</span>
+      <span class="badge text-bg-light border">{{ unread_count }} unread</span>
+      {% if unread_count %}
+      <form method="post" action="{{ url_for('notification_read_all') }}">
+        <input type="hidden" name="status" value="{{ filters.status }}">
+        <input type="hidden" name="severity" value="{{ filters.severity }}">
+        <button class="btn btn-outline-primary btn-sm" type="submit">Mark all as read</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <form class="surface notification-filters mt-4" method="get">
+    <div>
+      <label class="form-label" for="notification-status">Status</label>
+      <select class="form-select" id="notification-status" name="status">
+        {% for option in ('ALL', 'UNREAD', 'READ', 'RESOLVED', 'EXPIRED') %}<option value="{{ option }}" {% if filters.status == option %}selected{% endif %}>{{ option.replace('_', ' ')|title }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="notification-severity">Severity</label>
+      <select class="form-select" id="notification-severity" name="severity">
+        {% for option in ('ALL', 'INFO', 'WARNING', 'ERROR', 'CRITICAL') %}<option value="{{ option }}" {% if filters.severity == option %}selected{% endif %}>{{ option|title }}</option>{% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-primary align-self-end" type="submit">Apply filters</button>
+    <a class="btn btn-link align-self-end" href="{{ url_for('notifications_page') }}">Clear</a>
+  </form>
+
+  <div class="notification-list notification-center-list mt-4">
+    {% for item in notifications %}
+    <article class="surface notification-card notification-center-card {% if item.status == 'UNREAD' %}notification-unread{% endif %}">
+      <div class="notification-card-icon severity-{{ item.severity|lower }}" aria-hidden="true">{% if item.severity in ('CRITICAL', 'ERROR', 'WARNING') %}!{% else %}i{% endif %}</div>
+      <div class="notification-card-body">
+        <div class="d-flex flex-wrap justify-content-between gap-3">
+          <div>
+            <h2 class="h6 mb-1">{{ item.title }}</h2>
+            <div class="notification-card-meta">{{ item.notification_type|replace('_', ' ')|title }} · {{ item.created_at_utc }}</div>
+          </div>
+          <div class="d-flex gap-2 align-items-start">
+            <span class="badge severity-badge severity-badge-{{ item.severity|lower }}">{{ item.severity }}</span>
+            <span class="badge status-badge status-badge-{{ item.status|lower }}">{{ item.status|replace('_', ' ')|title }}</span>
+          </div>
+        </div>
+        <p class="mb-3 mt-3">{{ item.message }}</p>
+        {% if item.entity_type or item.entity_id %}<div class="small text-secondary mb-3">{{ item.entity_type|replace('_', ' ')|title }}{% if item.entity_id %} · {{ item.entity_id }}{% endif %}</div>{% endif %}
+        <div class="d-flex flex-wrap gap-2">
+          {% if item.target_route %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('notification_open', notification_id=item.notification_id) }}">Open related item</a>{% endif %}
+          {% if item.status == 'UNREAD' %}<form method="post" action="{{ url_for('notification_read', notification_id=item.notification_id) }}"><input type="hidden" name="status" value="{{ filters.status }}"><input type="hidden" name="severity" value="{{ filters.severity }}"><button class="btn btn-sm btn-outline-secondary" type="submit">Mark as read</button></form>{% endif %}
+          {% if item.status not in ('RESOLVED', 'EXPIRED') %}<form method="post" action="{{ url_for('notification_resolve', notification_id=item.notification_id) }}"><input type="hidden" name="status" value="{{ filters.status }}"><input type="hidden" name="severity" value="{{ filters.severity }}"><button class="btn btn-sm btn-outline-success" type="submit">Resolve</button></form>{% endif %}
+        </div>
+      </div>
+    </article>
+    {% else %}
+    <div class="surface empty-state"><div class="empty-state-icon">✓</div><h2 class="h5">No notifications match these filters</h2><p class="text-secondary mb-0">New workspace activity will appear here.</p></div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
 <!-- #endfile -->

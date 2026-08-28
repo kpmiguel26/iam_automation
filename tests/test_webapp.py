@@ -14,9 +14,13 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 from __future__ import annotations
 
 import unittest
+import tempfile
 from pathlib import Path
 
 from iam_automation import webapp
+from iam_automation.application.notification_service import NotificationService
+from iam_automation.database.runtime_schema import initialize_runtime_database
+from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN
 from iam_automation.startup import PreflightResult, StartupSettings, StartupState
 
 
@@ -68,6 +72,73 @@ class WebAppTests(unittest.TestCase):
     def test_reports_requires_login(self):
         app = webapp.create_app(self.make_result(True))
         self.assertEqual(app.test_client().get("/reports").status_code, 302)
+
+    def test_notification_pages_use_one_canonical_center(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            NotificationService(database).create(
+                "app.admin",
+                "TEST",
+                "Test notification",
+                "Review this local event.",
+                severity="WARNING",
+            )
+            settings = StartupSettings(
+                database.parent / "sharepoint",
+                database.parent / "database.accdb",
+                database.parent / "published.sqlite",
+                database,
+                database.parent / "workspace",
+                database.parent / "backups",
+                database.parent / "audit",
+            )
+            app = webapp.create_app(PreflightResult(StartupState.READY, True, "ready", settings))
+            client = app.test_client()
+            with client.session_transaction() as session:
+                session["iam_user"] = "app.admin"
+                session["iam_roles"] = [ROLE_APPLICATION_ADMIN]
+                session["is_admin"] = True
+
+            legacy = client.get("/admin/notifications?status=UNREAD&severity=WARNING")
+            self.assertEqual(legacy.status_code, 302)
+            self.assertIn("/notifications?status=UNREAD&severity=WARNING", legacy.headers["Location"])
+            response = client.get(legacy.headers["Location"])
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Local workspace inbox", response.data)
+            self.assertIn(b"Test notification", response.data)
+            self.assertIn(b"Mark all as read", response.data)
+
+    def test_notification_toast_is_transient_and_can_clear_inbox(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            service = NotificationService(database)
+            service.create("app.admin", "TEST", "One", "First event")
+            service.create("app.admin", "TEST", "Two", "Second event")
+            settings = StartupSettings(
+                database.parent / "sharepoint",
+                database.parent / "database.accdb",
+                database.parent / "published.sqlite",
+                database,
+                database.parent / "workspace",
+                database.parent / "backups",
+                database.parent / "audit",
+            )
+            app = webapp.create_app(PreflightResult(StartupState.READY, True, "ready", settings))
+            client = app.test_client()
+            with client.session_transaction() as session:
+                session["iam_user"] = "app.admin"
+                session["iam_roles"] = [ROLE_APPLICATION_ADMIN]
+                session["is_admin"] = True
+            client.get("/notifications")
+            with client.session_transaction() as session:
+                csrf_token = session["iam_csrf_token"]
+
+            response = client.get("/notifications?notice=Saved&notice_type=success")
+            self.assertIn(b'id="iamToast"', response.data)
+            self.assertIn(b"history.replaceState", response.data)
+            cleared = client.post("/notifications/read-all", data={"csrf_token": csrf_token}, follow_redirects=False)
+            self.assertEqual(cleared.status_code, 302)
+            self.assertEqual(service.unread_count("app.admin"), 0)
 
     def test_local_server_uses_loopback_and_ephemeral_port(self):
         app = webapp.create_app(self.make_result(True))

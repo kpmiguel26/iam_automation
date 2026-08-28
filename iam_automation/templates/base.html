@@ -35,7 +35,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
       <div class="dropdown">
         <button class="btn notification-button" data-bs-toggle="dropdown" aria-expanded="false"
           aria-label="Open notifications" title="Notifications"><span class="nav-symbol">●</span>{% if
-          unread_notification_count %}<span class="notification-badge">{{ unread_notification_count }}</span>{% endif
+          unread_notification_count %}<span class="notification-badge">{{ '99+' if unread_notification_count > 99 else unread_notification_count }}</span>{% endif
           %}</button>
         <div class="dropdown-menu dropdown-menu-end notification-menu shadow-sm p-0">
           <div class="notification-menu-header"><strong>Notifications</strong><a
@@ -123,8 +123,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
         </div>
         {% if session.get('is_admin') %}<div class="dropdown nav-menu-group"><button
             class="btn nav-menu-toggle dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><span
-              class="nav-group-label">Administration</span>{% if unread_notification_count %}<span class="nav-count">{{
-              unread_notification_count }}</span>{% endif %}</button>
+              class="nav-group-label">Administration</span></button>
           <ul class="dropdown-menu shadow-sm">
             <li><a class="dropdown-item" href="{{ url_for('admin.home') }}"><span class="nav-symbol">▦</span>Control
                 center</a></li>
@@ -138,7 +137,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
                 access</a></li>{% endif %}<li><a class="dropdown-item"
                 href="{{ url_for('identity_admin.identities') }}"><span class="nav-symbol">◎</span>Windows
                 traceability</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('admin.notification_center') }}"><span
+            <li><a class="dropdown-item" href="{{ url_for('notifications_page') }}"><span
                   class="nav-symbol">●</span>Notifications</a></li>
             <li><a class="dropdown-item" href="{{ url_for('admin.delegation_center') }}"><span
                   class="nav-symbol">↔</span>Delegations</a></li>
@@ -171,22 +170,6 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
       </div>
     </div>
   </div>{% endif %}
-  {% if session.get('iam_user') and priority_notifications %}<section class="container-fluid px-4 px-lg-5 pt-3"
-    aria-label="Priority notifications">
-    <div class="priority-notification-panel{% if priority_notifications|selectattr('severity', 'equalto', 'CRITICAL')|list %} priority-notification-critical{% endif %}">
-      <div class="priority-notification-heading"><span class="priority-notification-icon">!</span>
-        <div><strong>Important workspace updates</strong>
-          <div class="small">Review these notifications before continuing work.</div>
-        </div><a class="btn btn-sm btn-light" href="{{ url_for('notifications_page') }}">View all</a>
-      </div>
-      <div class="priority-notification-list">{% for item in priority_notifications %}<a
-          class="priority-notification-item"
-          href="{{ url_for('notification_open', notification_id=item.notification_id) }}"><span
-            class="priority-notification-dot severity-{{ item.severity|lower }}"></span><span><strong>{{ item.title
-              }}</strong><small>{{ item.message }}</small></span><span
-            class="priority-notification-arrow">→</span></a>{% endfor %}</div>
-    </div>
-  </section>{% endif %}
   {% if session.get('iam_user') %}<div class="container-fluid px-4 px-lg-5 pt-3">
     <div class="alert alert-warning py-2 mb-0 small"><strong>Development build:</strong> This workspace is under active
       testing. Please report bugs from the Workspace menu.</div>
@@ -217,7 +200,17 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
     document.addEventListener('DOMContentLoaded', function () {
       var toast = document.getElementById('iamToast');
       if (toast && window.bootstrap) {
-        bootstrap.Toast.getOrCreateInstance(toast, { delay: 3500 }).show();
+        var toastInstance = bootstrap.Toast.getOrCreateInstance(toast, { delay: 3500 });
+        toast.addEventListener('hidden.bs.toast', function () { toast.remove(); });
+        toastInstance.show();
+        // Query-string notices are transient UI feedback, not inbox items.
+        // Remove them from browser history so refresh/back does not replay the toast.
+        if (window.history && window.history.replaceState) {
+          var cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('notice');
+          cleanUrl.searchParams.delete('notice_type');
+          window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+        }
       }
 
       function showLoading(message) {

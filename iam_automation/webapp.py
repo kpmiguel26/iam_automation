@@ -234,13 +234,11 @@ def create_app(
         unread_count = notification_service.unread_count(username) if notification_service else 0
         unread_notifications = notification_service.list_for_user(username, unread_only=True) if notification_service else []
         recent_notifications = unread_notifications[:5]
-        priority_notifications = [item for item in unread_notifications if item.severity in {"CRITICAL", "ERROR", "WARNING"} or item.notification_type in {"FILE_DETECTED", "DATABASE_SNAPSHOT_PUBLISHED"}][:4]
         return {
             "csrf_token": csrf_token(),
             "is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & {str(role).upper() for role in roles}),
             "unread_notification_count": unread_count,
             "recent_notifications": recent_notifications,
-            "priority_notifications": priority_notifications,
             "static_version": static_version,
             "publication_pending": publication_pending(runtime_path),
         }
@@ -359,7 +357,24 @@ def create_app(
         if not username or not runtime_path or not runtime_path.is_file():
             return redirect(url_for("login"))
         service = NotificationService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path)
-        return render_template("notifications.html", notifications=service.list_for_user(str(username)))
+        service.expire(str(username))
+        status = request.args.get("status", "ALL").upper()
+        severity = request.args.get("severity", "ALL").upper()
+        if status not in {"ALL", "UNREAD", "READ", "RESOLVED", "EXPIRED"}:
+            status = "ALL"
+        if severity not in {"ALL", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            severity = "ALL"
+        items = service.list_for_user(str(username))
+        if status != "ALL":
+            items = [item for item in items if item.status == status]
+        if severity != "ALL":
+            items = [item for item in items if item.severity == severity]
+        return render_template(
+            "notifications.html",
+            notifications=items,
+            filters={"status": status, "severity": severity},
+            unread_count=service.unread_count(str(username)),
+        )
 
     @app.get("/notifications/<notification_id>/open")
     def notification_open(notification_id: str):
@@ -379,7 +394,7 @@ def create_app(
         if not username or not runtime_path or not runtime_path.is_file():
             return redirect(url_for("login"))
         NotificationService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path).mark_read(str(username), notification_id)
-        return redirect(url_for("notifications_page", notice="Notification marked as read.", notice_type="success"))
+        return redirect(url_for("notifications_page", status=request.form.get("status", "ALL"), severity=request.form.get("severity", "ALL"), notice="Notification marked as read.", notice_type="success"))
 
     @app.post("/notifications/<notification_id>/resolve")
     def notification_resolve(notification_id: str):
@@ -387,7 +402,15 @@ def create_app(
         if not username or not runtime_path or not runtime_path.is_file():
             return redirect(url_for("login"))
         NotificationService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path).resolve(str(username), notification_id)
-        return redirect(url_for("notifications_page", notice="Notification resolved.", notice_type="success"))
+        return redirect(url_for("notifications_page", status=request.form.get("status", "ALL"), severity=request.form.get("severity", "ALL"), notice="Notification resolved.", notice_type="success"))
+
+    @app.post("/notifications/read-all")
+    def notification_read_all():
+        username = session.get("iam_user")
+        if not username or not runtime_path or not runtime_path.is_file():
+            return redirect(url_for("login"))
+        count = NotificationService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path).mark_all_read(str(username))
+        return redirect(url_for("notifications_page", status=request.form.get("status", "ALL"), severity=request.form.get("severity", "ALL"), notice=f"{count} notification(s) marked as read.", notice_type="success"))
 
     @app.get("/logout")
     def logout():
