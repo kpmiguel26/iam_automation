@@ -17,7 +17,22 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell">
   <a class="back-link" href="{{ url_for('employees.employee_directory') }}">Back to Employees</a>
   <div class="page-heading mt-3">
-    <div><p class="eyebrow">Operations</p><h1>Source update review</h1><p class="text-secondary mb-0">Review each source file and preserve the evidence that builds the canonical employee profile.</p></div>
+    <div><p class="eyebrow">Operations</p><h1>Source update review</h1><p class="text-secondary mb-0">Start with files that need attention. Completed files remain available in Review history.</p></div>
+  </div>
+  <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mt-3">
+    <div class="small text-secondary">The inbox stays focused on new, pending, ambiguous or conflicting files.</div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      <form method="get" class="d-flex gap-2 align-items-center" aria-label="Source file view">
+        {% if source_system %}<input type="hidden" name="source" value="{{ source_system }}">{% endif %}
+        <label class="small text-secondary" for="source-file-view">View</label>
+        <select class="form-select form-select-sm" id="source-file-view" name="view">
+          <option value="ATTENTION" {% if view == 'ATTENTION' %}selected{% endif %}>Needs attention</option>
+          <option value="RECENT_FILES" {% if view == 'RECENT_FILES' %}selected{% endif %}>Recent 25 files</option>
+        </select>
+        <button class="btn btn-sm btn-primary" type="submit">Apply</button>
+      </form>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('employees.source_updates_history', source=source_system) }}">Review history</a>
+    </div>
   </div>
 
   {% if rehire_alerts %}
@@ -57,9 +72,9 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
       <a class="btn btn-outline-secondary" href="{{ url_for('employees.source_updates_overview') }}">All sources</a>
     </div>
     <section class="surface p-4 mt-3">
-      <div class="section-heading"><div><p class="eyebrow mb-1">Imported files</p><h2 class="h5 mb-0">Choose a file to review</h2></div><span class="small text-secondary">{{ files|length }} file(s)</span></div>
-      <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>File</th><th>Rows</th><th>Pending</th><th>Linked</th><th>Replaced</th><th>Last imported</th><th></th></tr></thead><tbody>
-        {% for file in files %}<tr><td><strong>{{ file.source_file }}</strong><div class="small text-secondary"><code>{{ file.source_checksum[:12] }}</code></div></td><td>{{ file.record_count }}</td><td>{{ file.pending_count }}</td><td>{{ file.linked_count }}</td><td>{{ file.superseded_count }}</td><td class="small text-secondary">{{ file.latest_at|human_datetime }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.source_updates_overview', source=source_system, file=file.source_file) }}">Review rows</a></td></tr>{% else %}<tr><td colspan="7" class="text-secondary">No imported files for this source.</td></tr>{% endfor %}
+      <div class="section-heading"><div><p class="eyebrow mb-1">{{ 'Files needing attention' if view == 'ATTENTION' else 'All source files' }}</p><h2 class="h5 mb-0">Choose a file to review</h2></div><span class="small text-secondary">{{ files|length }} file(s) shown</span></div>
+      <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th>File</th><th>Rows</th><th>Status</th><th>Pending</th><th>Linked</th><th>Last observed</th><th></th></tr></thead><tbody>
+        {% for file in files %}<tr><td><strong>{{ file.source_file }}</strong><div class="small text-secondary"><code>{{ file.source_checksum[:12] }}</code></div></td><td>{{ file.record_count }}</td><td>{% if not file.imported %}<span class="badge text-bg-warning">New</span>{% elif file.pending_count or file.ambiguous_count or file.conflict_count %}<span class="badge text-bg-danger">Review</span>{% else %}<span class="badge text-bg-success">Imported</span>{% endif %}</td><td>{{ file.pending_count }}</td><td>{{ file.linked_count }}</td><td class="small text-secondary">{{ file.latest_at|human_datetime }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.source_updates_overview', source=source_system, file=file.source_file) }}">Review rows</a></td></tr>{% else %}<tr><td colspan="7" class="text-secondary">No files need attention for this source. Use Recent 25 files or Review history to inspect prior imports.</td></tr>{% endfor %}
       </tbody></table></div>
     </section>
   {% elif file_summary %}
@@ -77,14 +92,13 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
       {% if page_count > 1 and not load_all %}<nav class="d-flex justify-content-between align-items-center mt-4" aria-label="Source rows pagination"><span class="small text-secondary">{{ total_records }} row(s)</span><div class="btn-group">{% if page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('employees.source_updates_overview', source=source_system, file=source_file, page=page-1, result_order=result_order) }}">Previous</a>{% endif %}{% if page < page_count %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('employees.source_updates_overview', source=source_system, file=source_file, page=page+1, result_order=result_order) }}">Next</a>{% endif %}</div></nav>{% endif %}
     </section>
   {% else %}
+    {% set show_history_files = view == 'RECENT_FILES' %}
     {% include "employees/_source_import_timeline.html" %}
-    {% if false %}
     <section class="surface p-4 mt-4">
       <div class="section-heading"><div><p class="eyebrow mb-1">Source systems</p><h2 class="h5 mb-0">Choose a source to review</h2></div><span class="small text-secondary">{{ sources|length }} source(s)</span></div>
-      <p class="text-secondary small mt-2 mb-0">Files from different platforms remain separate evidence. Select a source, then choose one file.</p>
+      <p class="text-secondary small mt-2 mb-0">Files from different platforms remain separate evidence. Select a source to review its pending files; use Review history for older imports.</p>
       <div class="row g-3 mt-2">{% for source in sources %}<div class="col-12 col-md-6 col-xl-4"><div class="surface border h-100 p-3"><div class="d-flex justify-content-between gap-2"><h3 class="h6 mb-0">{{ source.label }}</h3><span class="badge text-bg-light">{{ source.file_count }} file(s)</span></div><div class="small text-secondary mt-3">{{ source.record_count }} row(s) · {{ source.pending_count }} pending · {{ source.linked_count }} linked</div>{% if source.ambiguous_count or source.conflict_count %}<div class="small text-warning mt-1">{{ source.ambiguous_count }} ambiguous · {{ source.conflict_count }} conflict(s)</div>{% endif %}<a class="btn btn-sm btn-outline-primary mt-3" href="{{ url_for('employees.source_updates_overview', source=source.source_system) }}">Open files</a></div></div>{% else %}<div class="col-12"><div class="alert alert-success mb-0">No source observations have been imported.</div></div>{% endfor %}</div>
     </section>
-    {% endif %}
   {% endif %}
 </div>
 {% endblock %}

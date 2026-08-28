@@ -1,0 +1,31 @@
+<!--
+File: iam_automation/templates/employees/source_updates_history.html
+Purpose: Provides a paginated source file review history for IAM Automation.
+-->
+{% extends "base.html" %}
+{% block title %}Source update history{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <a class="back-link" href="{{ url_for('employees.source_updates_overview') }}">Back to Source updates</a>
+  <div class="page-heading mt-3">
+    <div><p class="eyebrow">Operations</p><h1>Review history</h1><p class="text-secondary mb-0">Browse completed and historical source files without expanding the operational inbox.</p></div>
+  </div>
+
+  <section class="surface p-4 mt-4" aria-labelledby="history-filters-heading">
+    <div class="section-heading"><div><p class="eyebrow mb-1">Source archive</p><h2 id="history-filters-heading" class="h5 mb-0">Filter file history</h2></div><span class="small text-secondary">{{ total_files }} file(s)</span></div>
+    <form method="get" class="row g-3 align-items-end mt-1">
+      <div class="col-12 col-md-5"><label class="form-label small" for="history-search">Search file name</label><input class="form-control" id="history-search" name="q" value="{{ search }}" placeholder="Search by file name"></div>
+      <div class="col-12 col-md-3"><label class="form-label small" for="history-source">Source</label><select class="form-select" id="history-source" name="source"><option value="">All sources</option>{% for source in sources %}<option value="{{ source.source_system }}" {% if source_filter == source.source_system %}selected{% endif %}>{{ source.label }}</option>{% endfor %}</select></div>
+      <div class="col-12 col-md-3"><label class="form-label small" for="history-status">Status</label><select class="form-select" id="history-status" name="status"><option value="ATTENTION" {% if status_filter == 'ATTENTION' %}selected{% endif %}>Needs attention</option><option value="IMPORTED" {% if status_filter == 'IMPORTED' %}selected{% endif %}>Completed imports</option><option value="ALL" {% if status_filter == 'ALL' %}selected{% endif %}>All files</option></select></div>
+      <div class="col-12 col-md-1 d-grid"><button class="btn btn-primary" type="submit">Apply</button></div>
+    </form>
+  </section>
+
+  <section class="surface p-4 mt-3">
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Source</th><th>File</th><th>Rows</th><th>Status</th><th>Pending</th><th>Last observed</th><th></th></tr></thead><tbody>
+      {% for file in files %}<tr><td><span class="small">{{ file.source_system|replace('_', ' ')|title }}</span></td><td><strong>{{ file.source_file }}</strong><div class="small text-secondary"><code>{{ file.source_checksum[:12] }}</code></div></td><td>{{ file.record_count }}</td><td>{% if file.needs_attention %}<span class="badge text-bg-warning">Needs attention</span>{% else %}<span class="badge text-bg-success">Imported</span>{% endif %}</td><td>{{ file.pending_count }}{% if file.ambiguous_count or file.conflict_count %}<div class="small text-warning">{{ file.ambiguous_count }} ambiguous · {{ file.conflict_count }} conflict(s)</div>{% endif %}</td><td class="small text-secondary">{{ (file.source_modified_at or file.latest_at)|human_datetime }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.source_updates_overview', source=file.source_system, file=file.source_file) }}">Review rows</a></td></tr>{% else %}<tr><td colspan="7" class="text-secondary">No files match the selected filters.</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if page_count > 1 %}<nav class="d-flex justify-content-between align-items-center mt-4" aria-label="Source file history pagination"><span class="small text-secondary">Page {{ page }} of {{ page_count }}</span><div class="btn-group">{% if page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('employees.source_updates_history', q=search, source=source_filter, status=status_filter, page=page-1) }}">Previous</a>{% endif %}{% if page < page_count %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('employees.source_updates_history', q=search, source=source_filter, status=status_filter, page=page+1) }}">Next</a>{% endif %}</div></nav>{% endif %}
+  </section>
+</div>
+{% endblock %}

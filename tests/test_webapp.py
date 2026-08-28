@@ -107,6 +107,35 @@ class WebAppTests(unittest.TestCase):
                 self.assertEqual(canonical.status_code, 302)
                 self.assertEqual(canonical.headers["Location"], "/employees")
 
+    def test_source_updates_has_operational_inbox_and_separate_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            settings = StartupSettings(
+                database.parent / "sharepoint",
+                database.parent / "database.accdb",
+                database.parent / "published.sqlite",
+                database,
+                database.parent / "workspace",
+                database.parent / "backups",
+                database.parent / "audit",
+            )
+            app = webapp.create_app(PreflightResult(StartupState.READY, True, "ready", settings))
+            client = app.test_client()
+            with client.session_transaction() as session:
+                session["iam_user"] = "directory.user"
+                session["iam_roles"] = ["REQUESTER"]
+
+            inbox = client.get("/employees/source-updates")
+            self.assertEqual(inbox.status_code, 200)
+            self.assertIn(b"Needs attention", inbox.data)
+            self.assertIn(b"Review history", inbox.data)
+            self.assertIn(b"No files need attention right now", inbox.data)
+
+            history = client.get("/employees/source-updates/history")
+            self.assertEqual(history.status_code, 200)
+            self.assertIn(b"Review history", history.data)
+            self.assertIn(b"Filter file history", history.data)
+
     def test_notification_pages_use_one_canonical_center(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")

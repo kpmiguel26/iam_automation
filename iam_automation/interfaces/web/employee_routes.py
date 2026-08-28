@@ -159,7 +159,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 update_task(task_id, notification_id=notification_id)
             import_logger.exception("IMPORT FAILED | source=%s | file=%s | task=%s | error=%s", task.get("source_system"), task.get("source_file"), task_id[:8], exc)
 
-    def source_timeline():
+    def source_timeline(*, include_imported: bool = True, max_files: int | None = None):
         grouped = {str(item["source_system"]): item for item in service.list_source_systems()}
         timeline = []
         previous_complete = True
@@ -180,6 +180,13 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 file["import_task"] = task_for_file(source_system, str(file["source_file"]))
                 file["is_latest"] = bool(files) and index == len(files) - 1
                 file["available"] = bool(item["available"] and next_file_index == index)
+            if not include_imported:
+                # Keep the operational inbox focused on files that can still
+                # require action. The complete list remains available in the
+                # dedicated history view and the import workflow.
+                item["files"] = [file for file in files if not file.get("imported") or int(file.get("pending_count", 0) or 0) > 0 or int(file.get("ambiguous_count", 0) or 0) > 0 or int(file.get("conflict_count", 0) or 0) > 0 or (file.get("import_task") or {}).get("status") == "FAILED"]
+            elif max_files is not None:
+                item["files"] = files[-max_files:]
             timeline.append(item)
             previous_complete = previous_complete and stage_complete
         return timeline
@@ -245,6 +252,9 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         source_system = request.args.get("source", "").strip()
         source_file = request.args.get("file", "").strip()
         mode = request.args.get("mode", "").strip().lower()
+        view = request.args.get("view", "ATTENTION").strip().upper()
+        if view not in {"ATTENTION", "RECENT_FILES"}:
+            view = "ATTENTION"
         result_order = request.args.get("result_order", "RESULT").strip().upper()
         requested_all = request.args.get("all", "") == "1"
         if result_order not in {"RESULT", "NEW_HIRES", "UPDATED", "CURRENT", "PENDING"}:
@@ -266,6 +276,10 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         duplicate_summary = service.source_duplicate_summary(source_file=source_file) if mode == "duplicates" else None
         rehire_alerts = service.rehire_alerts(source_file if source_system == "ROSTER_LOCK" else "")
         NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
+        if files and view == "ATTENTION":
+            files = [item for item in files if not item.get("imported") or int(item.get("pending_count", 0) or 0) > 0 or int(item.get("ambiguous_count", 0) or 0) > 0 or int(item.get("conflict_count", 0) or 0) > 0]
+        elif files and view == "RECENT_FILES":
+            files = sorted(files, key=lambda item: (str(item.get("source_modified_at") or item.get("latest_at") or ""), str(item.get("source_file") or "").casefold()), reverse=True)[:25]
         return render_template(
             "employees/source_updates_overview.html",
             sources=sources,
@@ -282,7 +296,57 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             load_all=load_all,
             duplicate_summary=duplicate_summary,
             rehire_alerts=rehire_alerts,
-            source_timeline=source_timeline(),
+            view=view,
+            source_timeline=source_timeline(include_imported=view == "RECENT_FILES", max_files=25 if view == "RECENT_FILES" else None),
+        )
+
+    @blueprint.get("/source-updates/history")
+    @authenticated
+    def source_updates_history():
+        source_filter = request.args.get("source", "").strip()
+        status_filter = request.args.get("status", "ALL").strip().upper()
+        search = request.args.get("q", "").strip().casefold()
+        if status_filter not in {"ATTENTION", "IMPORTED", "ALL"}:
+            status_filter = "ATTENTION"
+        try:
+            requested_page = max(1, int(request.args.get("page", "1")))
+        except ValueError:
+            requested_page = 1
+
+        systems = [source_filter] if source_filter else list(source_order)
+        history_files = []
+        for system in systems:
+            for file in service.list_source_files(system):
+                needs_attention = (
+                    not file.get("imported")
+                    or int(file.get("pending_count", 0) or 0) > 0
+                    or int(file.get("ambiguous_count", 0) or 0) > 0
+                    or int(file.get("conflict_count", 0) or 0) > 0
+                )
+                if status_filter == "ATTENTION" and not needs_attention:
+                    continue
+                if status_filter == "IMPORTED" and needs_attention:
+                    continue
+                if search and search not in str(file.get("source_file", "")).casefold():
+                    continue
+                file["needs_attention"] = needs_attention
+                history_files.append(file)
+        history_files.sort(key=lambda item: (str(item.get("source_modified_at") or item.get("latest_at") or ""), str(item.get("source_file") or "").casefold()), reverse=True)
+        per_page = 25
+        total_files = len(history_files)
+        page_count = max(1, (total_files + per_page - 1) // per_page)
+        page = min(requested_page, page_count)
+        start = (page - 1) * per_page
+        return render_template(
+            "employees/source_updates_history.html",
+            sources=service.list_source_systems(),
+            files=history_files[start : start + per_page],
+            total_files=total_files,
+            page=page,
+            page_count=page_count,
+            source_filter=source_filter,
+            status_filter=status_filter,
+            search=request.args.get("q", "").strip(),
         )
 
     @blueprint.post("/source-updates/import")

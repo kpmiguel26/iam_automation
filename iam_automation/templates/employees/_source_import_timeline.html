@@ -1,12 +1,15 @@
 <section class="surface p-4 mt-4" id="source-timeline" aria-labelledby="source-timeline-heading">
   <div class="section-heading">
-    <div><p class="eyebrow mb-1">Import workflow</p><h2 class="h5 mb-0" id="source-timeline-heading">Source import timeline</h2><p class="text-secondary small mb-0">Files are ordered from oldest to newest. Import the next pending file to build the employee history in sequence; duplicate resolution remains separate.</p></div>
+    <div><p class="eyebrow mb-1">Import workflow</p><h2 class="h5 mb-0" id="source-timeline-heading">{% if show_history_files is defined and not show_history_files %}Files needing attention{% elif show_history_files is defined %}Recent source files{% else %}Source import timeline{% endif %}</h2><p class="text-secondary small mb-0">{% if show_history_files is defined and not show_history_files %}Only new or incomplete files are shown here. Completed imports are available in Review history.{% elif show_history_files is defined %}The 25 most recent files per source are shown here. Review history contains the complete archive.{% else %}Files are ordered from oldest to newest. Import the next pending file to build the employee history in sequence; duplicate resolution remains separate.{% endif %}</p></div>
     <span class="small text-secondary">{{ source_timeline|length }} stages</span>
   </div>
   <div class="source-import-timeline mt-4">
     {% if import_error %}<div class="alert alert-danger" role="alert">{{ import_error }}</div>{% endif %}
     {% if import_message %}<div class="alert alert-success" role="status">{{ import_message }}</div>{% endif %}
+    {% set visible_sources = namespace(value=0) %}
     {% for source in source_timeline %}
+    {% if show_history_files is not defined or show_history_files or source.files %}
+    {% set visible_sources.value = visible_sources.value + 1 %}
     <article class="source-import-stage {% if source.imported %}is-complete{% elif source.available %}is-ready{% elif source.blocked %}is-blocked{% endif %}">
       <div class="source-import-marker" aria-hidden="true">{% if source.imported %}&#10003;{% else %}{{ source.step }}{% endif %}</div>
       <div class="source-import-stage-body">
@@ -32,7 +35,9 @@
         {% endif %}
       </div>
     </article>
+    {% endif %}
     {% endfor %}
+    {% if show_history_files is defined and not show_history_files and visible_sources.value == 0 %}<div class="alert alert-success mb-0">No files need attention right now. New files will appear here after the next source scan.</div>{% endif %}
   </div>
 </section>
 
