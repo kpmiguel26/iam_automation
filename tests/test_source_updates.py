@@ -26,7 +26,7 @@ from sqlalchemy import select
 from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.accessnow_ingestion_service import AccessNowIngestionService
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, WorkerEngagementModel, WorkerIdentifierModel, WorkerModel, orm_session
+from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, WorkerEngagementModel, WorkerIdentifierModel, WorkerModel, WorkerProfileVersionModel, WorkerSourceLineageModel, orm_session
 from iam_automation.application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 from iam_automation.application.source_date import parse_source_date
 from iam_automation.application.status_catalog import normalize_accessnow_status
@@ -71,6 +71,7 @@ class SourceUpdatesTests(unittest.TestCase):
                 "first_name": "Ada",
                 "last_name": "Lovelace",
                 "accessnow_status": "DEACTIVATED",
+                "deactivated_date": "2026-08-03",
             })
             with orm_session(database) as session:
                 session.add(WorkerModel(worker_id="worker-1", first_name="Ada", last_name="Lovelace", display_name="Ada Lovelace", status="ACTIVE"))
@@ -84,6 +85,154 @@ class SourceUpdatesTests(unittest.TestCase):
                 engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == "worker-1"))
                 self.assertEqual(worker.status, "DEACTIVATED")
                 self.assertEqual(engagement.status, "DEACTIVATED")
+
+    def test_accessnow_inactive_status_without_effective_date_is_insufficient_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            record = self._record("access-missing-date", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00")
+            record.normalized_json = json.dumps({
+                "accessnow_employee_id": "A-100",
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+                "accessnow_status": "TERMINATED",
+            })
+            with orm_session(database) as session:
+                session.add(WorkerModel(worker_id="worker-1", first_name="Ada", last_name="Lovelace", display_name="Ada Lovelace", status="ACTIVE"))
+                session.add(record)
+
+            AccessNowIngestionService(database).apply_approved_records(["access-missing-date"], "qa")
+
+            with orm_session(database) as session:
+                self.assertEqual(session.get(WorkerModel, "worker-1").status, "INSUFFICIENT_EVIDENCE")
+
+    def _run_historical_termination_rehire(self, order: tuple[str, str]) -> dict[str, object]:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            access = self._record("access-historical", "ACCESSNOW", "access-2024.csv", "E-100", "2026-08-20T00:00:00+00:00")
+            access.normalized_json = json.dumps({
+                "accessnow_employee_id": "E-100",
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+                "email": "ada@example.com",
+                "accessnow_status": "TERMINATED",
+                "terminated_date": "2024-01-15",
+            })
+            roster = self._record("roster-recent", "ROSTER_LOCK", "roster-2026.xlsx", "E-100", "2026-08-21T00:00:00+00:00")
+            roster.normalized_json = json.dumps({
+                "vendor_employee_id": "E-100",
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+                "email": "ada@example.com",
+                "status": "ACTIVE",
+                "onboarding_date": "2026-08-10",
+            })
+            with orm_session(database) as session:
+                session.add_all([access, roster])
+
+            access_service = AccessNowIngestionService(database)
+            employee_service = EmployeeService(database)
+            for source in order:
+                if source == "access":
+                    result = access_service.apply_approved_records(["access-historical"], "qa")
+                    self.assertEqual(result["processed"], 1)
+                else:
+                    result = employee_service.promote_staged_records(["roster-recent"], "qa")
+                    self.assertEqual(result["processed"], 1)
+
+            with orm_session(database) as session:
+                worker = session.scalar(select(WorkerModel).where(WorkerModel.superseded_by_worker_id.is_(None)))
+                engagements = session.scalars(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker.worker_id)).all()
+                records = session.scalars(select(IngestionRecordModel).order_by(IngestionRecordModel.record_id)).all()
+                lineage_count = session.query(WorkerSourceLineageModel).filter(WorkerSourceLineageModel.worker_id == worker.worker_id).count()
+                history_count = session.query(WorkerProfileVersionModel).filter(WorkerProfileVersionModel.worker_id == worker.worker_id).count()
+                return {
+                    "status": worker.status,
+                    "worker_count": session.query(WorkerModel).count(),
+                    "engagements": sorted((item.source_system, item.status, item.onboarding_date, item.production_start_date) for item in engagements),
+                    "records": sorted((item.source_system, item.status, item.observation_state, bool(item.matched_worker_id)) for item in records),
+                    "lineage_count": lineage_count,
+                    "history_count": history_count,
+                }
+
+    def test_historical_termination_and_recent_roster_are_order_independent(self):
+        access_then_roster = self._run_historical_termination_rehire(("access", "roster"))
+        roster_then_access = self._run_historical_termination_rehire(("roster", "access"))
+
+        self.assertEqual(access_then_roster, roster_then_access)
+        self.assertEqual(access_then_roster["status"], "ACTIVE")
+        self.assertEqual(access_then_roster["worker_count"], 1)
+        self.assertEqual(len(access_then_roster["engagements"]), 2)
+        self.assertEqual(len(access_then_roster["records"]), 2)
+        self.assertEqual(access_then_roster["lineage_count"], 12)
+        self.assertEqual(access_then_roster["history_count"], 2)
+        self.assertIn(("ACCESSNOW", "APPLIED", "CURRENT", True), access_then_roster["records"])
+        self.assertTrue(any(item[0] == "ACCESSNOW" and item[1] == "TERMINATED" for item in access_then_roster["engagements"]))
+        self.assertTrue(any(item[0] == "ROSTER_LOCK" and item[1] == "ACTIVE" and item[2] == "2026-08-10" for item in access_then_roster["engagements"]))
+
+    def test_newer_accessnow_termination_wins_over_older_accessnow_active_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            older = self._record("access-active", "ACCESSNOW", "access-active.csv", "E-100", "2026-08-20T00:00:00+00:00")
+            older.normalized_json = json.dumps({"accessnow_employee_id": "E-100", "first_name": "Ada", "last_name": "Lovelace", "accessnow_status": "ACTIVE", "onboarding_date": "2024-01-01"})
+            newer = self._record("access-terminated", "ACCESSNOW", "access-terminated.csv", "E-100", "2026-08-21T00:00:00+00:00")
+            newer.normalized_json = json.dumps({"accessnow_employee_id": "E-100", "first_name": "Ada", "last_name": "Lovelace", "accessnow_status": "TERMINATED", "terminated_date": "2026-08-10"})
+            with orm_session(database) as session:
+                session.add_all([older, newer])
+
+            service = AccessNowIngestionService(database)
+            service.apply_approved_records(["access-active"], "qa")
+            service.apply_approved_records(["access-terminated"], "qa")
+
+            with orm_session(database) as session:
+                worker = session.scalar(select(WorkerModel).where(WorkerModel.superseded_by_worker_id.is_(None)))
+                self.assertEqual(worker.status, "TERMINATED")
+                self.assertEqual(session.query(WorkerEngagementModel).filter(WorkerEngagementModel.worker_id == worker.worker_id).count(), 2)
+
+    def test_same_day_conflicting_lifecycle_observations_require_review(self):
+        for order in (("access", "roster"), ("roster", "access")):
+            with tempfile.TemporaryDirectory() as tmp:
+                database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+                access = self._record("access-conflict", "ACCESSNOW", "access.csv", "E-100", "2026-08-20T00:00:00+00:00")
+                access.normalized_json = json.dumps({"accessnow_employee_id": "E-100", "first_name": "Ada", "last_name": "Lovelace", "accessnow_status": "TERMINATED", "terminated_date": "2026-08-10"})
+                roster = self._record("roster-conflict", "ROSTER_LOCK", "roster.xlsx", "E-100", "2026-08-21T00:00:00+00:00")
+                roster.normalized_json = json.dumps({"vendor_employee_id": "E-100", "first_name": "Ada", "last_name": "Lovelace", "status": "ACTIVE", "onboarding_date": "2026-08-10"})
+                with orm_session(database) as session:
+                    session.add_all([access, roster])
+                for source in order:
+                    if source == "access":
+                        AccessNowIngestionService(database).apply_approved_records(["access-conflict"], "qa")
+                    else:
+                        EmployeeService(database).promote_staged_records(["roster-conflict"], "qa")
+                with orm_session(database) as session:
+                    worker = session.scalar(select(WorkerModel).where(WorkerModel.superseded_by_worker_id.is_(None)))
+                    self.assertEqual(worker.status, "INSUFFICIENT_EVIDENCE")
+
+    def test_selective_accessnow_status_apply_reconciles_instead_of_overwriting_worker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            access = self._record("access-selective", "ACCESSNOW", "access.csv", "E-100", "2026-08-20T00:00:00+00:00")
+            access.matched_worker_id = "worker-1"
+            access.match_status = "MATCHED"
+            access.normalized_json = json.dumps({
+                "accessnow_employee_id": "E-100",
+                "accessnow_status": "TERMINATED",
+                "terminated_date": "2024-01-15",
+            })
+            roster = self._record("roster-selective", "ROSTER_LOCK", "roster.xlsx", "E-100", "2026-08-21T00:00:00+00:00")
+            roster.matched_worker_id = "worker-1"
+            roster.match_status = "MATCHED"
+            roster.status = "MATCHED"
+            roster.observation_state = "CURRENT"
+            roster.normalized_json = json.dumps({"vendor_employee_id": "E-100", "status": "ACTIVE", "onboarding_date": "2026-08-10"})
+            with orm_session(database) as session:
+                session.add(WorkerModel(worker_id="worker-1", first_name="Ada", last_name="Lovelace", display_name="Ada Lovelace", status="ACTIVE"))
+                session.add_all([access, roster])
+
+            result = EmployeeService(database).apply_selected_source_updates("worker-1", ["access-selective"], ["accessnow_status"], "qa")
+
+            self.assertEqual(result["applied"], 1)
+            with orm_session(database) as session:
+                self.assertEqual(session.get(WorkerModel, "worker-1").status, "ACTIVE")
 
     def test_accessnow_is_reconciled_against_late_imported_canonical_identifiers(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -341,6 +490,22 @@ class SourceUpdatesTests(unittest.TestCase):
             elapsed = RehireAlertService._business_days_between(date(2026, 7, 3), date(2026, 7, 7))
 
         self.assertEqual(elapsed, 1)
+
+    def test_rehire_alert_is_not_emitted_outside_the_configured_window(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            access = self._record("access-outside", "ACCESSNOW", "access.csv", "A-100", "2026-07-01T00:00:00+00:00")
+            access.matched_worker_id = "worker-1"
+            access.status = "APPLIED"
+            access.normalized_json = json.dumps({"accessnow_employee_id": "A-100", "accessnow_status": "TERMINATED", "terminated_date": "2026-07-01"})
+            roster = self._record("roster-outside", "ROSTER_LOCK", "roster.xlsx", "A-100", "2026-08-20T00:00:00+00:00")
+            roster.matched_worker_id = "worker-1"
+            roster.normalized_json = json.dumps({"vendor_employee_id": "A-100", "onboarding_date": "2026-08-20"})
+            with orm_session(database) as session:
+                session.add(WorkerModel(worker_id="worker-1", display_name="Ada Lovelace", status="TERMINATED"))
+                session.add_all([access, roster])
+
+            self.assertEqual(EmployeeService(database).rehire_alerts(), [])
 
 
 if __name__ == "__main__":

@@ -13,11 +13,15 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 
 from __future__ import annotations
 
+import json
 import uuid
+from datetime import date
 
 from sqlalchemy import func, select
 
-from ..infrastructure.sqlite.orm import WorkerIdentifierModel, WorkerModel
+from ..infrastructure.sqlite.orm import IngestionRecordModel, WorkerIdentifierModel, WorkerModel
+from .source_date import parse_source_date
+from .status_catalog import is_inactive_source_status, normalize_accessnow_status
 
 
 def source_identifiers(source_system: str, payload: dict[str, object]) -> list[tuple[str, str]]:
@@ -105,4 +109,67 @@ def ensure_source_identifiers(session, worker_id: str, source_system: str, paylo
                 identifier_type=identifier_type, identifier_value=value, normalized_value=normalized,
                 confidence="HIGH", created_at_utc=now,
             ))
+
+
+def _lifecycle_date(source_system: str, payload: dict[str, object], status: str) -> date | None:
+    """Return a business/effective date, never a persistence timestamp."""
+    if source_system == "ACCESSNOW" and is_inactive_source_status(status):
+        keys = ("terminated_date", "deactivated_date", "termination_date", "end_date", "production_start_date")
+    elif source_system in {"ACCESSNOW", "ROSTER_LOCK"}:
+        # ``created_date`` is a source-record creation field, not proof of a
+        # lifecycle event. Do not silently turn it into an effective date.
+        keys = ("onboarding_date", "worker_start_date", "start_date", "hire_date")
+    else:
+        keys = ("effective_date", "onboarding_date", "worker_start_date", "start_date", "hire_date")
+    return next((parsed for key in keys if (parsed := parse_source_date(payload.get(key))) is not None), None)
+
+
+def reconcile_worker_status_in_session(session, worker_id: str) -> str:
+    """Derive an analytical status from dated source evidence.
+
+    Source rows remain immutable observations. This function only updates the
+    analytical Worker projection and deliberately refuses to choose a status
+    when an inactive observation has no effective date or when dated events
+    conflict on the same business day.
+    """
+    worker = session.get(WorkerModel, worker_id)
+    if worker is None:
+        raise ValueError("Worker was not found.")
+    records = session.scalars(select(IngestionRecordModel).where(
+        IngestionRecordModel.matched_worker_id == worker_id,
+        IngestionRecordModel.status.in_(("STAGED", "MATCHED", "LINKED", "CURRENT", "APPLIED")),
+    )).all()
+    events: list[tuple[date, str]] = []
+    undated_inactive = False
+    for record in records:
+        try:
+            payload = json.loads(record.normalized_json or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        if record.source_system == "ACCESSNOW":
+            status = normalize_accessnow_status(payload.get("accessnow_status"))
+            if status not in {"ACTIVE", "DEACTIVATED", "TERMINATED"}:
+                continue
+            effective_date = _lifecycle_date(record.source_system, payload, status)
+            if effective_date is None:
+                undated_inactive = undated_inactive or is_inactive_source_status(status)
+                continue
+            events.append((effective_date, status))
+        elif record.source_system == "ROSTER_LOCK":
+            # Roster Lock is treated as active presence only when it carries a
+            # usable business date. It is not a global source-priority rule.
+            effective_date = _lifecycle_date(record.source_system, payload, "ACTIVE")
+            if effective_date is not None:
+                events.append((effective_date, "ACTIVE"))
+
+    if undated_inactive:
+        resolved_status = "INSUFFICIENT_EVIDENCE"
+    elif not events:
+        resolved_status = str(worker.status or "PENDING")
+    else:
+        latest_date = max(item[0] for item in events)
+        latest_statuses = {status for event_date, status in events if event_date == latest_date}
+        resolved_status = next(iter(latest_statuses)) if len(latest_statuses) == 1 else "INSUFFICIENT_EVIDENCE"
+    worker.status = resolved_status
+    return resolved_status
 #endfile

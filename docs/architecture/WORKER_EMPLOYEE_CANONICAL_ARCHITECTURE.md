@@ -45,6 +45,10 @@ flowchart LR
 
 `worker_discrepancies` keeps the current and incoming values when sources disagree. No source silently overwrites an existing canonical value.
 
+### Temporal lifecycle interpretation
+
+`workers.status` is an analytical projection, not an authoritative source-system decision. Source observations and engagements retain their own evidence and business dates. The projection must be reconciled from usable effective dates; ingestion, persistence, or file-arrival order must not make a historical `TERMINATED` observation overwrite a later engagement. Same-date conflicts or missing dates remain reviewable as insufficient evidence. See [Temporal Lifecycle Reconciliation Review](TEMPORAL_LIFECYCLE_RECONCILIATION.md).
+
 ## RSR Matching Strategy
 
 1. `Supplier Reference` matches `VENDOR_EMPLOYEE_ID` from the Roster Lock domain.

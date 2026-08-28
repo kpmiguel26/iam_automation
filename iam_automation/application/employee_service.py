@@ -37,7 +37,7 @@ from ..infrastructure.sqlite.orm import (
 )
 from .worker_history_service import record_worker_version, version_dict
 from .publication_state import mark_publication_pending
-from .source_reconciliation import ensure_source_identifiers, find_worker_matches
+from .source_reconciliation import ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session
 from .rehire_alert_service import RehireAlertService
 
 
@@ -882,6 +882,7 @@ class EmployeeService:
             worker = session.get(WorkerModel, worker_id)
             if worker is None:
                 raise ValueError("Worker was not found.")
+            old_status = str(worker.status or "")
             engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker_id).order_by(WorkerEngagementModel.updated_at_utc.desc()))
             records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(record_set), IngestionRecordModel.matched_worker_id == worker_id)).all()
             if not records:
@@ -902,6 +903,11 @@ class EmployeeService:
                     if not target or not incoming:
                         continue
                     owner, attribute = target
+                    if owner == "worker" and attribute == "status":
+                        # AccessNow status is source evidence. Reconcile it
+                        # against dated observations below instead of applying
+                        # the selected historical value directly to Worker.
+                        continue
                     if owner == "worker":
                         current = str(getattr(worker, attribute) or "")
                         if attribute != "status" and current:
@@ -924,6 +930,9 @@ class EmployeeService:
                     session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=record_engagement.engagement_id if record_engagement else None, batch_id=record.batch_id, source_system=record.source_system, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
                 record.status = "APPLIED"
                 applied += 1
+            reconcile_worker_status_in_session(session, worker_id)
+            if old_status != worker.status:
+                changed_fields.add("status")
             if changed_fields:
                 record_worker_version(session, worker_id, actor=actor, change_type="SELECTIVE_SOURCE_UPDATE", source_system="LOCAL_REVIEW", changed_fields=sorted(changed_fields))
             session.commit()
@@ -1733,6 +1742,7 @@ class EmployeeService:
             session.add(worker)
         else:
             worker_id = worker.worker_id
+        old_status = str(worker.status or "")
         ensure_source_identifiers(session, worker_id, record.source_system, payload, now)
 
         engagement_id = str(uuid.uuid4())
@@ -1789,6 +1799,10 @@ class EmployeeService:
         record.linked_at_utc = now
         record.last_seen_at_utc = now
         self._upsert_source_profile(session, record, worker_id, now)
+        reconcile_worker_status_in_session(session, worker_id)
+        changed_fields = list(payload)
+        if old_status != worker.status and "status" not in changed_fields:
+            changed_fields.append("status")
         record_worker_version(
             session,
             worker_id,
@@ -1798,7 +1812,7 @@ class EmployeeService:
             source_file=record.source_file,
             source_checksum=record.source_checksum,
             source_record_key=record.source_record_key,
-            changed_fields=list(payload),
+            changed_fields=changed_fields,
         )
         return worker_id, created
 

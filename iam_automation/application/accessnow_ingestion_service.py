@@ -37,7 +37,7 @@ from ..infrastructure.sqlite.orm import (
     orm_session,
 )
 from .publication_state import mark_publication_pending
-from .source_reconciliation import ensure_source_identifiers, find_worker_matches
+from .source_reconciliation import ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session
 from .worker_history_service import record_worker_version
 from .stable_file_read import file_modified_at_utc, read_stable_bytes
 from .status_catalog import normalize_accessnow_status, status_rank
@@ -275,13 +275,12 @@ class AccessNowIngestionService:
                     was_created = worker_id is None
                     if was_created:
                         worker_id = str(uuid.uuid4())
-                        session.add(WorkerModel(worker_id=worker_id, first_name=payload.get("first_name", ""), last_name=payload.get("last_name", ""), display_name=" ".join(part for part in (payload.get("first_name", ""), payload.get("last_name", "")) if part), canonical_email=payload.get("email", "").lower(), status=self._worker_status(payload), record_version=1, created_at_utc=now, updated_at_utc=now))
+                        session.add(WorkerModel(worker_id=worker_id, first_name=payload.get("first_name", ""), last_name=payload.get("last_name", ""), display_name=" ".join(part for part in (payload.get("first_name", ""), payload.get("last_name", "")) if part), canonical_email=payload.get("email", "").lower(), status="PENDING", record_version=1, created_at_utc=now, updated_at_utc=now))
                         created += 1
                     else:
                         reused += 1
                     worker = session.get(WorkerModel, worker_id)
                     old_status = worker.status
-                    worker.status = self._worker_status(payload)
                     # AccessNow is an evidence source. It may populate a
                     # missing canonical value, but it must not replace a
                     # value already supplied by another source.
@@ -300,12 +299,13 @@ class AccessNowIngestionService:
                     self._add_identifiers(session, worker_id, payload, now)
                     for field_name, value in payload.items():
                         session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=engagement.engagement_id, batch_id=record.batch_id, source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
+                    record.matched_worker_id = worker_id
+                    record.match_status = "MATCHED"
+                    reconcile_worker_status_in_session(session, worker_id)
                     changed = list(payload)
                     if old_status != worker.status and "status" not in changed:
                         changed.append("status")
                     record_worker_version(session, worker_id, actor=actor, change_type="ACCESSNOW_INITIAL_PROFILE" if was_created else "ACCESSNOW_STATUS_UPDATE", source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, source_record_key=record.source_record_key, changed_fields=changed)
-                    record.matched_worker_id = worker_id
-                    record.match_status = "MATCHED"
                     if was_created:
                         record.match_reason = "Canonical employee created during approval"
                     elif not record.match_reason:
