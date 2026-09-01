@@ -232,8 +232,11 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 return redirect(url_for("employees.employee_directory"))
             workers, total_workers = [], 0
             page_count = 1
-            pending_source_updates = 0
-            rehire_alerts = []
+            # Keep the directory on-demand, but load lightweight review
+            # counters so the Updates/Alerts actions never look stale.
+            pending_source_updates = service.pending_source_update_count()
+            rehire_alerts = service.rehire_alerts()
+            NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
         else:
             page_size = None if show_all else 25
             workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size)

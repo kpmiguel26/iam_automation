@@ -29,11 +29,13 @@ class MigrationTests(unittest.TestCase):
             first = applied_migrations(database)
             second = apply_pending_migrations(database, actor="test")
 
-            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps", "v009_local_notification_store"))
+            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps", "v009_local_notification_store", "v010_accessnow_match_indexes"))
             self.assertEqual(second, ())
             connection = sqlite3.connect(database)
             try:
                 index_names = {row[1] for row in connection.execute("PRAGMA index_list(notifications)")}
+                worker_identifier_indexes = {row[1] for row in connection.execute("PRAGMA index_list(worker_identifiers)")}
+                worker_indexes = {row[1] for row in connection.execute("PRAGMA index_list(workers)")}
                 table_names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
                 worker_columns = {row[1] for row in connection.execute("PRAGMA table_info(workers)")}
                 alembic_revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
@@ -44,8 +46,11 @@ class MigrationTests(unittest.TestCase):
             self.assertIn("worker_merge_events", table_names)
             self.assertIn("worker_source_profiles", table_names)
             self.assertIn("superseded_by_worker_id", worker_columns)
-            self.assertEqual(alembic_revision, "0009_local_notification_store")
-            self.assertEqual(current_database_revision(database), "0009_local_notification_store")
+            self.assertIn("idx_worker_identifiers_match", worker_identifier_indexes)
+            self.assertIn("idx_workers_canonical_email", worker_indexes)
+            self.assertIn("idx_workers_canonical_name", worker_indexes)
+            self.assertEqual(alembic_revision, "0010_accessnow_match_indexes")
+            self.assertEqual(current_database_revision(database), "0010_accessnow_match_indexes")
 
 
 if __name__ == "__main__":

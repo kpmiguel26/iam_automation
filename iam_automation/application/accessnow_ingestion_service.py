@@ -37,7 +37,7 @@ from ..infrastructure.sqlite.orm import (
     orm_session,
 )
 from .publication_state import mark_publication_pending
-from .source_reconciliation import ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session
+from .source_reconciliation import _match_types, ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session, source_identifiers
 from .worker_history_service import record_worker_version
 from .stable_file_read import file_modified_at_utc, read_stable_bytes
 from .status_catalog import normalize_accessnow_status, status_rank
@@ -138,8 +138,9 @@ class AccessNowIngestionService:
                 staged += 1
                 session.add(IngestionRecordModel(record_id=str(uuid.uuid4()), batch_id=batch_id, source_system=SOURCE_SYSTEM, source_file=str(path), source_checksum=source_checksum, row_number=original_row, source_record_key=source_key, normalized_json=json.dumps(payload, sort_keys=True), payload_json=json.dumps(payload, sort_keys=True), status="STAGED", created_at_utc=now))
             session.flush()
+            match_index = self._build_match_index(session)
             for record in session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.batch_id == batch_id, IngestionRecordModel.source_system == SOURCE_SYSTEM)).all():
-                matches, reason = self._find_match_detail(session, json.loads(record.normalized_json))
+                matches, reason = self._find_match_detail(session, json.loads(record.normalized_json), match_index)
                 if len(matches) == 1:
                     record.matched_worker_id = matches[0]
                     record.match_status = "MATCHED"
@@ -158,8 +159,62 @@ class AccessNowIngestionService:
         return AccessNowIngestionResult(batch_id, source_file, source_checksum, total_rows, staged, quarantined)
 
     @staticmethod
-    def _find_match_detail(session, payload: dict[str, str]) -> tuple[list[str], str]:
-        return find_worker_matches(session, SOURCE_SYSTEM, payload)
+    def _build_match_index(session) -> dict[str, dict[tuple[str, str], set[str]]]:
+        """Load reconciliation keys once for a high-volume AccessNow batch."""
+        active_workers = {
+            str(worker_id)
+            for worker_id, superseded_by in session.execute(
+                select(WorkerModel.worker_id, WorkerModel.superseded_by_worker_id)
+            ).all()
+            if not superseded_by
+        }
+        identifiers: dict[tuple[str, str], set[str]] = {}
+        for identifier_type, normalized_value, worker_id in session.execute(
+            select(WorkerIdentifierModel.identifier_type, WorkerIdentifierModel.normalized_value, WorkerIdentifierModel.worker_id).where(
+                WorkerIdentifierModel.active.is_(True)
+            )
+        ).all():
+            if str(worker_id) in active_workers:
+                identifiers.setdefault((str(identifier_type), str(normalized_value).casefold()), set()).add(str(worker_id))
+
+        emails: dict[str, set[str]] = {}
+        names: dict[tuple[str, str], set[str]] = {}
+        for worker_id, email, first_name, last_name, superseded_by in session.execute(
+            select(WorkerModel.worker_id, WorkerModel.canonical_email, WorkerModel.first_name, WorkerModel.last_name, WorkerModel.superseded_by_worker_id)
+        ).all():
+            if superseded_by:
+                continue
+            worker_key = str(worker_id)
+            if email:
+                emails.setdefault(str(email).casefold(), set()).add(worker_key)
+            if first_name and last_name:
+                names.setdefault((str(first_name).casefold(), str(last_name).casefold()), set()).add(worker_key)
+        return {"identifiers": identifiers, "emails": emails, "names": names}
+
+    @staticmethod
+    def _find_match_detail(session, payload: dict[str, str], match_index: dict[str, dict[tuple[str, str], set[str]]] | None = None) -> tuple[list[str], str]:
+        if match_index is None:
+            return find_worker_matches(session, SOURCE_SYSTEM, payload)
+        strong_matches: dict[str, set[str]] = {}
+        identifiers = match_index["identifiers"]
+        for identifier_type, value in source_identifiers(SOURCE_SYSTEM, payload):
+            if identifier_type in {"ACCESSNOW_MANAGER_NUID", "ACCESSNOW_SPONSOR_NUID", "WORK_ORDER_ID"}:
+                continue
+            for alias in _match_types(SOURCE_SYSTEM, identifier_type):
+                for worker_id in identifiers.get((alias, value.casefold()), set()):
+                    strong_matches.setdefault(worker_id, set()).add(identifier_type)
+        if strong_matches:
+            if len(strong_matches) == 1:
+                return sorted(strong_matches), "Exact source identifier match"
+            return sorted(strong_matches), "Conflicting source identifiers"
+        email = str(payload.get("email") or payload.get("vendor_email") or payload.get("vendor_email_address") or "").strip().casefold()
+        if email and (matches := match_index["emails"].get(email)):
+            return sorted(matches), "Canonical email match"
+        first = str(payload.get("first_name") or payload.get("employee_first_name") or "").strip().casefold()
+        last = str(payload.get("last_name") or payload.get("employee_last_name") or "").strip().casefold()
+        if first and last and (matches := match_index["names"].get((first, last))):
+            return sorted(matches), "Canonical name match"
+        return [], "No canonical match"
 
     @staticmethod
     def _read_rows(path: Path, content: bytes) -> list[tuple[int, dict[str, object]]]:

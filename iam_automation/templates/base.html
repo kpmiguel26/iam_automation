@@ -261,6 +261,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
       }
       document.querySelectorAll('form[method="post"], form[method="POST"], form[data-loading="true"]').forEach(function (form) {
         form.addEventListener('submit', function (event) {
+          if (event.defaultPrevented) return;
           if (form.dataset.loadingHandled === 'true' || form.dataset.noLoader === 'true') return;
           var confirmation = form.querySelector('[data-confirm]');
           if (confirmation && form.dataset.confirmed !== 'true') {

@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -179,7 +180,18 @@ class LocalNotificationStore:
         temporary = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
         try:
             temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            temporary.replace(path)
+            last_error = None
+            for attempt in range(6):
+                try:
+                    temporary.replace(path)
+                    break
+                except PermissionError as exc:
+                    last_error = exc
+                    if attempt == 5:
+                        raise
+                    time.sleep(0.05 * (attempt + 1))
+            if last_error and temporary.exists():
+                raise last_error
         finally:
             try:
                 temporary.unlink()

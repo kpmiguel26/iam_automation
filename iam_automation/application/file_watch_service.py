@@ -17,6 +17,8 @@ import hashlib
 import json
 import logging
 import threading
+import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -104,9 +106,22 @@ class FileWatchService:
             "last_error": f"{type(error).__name__}: {error}" if error else "",
         }
         path = watcher_health_path(self.database_path)
-        temporary = path.with_suffix(path.suffix + ".tmp")
+        # Use a process-unique temporary name. A fixed ``.tmp`` collides when
+        # two launcher processes briefly run the watcher at the same time.
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        temporary.replace(path)
+        last_error = None
+        for attempt in range(6):
+            try:
+                temporary.replace(path)
+                break
+            except PermissionError as exc:
+                last_error = exc
+                if attempt == 5:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+        if last_error and temporary.exists():
+            raise last_error
 
     def scan_once(self) -> int:
         # Refresh replaces the local SQLite file atomically. Hold the same

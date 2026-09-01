@@ -96,8 +96,8 @@ class WebAppTests(unittest.TestCase):
             blocked_query = {"side_effect": AssertionError("empty directory request must not load employee rows")}
             with patch.object(EmployeeService, "filter_values", return_value=(["ACTIVE"], ["Vendor A"], ["ACCESSNOW"])), \
                 patch.object(EmployeeService, "list_workers_page", **blocked_query), \
-                patch.object(EmployeeService, "rehire_alerts", **blocked_query), \
-                patch.object(EmployeeService, "pending_source_update_count", **blocked_query):
+                patch.object(EmployeeService, "rehire_alerts", return_value=[]), \
+                patch.object(EmployeeService, "pending_source_update_count", return_value=0):
                 response = client.get("/employees")
                 self.assertEqual(response.status_code, 200)
                 self.assertIn(b"Search to view employees", response.data)
