@@ -103,6 +103,17 @@ def create_report_blueprint(database_path: Path, sharepoint_root: Path | None = 
     def new_hire_report():
         return render_template("reports/new_hires.html", new_hires=service.new_hire_readiness())
 
+    @blueprint.get("/terminations")
+    @authenticated
+    def termination_report():
+        return render_template(
+            "reports/terminations.html",
+            report=service.termination_report(
+                start_date=request.args.get("start"),
+                end_date=request.args.get("end"),
+            ),
+        )
+
     @blueprint.route("/studio", methods=["GET", "POST"])
     @authenticated
     def report_studio():

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +29,7 @@ from ..infrastructure.sqlite.orm import (
     WorkerSourceProfileModel,
     orm_session,
 )
+from .source_date import parse_source_date
 
 
 @dataclass(frozen=True)
@@ -114,8 +115,11 @@ class NewHireReadinessRow:
     display_name: str
     email: str
     vendor_name: str
+    roster_lock_role: str
+    fieldglass_job_title: str
     work_start_date: str
     status: str
+    accessnow_terminated_date: str
     fieldglass_present: bool
     accessnow_present: bool
 
@@ -126,6 +130,45 @@ class NewHireReadinessRow:
     @property
     def missing_accessnow(self) -> bool:
         return not self.accessnow_present
+
+
+@dataclass(frozen=True)
+class TerminationReportRow:
+    worker_id: str
+    display_name: str
+    email: str
+    termination_date: str
+    vendor_name: str
+    roster_lock_role: str
+    fieldglass_job_title: str
+    work_start_date: str
+
+
+@dataclass(frozen=True)
+class TerminationBreakdownRow:
+    label: str
+    terminations: int
+    population_exposed: int
+
+    @property
+    def attrition_rate(self) -> float:
+        return (self.terminations / self.population_exposed * 100) if self.population_exposed else 0.0
+
+
+@dataclass(frozen=True)
+class TerminationReport:
+    start_date: str
+    end_date: str
+    total_terminations: int
+    population_exposed: int
+    rows: tuple[TerminationReportRow, ...]
+    by_role: tuple[TerminationBreakdownRow, ...]
+    by_vendor: tuple[TerminationBreakdownRow, ...]
+    by_month: tuple[tuple[str, int], ...]
+
+    @property
+    def attrition_rate(self) -> float:
+        return (self.total_terminations / self.population_exposed * 100) if self.population_exposed else 0.0
 
 
 @dataclass(frozen=True)
@@ -557,18 +600,50 @@ class ReportService:
             engagements = session.scalars(
                 select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id.in_(worker_ids))
             ).all()
+            profiles = session.scalars(
+                select(WorkerSourceProfileModel).where(
+                    WorkerSourceProfileModel.worker_id.in_(worker_ids),
+                    WorkerSourceProfileModel.source_system == "ACCESSNOW",
+                )
+            ).all()
             roster_by_worker: dict[str, list[WorkerEngagementModel]] = {}
+            fieldglass_by_worker: dict[str, list[WorkerEngagementModel]] = {}
             source_systems_by_worker: dict[str, set[str]] = {}
             for engagement in engagements:
                 source_system = str(engagement.source_system or "").strip().upper()
                 source_systems_by_worker.setdefault(engagement.worker_id, set()).add(source_system)
                 if source_system == "ROSTER_LOCK" and str(engagement.onboarding_date or "").strip():
                     roster_by_worker.setdefault(engagement.worker_id, []).append(engagement)
+                if source_system == "RSR_SUPPLIER_WORKER_DETAILS":
+                    fieldglass_by_worker.setdefault(engagement.worker_id, []).append(engagement)
+
+            accessnow_termination_by_worker: dict[str, str] = {}
+            for profile in profiles:
+                try:
+                    payload = json.loads(profile.snapshot_json or "{}")
+                except json.JSONDecodeError:
+                    payload = {}
+                if not isinstance(payload, dict):
+                    continue
+                termination_date = next(
+                    (str(payload.get(key) or "").strip() for key in ("terminated_date", "termination_date", "deactivated_date", "end_date") if str(payload.get(key) or "").strip()),
+                    "",
+                )
+                if termination_date:
+                    current = accessnow_termination_by_worker.get(profile.worker_id, "")
+                    if self._date_sort_key(termination_date) >= self._date_sort_key(current):
+                        accessnow_termination_by_worker[profile.worker_id] = termination_date
 
             rows: list[NewHireReadinessRow] = []
             for worker_id, roster_engagements in roster_by_worker.items():
                 worker = workers_by_id[worker_id]
                 roster_engagement = max(roster_engagements, key=lambda item: self._date_sort_key(item.onboarding_date))
+                fieldglass_engagements = fieldglass_by_worker.get(worker_id, [])
+                fieldglass_engagement = max(
+                    fieldglass_engagements,
+                    key=lambda item: self._date_sort_key(item.onboarding_date or item.production_start_date),
+                    default=None,
+                )
                 source_systems = source_systems_by_worker.get(worker_id, set())
                 fieldglass_present = "RSR_SUPPLIER_WORKER_DETAILS" in source_systems
                 accessnow_present = "ACCESSNOW" in source_systems
@@ -579,13 +654,121 @@ class ReportService:
                     display_name=worker.display_name or "Unnamed worker",
                     email=worker.canonical_email or "",
                     vendor_name=roster_engagement.vendor_name or "",
+                    roster_lock_role=roster_engagement.job_title or "",
+                    fieldglass_job_title=fieldglass_engagement.job_title if fieldglass_engagement else "",
                     work_start_date=roster_engagement.onboarding_date,
                     status=worker.status or "",
+                    accessnow_terminated_date=accessnow_termination_by_worker.get(worker_id, ""),
                     fieldglass_present=fieldglass_present,
                     accessnow_present=accessnow_present,
                 ))
             rows.sort(key=lambda item: self._date_sort_key(item.work_start_date), reverse=True)
             return tuple(rows[:limit])
+
+    @staticmethod
+    def _report_date(value: str | date | None, default: date) -> date:
+        if isinstance(value, date):
+            return value
+        parsed = parse_source_date(value) if value else None
+        return parsed or default
+
+    def termination_report(self, *, start_date: str | date | None = None, end_date: str | date | None = None) -> TerminationReport:
+        """Return AccessNow terminations and attrition breakdowns for a date window."""
+        today = date.today()
+        end = self._report_date(end_date, today)
+        start = self._report_date(start_date, end - timedelta(days=89))
+        if start > end:
+            start, end = end, start
+        start_text, end_text = start.isoformat(), end.isoformat()
+        if not self.database_path.exists():
+            return TerminationReport(start_text, end_text, 0, 0, (), (), (), ())
+
+        with orm_session(self.database_path) as session:
+            workers = session.scalars(select(WorkerModel).where(WorkerModel.superseded_by_worker_id.is_(None))).all()
+            worker_ids = {worker.worker_id for worker in workers}
+            engagements = session.scalars(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id.in_(worker_ids))).all()
+            profiles = session.scalars(select(WorkerSourceProfileModel).where(
+                WorkerSourceProfileModel.worker_id.in_(worker_ids),
+                WorkerSourceProfileModel.source_system == "ACCESSNOW",
+            )).all()
+
+        worker_by_id = {worker.worker_id: worker for worker in workers}
+        roster_by_worker: dict[str, list[WorkerEngagementModel]] = {}
+        fieldglass_by_worker: dict[str, list[WorkerEngagementModel]] = {}
+        for engagement in engagements:
+            source = str(engagement.source_system or "").strip().upper()
+            if source == "ROSTER_LOCK" and str(engagement.onboarding_date or "").strip():
+                roster_by_worker.setdefault(engagement.worker_id, []).append(engagement)
+            elif source == "RSR_SUPPLIER_WORKER_DETAILS":
+                fieldglass_by_worker.setdefault(engagement.worker_id, []).append(engagement)
+
+        termination_by_worker: dict[str, tuple[date, str]] = {}
+        for profile in profiles:
+            try:
+                payload = json.loads(profile.snapshot_json or "{}")
+            except json.JSONDecodeError:
+                payload = {}
+            if not isinstance(payload, dict):
+                continue
+            for key in ("terminated_date", "termination_date", "deactivated_date", "end_date"):
+                parsed = parse_source_date(payload.get(key))
+                if parsed is None:
+                    continue
+                raw = str(payload.get(key) or "").strip()
+                current = termination_by_worker.get(profile.worker_id)
+                if current is None or parsed >= current[0]:
+                    termination_by_worker[profile.worker_id] = (parsed, raw)
+                break
+
+        population: list[tuple[str, str, str]] = []
+        rows: list[TerminationReportRow] = []
+        for worker_id, roster_engagements in roster_by_worker.items():
+            worker = worker_by_id.get(worker_id)
+            if worker is None:
+                continue
+            roster = max(roster_engagements, key=lambda item: self._date_sort_key(item.onboarding_date))
+            roster_start = parse_source_date(roster.onboarding_date)
+            if roster_start is None or roster_start > end:
+                continue
+            termination = termination_by_worker.get(worker_id)
+            if termination is None or termination[0] >= start:
+                population.append((worker_id, roster.vendor_name or "Unknown", roster.job_title or "Unknown role"))
+            if termination is None or not (start <= termination[0] <= end):
+                continue
+            fieldglass = max(
+                fieldglass_by_worker.get(worker_id, []),
+                key=lambda item: self._date_sort_key(item.onboarding_date or item.production_start_date),
+                default=None,
+            )
+            rows.append(TerminationReportRow(
+                worker_id=worker_id,
+                display_name=worker.display_name or "Unnamed worker",
+                email=worker.canonical_email or "",
+                termination_date=termination[1],
+                vendor_name=roster.vendor_name or "Unknown",
+                roster_lock_role=roster.job_title or "Unknown role",
+                fieldglass_job_title=fieldglass.job_title if fieldglass else "",
+                work_start_date=roster.onboarding_date,
+            ))
+
+        population_by_role: dict[str, int] = {}
+        population_by_vendor: dict[str, int] = {}
+        for _, vendor, role in population:
+            population_by_role[role] = population_by_role.get(role, 0) + 1
+            population_by_vendor[vendor] = population_by_vendor.get(vendor, 0) + 1
+        role_counts: dict[str, int] = {}
+        vendor_counts: dict[str, int] = {}
+        month_counts: dict[str, int] = {}
+        for row in rows:
+            role_counts[row.roster_lock_role] = role_counts.get(row.roster_lock_role, 0) + 1
+            vendor_counts[row.vendor_name] = vendor_counts.get(row.vendor_name, 0) + 1
+            parsed = parse_source_date(row.termination_date)
+            month = parsed.strftime("%Y-%m") if parsed else "Unknown"
+            month_counts[month] = month_counts.get(month, 0) + 1
+        by_role = tuple(TerminationBreakdownRow(label, role_counts.get(label, 0), count) for label, count in sorted(population_by_role.items(), key=lambda item: item[0].casefold()))
+        by_vendor = tuple(TerminationBreakdownRow(label, vendor_counts.get(label, 0), count) for label, count in sorted(population_by_vendor.items(), key=lambda item: item[0].casefold()))
+        rows.sort(key=lambda item: self._date_sort_key(item.termination_date), reverse=True)
+        return TerminationReport(start_text, end_text, len(rows), len(population), tuple(rows), by_role, by_vendor, tuple(sorted(month_counts.items(), reverse=True)))
 
     def snapshot(self) -> ReportSnapshot:
         as_of_utc = datetime.now(timezone.utc).isoformat()

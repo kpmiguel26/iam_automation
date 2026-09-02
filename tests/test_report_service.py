@@ -223,7 +223,9 @@ class ReportServiceTests(unittest.TestCase):
                     WorkerModel(worker_id="superseded", display_name="Superseded Worker", status="ACTIVE", superseded_by_worker_id="newest"),
                 ])
                 session.add_all([
-                    WorkerEngagementModel(engagement_id="new-roster", worker_id="newest", source_system="ROSTER_LOCK", vendor_name="TTEC", onboarding_date="2026-08-04"),
+                    WorkerEngagementModel(engagement_id="new-roster", worker_id="newest", source_system="ROSTER_LOCK", vendor_name="TTEC", job_title="Roster Agent", onboarding_date="2026-08-04"),
+                    WorkerEngagementModel(engagement_id="new-fieldglass", worker_id="newest", source_system="RSR_SUPPLIER_WORKER_DETAILS", job_title="Fieldglass Agent"),
+                    WorkerSourceProfileModel(profile_id="new-access-profile", worker_id="newest", source_system="ACCESSNOW", source_record_key="A-100", snapshot_json='{"accessnow_status":"TERMINATED","terminated_date":"2026-08-20"}'),
                     WorkerEngagementModel(engagement_id="covered-roster", worker_id="covered", source_system="ROSTER_LOCK", vendor_name="TTEC", onboarding_date="2026-08-03"),
                     WorkerEngagementModel(engagement_id="covered-rsr", worker_id="covered", source_system="RSR_SUPPLIER_WORKER_DETAILS", vendor_name="TTEC"),
                     WorkerEngagementModel(engagement_id="covered-access", worker_id="covered", source_system="ACCESSNOW", vendor_name="TTEC"),
@@ -233,8 +235,32 @@ class ReportServiceTests(unittest.TestCase):
             rows = ReportService(database).new_hire_readiness()
             self.assertEqual([row.worker_id for row in rows], ["newest", "old"])
             self.assertEqual(rows[0].work_start_date, "2026-08-04")
-            self.assertTrue(rows[0].missing_fieldglass)
+            self.assertEqual(rows[0].roster_lock_role, "Roster Agent")
+            self.assertFalse(rows[0].missing_fieldglass)
             self.assertTrue(rows[0].missing_accessnow)
+            self.assertEqual(rows[0].fieldglass_job_title, "Fieldglass Agent")
+            self.assertEqual(rows[0].accessnow_terminated_date, "2026-08-20")
+
+    def test_termination_report_filters_window_and_breaks_down_by_role(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            with orm_session(database) as session:
+                session.add_all([
+                    WorkerModel(worker_id="terminated", display_name="Terminated Worker", status="TERMINATED"),
+                    WorkerModel(worker_id="active", display_name="Active Worker", status="ACTIVE"),
+                ])
+                session.add_all([
+                    WorkerEngagementModel(engagement_id="terminated-roster", worker_id="terminated", source_system="ROSTER_LOCK", vendor_name="TTEC", job_title="Licensed Agent ENG", onboarding_date="2026-01-10"),
+                    WorkerEngagementModel(engagement_id="active-roster", worker_id="active", source_system="ROSTER_LOCK", vendor_name="TTEC", job_title="Licensed Agent ENG", onboarding_date="2026-01-12"),
+                    WorkerSourceProfileModel(profile_id="terminated-access", worker_id="terminated", source_system="ACCESSNOW", source_record_key="A-1", snapshot_json='{"accessnow_status":"TERMINATED","terminated_date":"2026-08-15"}'),
+                ])
+            report = ReportService(database).termination_report(start_date="2026-08-01", end_date="2026-08-31")
+            self.assertEqual(report.total_terminations, 1)
+            self.assertEqual(report.population_exposed, 2)
+            self.assertEqual(report.attrition_rate, 50.0)
+            self.assertEqual(report.by_role[0].label, "Licensed Agent ENG")
+            self.assertEqual(report.by_role[0].terminations, 1)
+            self.assertEqual(report.by_role[0].population_exposed, 2)
 
     def test_empty_database_returns_zeroed_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -336,6 +362,9 @@ class ReportServiceTests(unittest.TestCase):
             new_hire_response = client.get("/reports/new-hires")
             self.assertEqual(new_hire_response.status_code, 200)
             self.assertIn(b"New hire readiness", new_hire_response.data)
+            termination_response = client.get("/reports/terminations?start=2026-01-01&end=2026-12-31")
+            self.assertEqual(termination_response.status_code, 200)
+            self.assertIn(b"Termination & attrition", termination_response.data)
             studio_response = client.get("/reports/studio")
             self.assertEqual(studio_response.status_code, 200)
             self.assertIn(b"Report Studio", studio_response.data)

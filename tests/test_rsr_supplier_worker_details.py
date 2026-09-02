@@ -17,7 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import select
 
 from iam_automation.application.employee_service import EmployeeService
@@ -56,6 +56,29 @@ class RsrSupplierWorkerDetailsTests(unittest.TestCase):
         sheet.append(["TTEC Contact Center Agent Services SOW 11109", "Open", "WO-1", supplier_reference, worker_id, "BUY-1", "Lovelace, Ada", "Analyst", "Contact", "2026-08-01", "2026-09-01", "LIC-1", "LOB-1", "NPN-1", "TAX-1", "CA"])
         workbook.save(path)
 
+    def _write_headcount(self, path: Path) -> None:
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(["Headcount TTEC - SMB (Filter Set : Headcount TTEC - SMB-Schedule)"])
+        sheet.append(["External Reference ID", "Statement of Work ID", "Engagement Type", "Classification", "Supplier", "Contractor Status", "Buyer Reference", "Supplier Reference", "Contractor ID", "Contractor", "SOW Worker Role", "Primary Cost Center Code", "Statement of Work: Owner", "Contractor Owner", "Contractor Start Date", "Contractor End Date"])
+        sheet.append(["11109", "KAISTQ00002576", "Fixed Price", "Fixed Bid", "TTEC SERVICES CORPORATION", "Open", "A009374", "2293527", "KAISWK00213000", "Balayo, Joyline", "Licensed Agent BIL", "701630000749478675", "Patatanyan, Amber", "Moya Bermudez,Sofia", "2026-02-01", "2027-01-31"])
+        workbook.save(path)
+
+    def test_headcount_ttec_smb_workbook_uses_rsr_mapping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Headcount TTEC - SMB.xlsx"
+            self._write_headcount(path)
+            rows = RsrSupplierWorkerDetailsAdapter._read_rows(path)
+            self.assertEqual(len(rows), 1)
+            payload = rows[0][1]
+            self.assertEqual(payload["worker_id"], "KAISWK00213000")
+            self.assertEqual(payload["worker"], "Balayo, Joyline")
+            self.assertEqual(payload["worker_status"], "Open")
+            self.assertEqual(payload["work_order_id"], "KAISTQ00002576")
+            self.assertEqual(payload["statement_of_work"], "11109")
+            self.assertEqual(payload["worker_start_date"], "2026-02-01")
+            self.assertEqual(payload["worker_end_date"], "2027-01-31")
+
     def test_rsr_matches_existing_worker_and_applies_as_enrichment(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -84,6 +107,24 @@ class RsrSupplierWorkerDetailsTests(unittest.TestCase):
             self.assertEqual(detail["engagements"][0].statement_of_work, "TTEC Contact Center Agent Services SOW 11109")
             self.assertEqual(detail["engagements"][0].vendor_name, "TTEC")
             self.assertEqual(detail["engagements"][0].job_title, "Analyst")
+
+    def test_unique_source_id_match_is_approvable_when_name_differs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            database = initialize_runtime_database(root / "runtime.sqlite")
+            roster = root / "roster.xlsx"
+            rsr = root / "rsr.xlsx"
+            self._write_roster(roster)
+            self._write_rsr(rsr)
+            workbook = load_workbook(rsr)
+            workbook.active["G3"] = "Lovelace, Alicia"
+            workbook.save(rsr)
+            RosterLockIngestionService(database).ingest_file(roster)
+            roster_record = EmployeeService(database).list_staged_records()[0]["record_id"]
+            EmployeeService(database).promote_ingestion_record(roster_record, "qa")
+            RsrSupplierWorkerDetailsAdapter(database).ingest_file(rsr, "qa")
+            record = next(item for item in EmployeeService(database).list_staged_records() if item["source_system"] == "RSR_SUPPLIER_WORKER_DETAILS")
+            self.assertEqual(record["match_status"], "MATCHED")
 
     def test_rsr_same_file_is_idempotent_and_unmatched_is_created_only_after_approval(self):
         with tempfile.TemporaryDirectory() as tmp:

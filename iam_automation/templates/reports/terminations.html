@@ -1,0 +1,36 @@
+<!-- File: iam_automation/templates/reports/terminations.html -->
+{% extends "base.html" %}
+{% block title %}Termination & Attrition{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell">
+  <div class="page-heading">
+    <div><p class="eyebrow">Report library · Workforce movement</p><h1>Termination & attrition</h1><p class="text-secondary mb-0">AccessNow terminations compared across a selectable date window.</p></div>
+    <div class="d-flex gap-2 flex-wrap"><a class="btn btn-primary" href="{{ url_for('reports.reports_home') }}">Back to Reports</a><a class="btn btn-outline-primary" href="{{ url_for('employees.employee_directory') }}">Open Employees</a></div>
+  </div>
+
+  <section class="surface p-4 mt-4">
+    <form class="row g-3 align-items-end" method="get">
+      <div class="col-sm-5 col-lg-3"><label class="form-label" for="start">From</label><input class="form-control" id="start" name="start" type="date" value="{{ report.start_date }}"></div>
+      <div class="col-sm-5 col-lg-3"><label class="form-label" for="end">To</label><input class="form-control" id="end" name="end" type="date" value="{{ report.end_date }}"></div>
+      <div class="col-sm-2 col-lg-2"><button class="btn btn-primary w-100" type="submit">Apply</button></div>
+    </form>
+    <p class="small text-secondary mt-3 mb-0">Window: {{ report.start_date }} through {{ report.end_date }}. Attrition rate = terminations in the window ÷ population active at the start of the window.</p>
+  </section>
+
+  <div class="row g-3 mt-1">
+    <div class="col-6 col-xl-3"><section class="readiness-metric-card"><span class="section-label">Terminations</span><strong>{{ report.total_terminations }}</strong><small>AccessNow records in window</small></section></div>
+    <div class="col-6 col-xl-3"><section class="readiness-metric-card"><span class="section-label">Headcount exposed</span><strong>{{ report.population_exposed }}</strong><small>Roster Lock population during window</small></section></div>
+    <div class="col-6 col-xl-3"><section class="readiness-metric-card readiness-metric-warning"><span class="section-label">Attrition rate</span><strong>{{ '%.2f'|format(report.attrition_rate) }}%</strong><small>Window terminations / exposed headcount</small></section></div>
+    <div class="col-6 col-xl-3"><section class="readiness-metric-card"><span class="section-label">Roles affected</span><strong>{{ report.by_role|length }}</strong><small>Roster Lock roles in population</small></section></div>
+  </div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-xl-7"><section class="surface p-4 h-100"><div class="section-heading mb-3"><div><p class="eyebrow mb-1">Breakdown</p><h2 class="h5 mb-0">Attrition by Roster Lock role</h2></div></div><div class="table-responsive"><table class="table table-hover align-middle mb-0" data-datatable="on" data-export-name="Attrition by role"><thead><tr><th>Role</th><th>Terminations</th><th>Exposed headcount</th><th>Attrition rate</th></tr></thead><tbody>{% for item in report.by_role %}<tr><td>{{ item.label }}</td><td>{{ item.terminations }}</td><td>{{ item.population_exposed }}</td><td>{{ '%.2f'|format(item.attrition_rate) }}%</td></tr>{% else %}<tr><td colspan="4" class="text-secondary">No role population in this window.</td></tr>{% endfor %}</tbody></table></div></section></div>
+    <div class="col-xl-5"><section class="surface p-4 h-100"><div class="section-heading mb-3"><div><p class="eyebrow mb-1">Trend</p><h2 class="h5 mb-0">Terminations by month</h2></div></div><div class="table-responsive"><table class="table table-hover align-middle mb-0" data-datatable="on" data-export-name="Terminations by month"><thead><tr><th>Month</th><th>Terminations</th></tr></thead><tbody>{% for month, count in report.by_month %}<tr><td>{{ month }}</td><td>{{ count }}</td></tr>{% else %}<tr><td colspan="2" class="text-secondary">No terminations in this window.</td></tr>{% endfor %}</tbody></table></div></section></div>
+  </div>
+
+  <section class="surface p-4 mt-4"><div class="section-heading mb-3"><div><p class="eyebrow mb-1">Termination detail</p><h2 class="h5 mb-0">Employees terminated in the selected window</h2></div><span class="badge text-bg-light">{{ report.total_terminations }} result(s)</span></div><div class="table-responsive"><table class="table table-hover align-middle mb-0" data-datatable="on" data-export-name="Termination detail"><thead><tr><th>Employee</th><th>Email</th><th>Termination date</th><th>Start date</th><th>Vendor</th><th>Roster Lock role</th><th>Fieldglass job title</th><th data-dt-order="disable">Action</th></tr></thead><tbody>{% for employee in report.rows %}<tr><td><a class="fw-semibold text-decoration-none" href="{{ url_for('employees.employee_detail', worker_id=employee.worker_id) }}">{{ employee.display_name }}</a></td><td class="text-break">{{ employee.email or 'No email' }}</td><td class="text-nowrap" data-order="{{ employee.termination_date }}">{{ employee.termination_date|human_datetime }}</td><td class="text-nowrap" data-order="{{ employee.work_start_date }}">{{ employee.work_start_date|human_datetime }}</td><td>{{ employee.vendor_name }}</td><td>{{ employee.roster_lock_role }}</td><td>{{ employee.fieldglass_job_title or 'Not provided' }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.employee_detail', worker_id=employee.worker_id) }}">Review employee</a></td></tr>{% else %}<tr><td colspan="8" class="text-secondary">No terminations found in the selected window.</td></tr>{% endfor %}</tbody></table></div></section>
+  <div class="readiness-footnote mt-3"><strong>Scope:</strong> Termination dates come from AccessNow source evidence. Exposed headcount uses non-superseded workers with a Roster Lock start date on or before the selected end date and no termination before the selected start date; source records without a usable start date are excluded.</div>
+</div>
+{% endblock %}
+<!-- #endfile -->

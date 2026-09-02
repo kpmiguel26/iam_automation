@@ -45,6 +45,22 @@ from ..application.source_reconciliation import ensure_source_identifiers, find_
 SOURCE_SYSTEM = "RSR_SUPPLIER_WORKER_DETAILS"
 REQUIRED_HEADERS = {"supplier_reference", "worker_id", "worker"}
 
+# Fieldglass exports use different labels for the same worker-level concepts
+# depending on the report/filter set. Keep one internal vocabulary so both the
+# classic RSR Supplier Worker Details report and the Headcount report follow
+# the same approval and reconciliation path.
+HEADER_ALIASES = {
+    "contractor_id": "worker_id",
+    "contractor": "worker",
+    "contractor_status": "worker_status",
+    "contractor_start_date": "worker_start_date",
+    "contractor_end_date": "worker_end_date",
+    "statement_of_work_id": "work_order_id",
+    "external_reference_id": "statement_of_work",
+    "contractor_owner": "worker_primary_contact",
+    "supplier": "supplier_name",
+}
+
 
 @dataclass(frozen=True)
 class RsrIngestionResult:
@@ -128,7 +144,10 @@ class RsrSupplierWorkerDetailsAdapter:
                 if len(matches) == 1:
                     worker_id = matches[0]
                     conflicts = self._record_conflicts(session, worker_id, record, payload)
-                    status = "CONFLICT" if conflicts else "MATCHED"
+                    # A unique source identifier is authoritative for identity.
+                    # Keep name differences as audit discrepancies, but do not
+                    # block enrichment approval because of display-name drift.
+                    status = "MATCHED"
                     reason = match_reason if not conflicts else f"{match_reason}; {len(conflicts)} field conflict(s) preserved for review"
                     record.matched_worker_id = worker_id
                 elif len(matches) > 1:
@@ -167,7 +186,9 @@ class RsrSupplierWorkerDetailsAdapter:
                     worker_id = matches[0]
                     conflict_fields = self._record_conflicts(session, worker_id, record, payload)
                     record.matched_worker_id = worker_id
-                    record.match_status = "CONFLICT" if conflict_fields else "MATCHED"
+                    # The ID match is safe to approve; discrepancies remain
+                    # visible in the audit/review views.
+                    record.match_status = "MATCHED"
                     record.match_reason = match_reason if not conflict_fields else f"{match_reason}; {len(conflict_fields)} field conflict(s) preserved for review"
                 elif len(matches) > 1:
                     record.matched_worker_id = None
@@ -325,7 +346,7 @@ class RsrSupplierWorkerDetailsAdapter:
             header_row = None
             headers: list[str] = []
             for row_number, row in enumerate(sheet.iter_rows(values_only=True), start=1):
-                normalized = [_header_key(value) for value in row]
+                normalized = [HEADER_ALIASES.get(_header_key(value), _header_key(value)) for value in row]
                 if REQUIRED_HEADERS.issubset(set(normalized)):
                     header_row, headers = row_number, normalized
                     break
@@ -413,7 +434,15 @@ class RsrSupplierWorkerDetailsAdapter:
             value = str(payload.get(field_name, "")).strip()
             if value and incoming and value.casefold() != str(incoming).casefold():
                 conflicts.append(field_name)
-                session.add(WorkerDiscrepancyModel(discrepancy_id=str(uuid.uuid4()), worker_id=worker_id, source_system=SOURCE_SYSTEM, source_record_key=record.source_record_key, field_name=field_name, current_value=str(incoming), incoming_value=value, status="OPEN", created_at_utc=_utc_now()))
+                existing = session.scalar(select(WorkerDiscrepancyModel).where(
+                    WorkerDiscrepancyModel.worker_id == worker_id,
+                    WorkerDiscrepancyModel.source_system == SOURCE_SYSTEM,
+                    WorkerDiscrepancyModel.source_record_key == record.source_record_key,
+                    WorkerDiscrepancyModel.field_name == field_name,
+                    WorkerDiscrepancyModel.status == "OPEN",
+                ).limit(1))
+                if existing is None:
+                    session.add(WorkerDiscrepancyModel(discrepancy_id=str(uuid.uuid4()), worker_id=worker_id, source_system=SOURCE_SYSTEM, source_record_key=record.source_record_key, field_name=field_name, current_value=str(incoming), incoming_value=value, status="OPEN", created_at_utc=_utc_now()))
         return conflicts
 
     @staticmethod
