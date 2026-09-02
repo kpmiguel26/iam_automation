@@ -41,6 +41,7 @@ from .source_reconciliation import _match_types, ensure_source_identifiers, find
 from .worker_history_service import record_worker_version
 from .stable_file_read import file_modified_at_utc, read_stable_bytes
 from .status_catalog import normalize_accessnow_status, status_rank
+from .ingestion_dedup import latest_payload_digests, payload_digest, serialize_payload
 
 
 SOURCE_SYSTEM = "ACCESSNOW"
@@ -120,6 +121,7 @@ class AccessNowIngestionService:
                 ).all()
             }
             session.add(ImportBatchModel(batch_id=batch_id, filename=source_file, source_type=SOURCE_SYSTEM, status="PROCESSING", total_rows=total_rows, valid_rows=0, quarantine_rows=0, created_by="workspace-watcher", created_at_utc=now, source_modified_at_utc=source_modified_at))
+            existing_payloads = latest_payload_digests(session, SOURCE_SYSTEM, {str(payload.get("accessnow_employee_id", "")) for _, _, payload in merged.values()})
             for row_number, (path, original_row, payload) in enumerate(merged.values(), start=2):
                 source_row_key = (str(path), source_checksum, int(original_row))
                 if source_row_key in existing_source_rows:
@@ -129,6 +131,9 @@ class AccessNowIngestionService:
                     # retain the existing evidence and continue with new rows.
                     continue
                 source_key = payload.get("accessnow_employee_id", "")
+                normalized_json = serialize_payload(payload)
+                if source_key and source_key not in seen and existing_payloads.get(source_key) == payload_digest(normalized_json):
+                    continue
                 reason = self._validation_error(payload, source_key, seen)
                 if reason:
                     quarantined += 1
@@ -136,7 +141,7 @@ class AccessNowIngestionService:
                     continue
                 seen.add(source_key)
                 staged += 1
-                session.add(IngestionRecordModel(record_id=str(uuid.uuid4()), batch_id=batch_id, source_system=SOURCE_SYSTEM, source_file=str(path), source_checksum=source_checksum, row_number=original_row, source_record_key=source_key, normalized_json=json.dumps(payload, sort_keys=True), payload_json=json.dumps(payload, sort_keys=True), status="STAGED", created_at_utc=now))
+                session.add(IngestionRecordModel(record_id=str(uuid.uuid4()), batch_id=batch_id, source_system=SOURCE_SYSTEM, source_file=str(path), source_checksum=source_checksum, row_number=original_row, source_record_key=source_key, normalized_json=normalized_json, payload_json=json.dumps(payload, sort_keys=True), status="STAGED", created_at_utc=now))
             session.flush()
             match_index = self._build_match_index(session)
             for record in session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.batch_id == batch_id, IngestionRecordModel.source_system == SOURCE_SYSTEM)).all():

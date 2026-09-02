@@ -174,6 +174,9 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
     <div class="alert alert-warning py-2 mb-0 small"><strong>Development build:</strong> This workspace is under active
       testing. Please report bugs from the Workspace menu.</div>
   </div>{% endif %}
+  {% if session.get('iam_user') %}<div class="container-fluid px-4 px-lg-5 pt-2">
+    <div class="workspace-mode-banner" role="status"><span class="workspace-mode-dot" aria-hidden="true"></span><span><strong>Workspace actions:</strong> review, apply and publish are available according to your role and current workspace policy.</span></div>
+  </div>{% endif %}
   {% if session.get('is_admin') and publication_pending %}<div class="container-fluid px-4 px-lg-5 pt-3">
     <div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mb-0"><span><strong>Local
           changes are waiting for publication.</strong> User, role, or password changes are currently available only on
@@ -219,7 +222,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
         overlay.className = 'transaction-loading';
         overlay.setAttribute('role', 'status');
         overlay.setAttribute('aria-live', 'polite');
-        overlay.innerHTML = '<div class="transaction-loading-card"><span class="spinner-border" aria-hidden="true"></span><div><strong>Processing request</strong><small>' + message + '</small></div></div>';
+        overlay.innerHTML = '<div class="transaction-loading-card"><span class="spinner-border" aria-hidden="true"></span><div><strong>Working…</strong><small>' + message + '</small></div></div>';
         document.body.appendChild(overlay);
       }
       window.showLoading = showLoading;
@@ -285,6 +288,18 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
           link.dataset.loadingHandled = 'true';
           showLoading(link.dataset.loadingMessage || 'Loading all related records…');
         });
+      });
+      document.body.addEventListener('htmx:beforeRequest', function (event) {
+        var target = event.detail && event.detail.elt;
+        if (target && target.dataset && target.dataset.loadingMessage) showLoading(target.dataset.loadingMessage);
+      });
+      document.body.addEventListener('htmx:afterRequest', function (event) {
+        var overlay = document.querySelector('.transaction-loading');
+        if (overlay && event.detail && event.detail.successful) overlay.remove();
+      });
+      document.body.addEventListener('htmx:responseError', function () {
+        var overlay = document.querySelector('.transaction-loading');
+        if (overlay) overlay.remove();
       });
     });
   </script>

@@ -37,6 +37,11 @@ class WebAppTests(unittest.TestCase):
         app = webapp.create_app(self.make_result(False))
         self.assertEqual(app.test_client().get("/login").status_code, 503)
 
+    def test_raw_iso_timestamps_are_humanized_in_templates(self):
+        app = webapp.create_app(self.make_result(True))
+        rendered = app.jinja_env.from_string("{{ timestamp }}").render(timestamp="2026-08-14T00:00:00")
+        self.assertEqual(rendered, "Aug 14, 2026, 12:00 AM UTC")
+
     def test_web_login_creates_local_session_and_opens_dashboard(self):
         user = type("User", (), {"username": "DOMAIN\\user", "roles": ("REQUESTER",)})()
         app = webapp.create_app(self.make_result(True), app_authenticator=lambda username, password: user)
@@ -48,6 +53,8 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Workspace overview", response.data)
         self.assertIn(b"DOMAIN\\user", response.data)
+        self.assertIn(b"Workspace actions", response.data)
+        self.assertIn(b"according to your role", response.data)
         dashboard = client.get("/dashboard")
         self.assertIn(b"Workspace overview", dashboard.data)
         self.assertEqual(client.get("/logout").status_code, 302)

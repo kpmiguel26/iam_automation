@@ -37,6 +37,7 @@ from ..infrastructure.sqlite.orm import (
     orm_session,
 )
 from ..application.stable_file_read import file_modified_at_utc, read_stable_bytes
+from ..application.ingestion_dedup import latest_payload_digests, payload_digest, serialize_payload
 from ..application.worker_history_service import record_worker_version
 from ..application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 
@@ -94,8 +95,10 @@ class RsrSupplierWorkerDetailsAdapter:
         with orm_session(self.database_path) as session:
             batch = ImportBatchModel(batch_id=batch_id, filename=path.name, source_type=SOURCE_SYSTEM, status="PROCESSING", total_rows=len(rows), created_by=actor, created_at_utc=now, source_modified_at_utc=file_modified_at_utc(path))
             session.add(batch)
+            existing_payloads = latest_payload_digests(session, SOURCE_SYSTEM, {self._source_key(payload, row_number) for row_number, payload in rows})
             for row_number, payload in rows:
                 source_key = self._source_key(payload, row_number)
+                normalized_json = serialize_payload(payload)
                 record_id = str(uuid.uuid4())
                 missing = sorted(REQUIRED_HEADERS - {key for key, value in payload.items() if value})
                 if missing:
@@ -103,7 +106,9 @@ class RsrSupplierWorkerDetailsAdapter:
                     session.add(IngestionRecordModel(record_id=record_id, batch_id=batch_id, source_system=SOURCE_SYSTEM, source_file=str(path), source_checksum=checksum, row_number=row_number, source_record_key=source_key, normalized_json=json.dumps(payload, sort_keys=True), payload_json=json.dumps(payload, sort_keys=True), status="QUARANTINED", match_status="NOT_EVALUATED", match_reason="Missing required fields", created_at_utc=now))
                     quarantined += 1
                     continue
-                session.add(IngestionRecordModel(record_id=record_id, batch_id=batch_id, source_system=SOURCE_SYSTEM, source_file=str(path), source_checksum=checksum, row_number=row_number, source_record_key=source_key, normalized_json=json.dumps(payload, sort_keys=True), payload_json=json.dumps(payload, sort_keys=True), status="STAGED", match_status="NOT_EVALUATED", created_at_utc=now))
+                if existing_payloads.get(source_key) == payload_digest(normalized_json):
+                    continue
+                session.add(IngestionRecordModel(record_id=record_id, batch_id=batch_id, source_system=SOURCE_SYSTEM, source_file=str(path), source_checksum=checksum, row_number=row_number, source_record_key=source_key, normalized_json=normalized_json, payload_json=json.dumps(payload, sort_keys=True), status="STAGED", match_status="NOT_EVALUATED", created_at_utc=now))
                 staged += 1
             batch.valid_rows = staged
             batch.quarantine_rows = quarantined

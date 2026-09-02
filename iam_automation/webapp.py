@@ -189,6 +189,21 @@ def create_app(
         hour = parsed.strftime("%I").lstrip("0") or "0"
         return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}, {hour}:{parsed:%M} {parsed:%p} UTC"
 
+    def finalize_template_value(value: object) -> object:
+        """Humanize raw ISO timestamps accidentally rendered without a filter.
+
+        Data exports and technical identifiers are left untouched. Only values
+        containing an ISO date-time separator are formatted, so date inputs
+        such as ``2026-08-14`` remain valid machine-readable values.
+        """
+        if isinstance(value, str) and "T" in value:
+            formatted = human_datetime(value)
+            if formatted != value:
+                return formatted
+        return value
+
+    app.jinja_env.finalize = finalize_template_value
+
     @app.errorhandler(404)
     def not_found(error):
         return render_template("errors/404.html"), 404

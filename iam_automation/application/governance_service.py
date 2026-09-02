@@ -48,7 +48,12 @@ class GovernanceService:
 
     def list_backups(self) -> list[Path]:
         folder = self.published_runtime_path.parent / "backups"
-        return sorted(folder.glob("*.sqlite"), reverse=True) if folder.exists() else []
+        if not folder.exists():
+            return []
+        # Names have different prefixes (for example test-reset-before vs
+        # iam_runtime). Sort by the actual backup timestamp so the newest
+        # recovery point is always visible first.
+        return sorted(folder.glob("*.sqlite"), key=lambda path: path.stat().st_mtime, reverse=True)
 
     def list_audit_events(self, limit: int = 100) -> list[dict]:
         events: list[dict] = []

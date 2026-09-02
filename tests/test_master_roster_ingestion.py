@@ -63,6 +63,29 @@ class MasterRosterIngestionTests(unittest.TestCase):
             self.assertTrue(second.already_processed)
             self.assertEqual(first.batch_id, second.batch_id)
 
+    def test_changed_file_only_stages_rows_with_changed_payloads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            database = initialize_runtime_database(root / "runtime.sqlite")
+            workbook = root / "master.xlsx"
+            self._write_workbook(workbook)
+            service = MasterRosterIngestionService(database)
+
+            first = service.ingest_file(workbook)
+            from openpyxl import load_workbook
+            editable = load_workbook(workbook)
+            editable.active.cell(row=5, column=4).value = "Changed Program"
+            editable.save(workbook)
+
+            second = service.ingest_file(workbook)
+
+            self.assertFalse(second.already_processed)
+            self.assertEqual(second.total_rows, 2)
+            self.assertEqual(second.staged_rows, 1)
+            with orm_session(database) as session:
+                self.assertEqual(session.query(IngestionRecordModel).count(), 3)
+                self.assertEqual(session.get(ImportBatchModel, first.batch_id).valid_rows, 2)
+
     def test_manual_import_promotes_all_staged_rows_to_history_and_creates_workers(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

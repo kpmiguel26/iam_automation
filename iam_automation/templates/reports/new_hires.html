@@ -1,30 +1,42 @@
-<!--
-File: iam_automation/templates/reports/new_hires.html
-Purpose: Provides the new hires component of IAM Automation.
-Responsibilities: Provides the file-level implementation used by the application.
-Dependencies: Jinja templates, the shared base template, and Bootstrap/application assets, as applicable.
-Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
-Author / implementation: Miguel Fernandez.
-Developed for: Kaiser Permanente NSES GWFM.
-Project implementation and integration: Miguel Fernandez.
-Third-party source, libraries, and dependencies retain their original licenses.
-Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-effort-history.md).
--->
-
+<!-- File: iam_automation/templates/reports/new_hires.html -->
 {% extends "base.html" %}
 {% block title %}New Hire Readiness{% endblock %}
 {% block content %}
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell">
-  <div class="page-heading"><div><p class="eyebrow">Report library</p><h1>New hire readiness</h1><p class="text-secondary mb-0">Recent Master Roster Lock starters that are not yet represented in Fieldglass / RSR or AccessNow.</p></div><a class="btn btn-outline-primary" href="{{ url_for('reports.reports_home') }}">Back to Reports</a></div>
-  <section class="surface p-4 mt-4">
-    <div class="section-heading mb-3"><div><p class="eyebrow mb-1">Source coverage</p><h2 class="h5 mb-0">Newest work starts needing follow-up</h2><p class="small text-secondary mb-0">Sorted by the Master Roster Lock work start date, not by import or record creation date.</p></div><span class="small text-secondary">{{ new_hires|length }} shown</span></div>
-    {% if new_hires %}
-    <div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Employee</th><th>Work start date</th><th>Vendor</th><th>Status</th><th>Fieldglass / RSR</th><th>AccessNow</th><th>Action</th></tr></thead><tbody>
-      {% for employee in new_hires %}<tr><td><a class="fw-semibold text-decoration-none" href="{{ url_for('employees.employee_detail', worker_id=employee.worker_id) }}">{{ employee.display_name }}</a><div class="small text-secondary">{{ employee.email or 'No canonical email' }}</div></td><td>{{ employee.work_start_date }}</td><td>{{ employee.vendor_name or 'No vendor' }}</td><td><span class="status-pill status-{{ employee.status|lower }}"><span></span>{{ employee.status.replace('_', ' ').title() }}</span></td><td>{% if employee.fieldglass_present %}<span class="text-success">Present</span>{% else %}<span class="badge text-bg-warning">Missing</span>{% endif %}</td><td>{% if employee.accessnow_present %}<span class="text-success">Present</span>{% else %}<span class="badge text-bg-warning">Missing</span>{% endif %}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.employee_detail', worker_id=employee.worker_id) }}">Review</a></td></tr>{% endfor %}
-    </tbody></table></div>
-    {% else %}<div class="empty-state"><div class="empty-state-icon">&#128197;</div><strong>No recent Roster Lock starters are missing source coverage.</strong><div class="small text-secondary mt-2">All canonical workers with a Roster Lock work start date currently have Fieldglass/RSR and AccessNow evidence, or no qualifying start dates are available.</div></div>{% endif %}
+  {% set stats = namespace(fieldglass=0, accessnow=0, both=0) %}
+  {% for employee in new_hires %}
+    {% if employee.fieldglass_present %}{% set stats.fieldglass = stats.fieldglass + 1 %}{% endif %}
+    {% if employee.accessnow_present %}{% set stats.accessnow = stats.accessnow + 1 %}{% endif %}
+    {% if not employee.fieldglass_present and not employee.accessnow_present %}{% set stats.both = stats.both + 1 %}{% endif %}
+  {% endfor %}
+
+  <div class="page-heading">
+    <div><p class="eyebrow">Report library · Coverage review</p><h1>New hire readiness</h1><p class="text-secondary mb-0">Recent Master Roster Lock starters missing Fieldglass / RSR or AccessNow evidence.</p></div>
+    <div class="d-flex gap-2 flex-wrap"><a class="btn btn-primary" href="{{ url_for('reports.reports_home') }}">Back to Reports</a><a class="btn btn-outline-primary" href="{{ url_for('employees.employee_directory') }}">Open Employees</a></div>
+  </div>
+
+  <section class="readiness-hero mt-4">
+    <div class="readiness-hero-copy"><p class="eyebrow mb-1">Operational question</p><h2 class="h4 mb-2">Who is starting without complete source coverage?</h2><p class="mb-0">Use this report to prioritize review before the work start date. It identifies evidence gaps; it does not approve or reject a hire.</p></div>
+    <div class="readiness-hero-metric"><strong>{{ new_hires|length }}</strong><span>starter(s) need review</span></div>
   </section>
-  <p class="small text-secondary mt-3 mb-0">Fieldglass is represented by the RSR Supplier Worker Details source. Workers superseded by a merge are excluded.</p>
+
+  <div class="row g-3 mt-1">
+    <div class="col-6 col-xl-3"><section class="readiness-metric-card"><span class="section-label">Shown</span><strong>{{ new_hires|length }}</strong><small>Roster Lock starters</small></section></div>
+    <div class="col-6 col-xl-3"><section class="readiness-metric-card readiness-metric-warning"><span class="section-label">Missing Fieldglass / RSR</span><strong>{{ new_hires|length - stats.fieldglass }}</strong><small>Supplier detail evidence</small></section></div>
+    <div class="col-6 col-xl-3"><section class="readiness-metric-card readiness-metric-warning"><span class="section-label">Missing AccessNow</span><strong>{{ new_hires|length - stats.accessnow }}</strong><small>AccessNow evidence</small></section></div>
+    <div class="col-6 col-xl-3"><section class="readiness-metric-card readiness-metric-critical"><span class="section-label">Missing both</span><strong>{{ stats.both }}</strong><small>Highest coverage gap</small></section></div>
+  </div>
+
+  <section class="surface p-4 mt-4">
+    <div class="section-heading mb-3"><div><p class="eyebrow mb-1">Coverage queue</p><h2 class="h5 mb-1">Newest work starts needing follow-up</h2><p class="small text-secondary mb-0">Sorted by Master Roster Lock work start date, not import or record creation date.</p></div><span class="badge text-bg-warning">Review evidence</span></div>
+    {% if new_hires %}
+    <div class="readiness-legend mb-3"><span><i class="readiness-dot readiness-dot-present"></i>Evidence present</span><span><i class="readiness-dot readiness-dot-missing"></i>Evidence missing</span><span class="ms-auto small text-secondary">{{ new_hires|length }} result(s)</span></div>
+    <div class="table-responsive"><table class="table table-hover align-middle mb-0" data-datatable="on" data-export-name="New hire readiness"><thead><tr><th>Employee</th><th>Start date</th><th>Vendor</th><th>Status</th><th>Fieldglass / RSR</th><th>AccessNow</th><th data-dt-order="disable">Action</th></tr></thead><tbody>
+      {% for employee in new_hires %}<tr><td><a class="fw-semibold text-decoration-none" href="{{ url_for('employees.employee_detail', worker_id=employee.worker_id) }}">{{ employee.display_name or 'Unnamed employee' }}</a><div class="small text-secondary text-break">{{ employee.email or 'No canonical email' }}</div></td><td class="fw-semibold text-nowrap" data-order="{{ employee.work_start_date or '' }}">{{ employee.work_start_date|human_datetime or 'Not provided' }}</td><td>{{ employee.vendor_name or 'No vendor' }}</td><td><span class="status-pill status-{{ employee.status|lower }}"><span></span>{{ employee.status.replace('_', ' ').title() }}</span></td><td>{% if employee.fieldglass_present %}<span class="readiness-status readiness-status-present"><i class="readiness-dot readiness-dot-present"></i>Present</span>{% else %}<span class="readiness-status readiness-status-missing"><i class="readiness-dot readiness-dot-missing"></i>Missing</span>{% endif %}</td><td>{% if employee.accessnow_present %}<span class="readiness-status readiness-status-present"><i class="readiness-dot readiness-dot-present"></i>Present</span>{% else %}<span class="readiness-status readiness-status-missing"><i class="readiness-dot readiness-dot-missing"></i>Missing</span>{% endif %}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('employees.employee_detail', worker_id=employee.worker_id) }}">Review employee</a></td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<div class="readiness-empty"><div class="empty-state-icon">✓</div><h3 class="h5 mb-1">Coverage is complete</h3><p class="text-secondary mb-3">No recent Roster Lock starters are missing Fieldglass / RSR or AccessNow evidence.</p><a class="btn btn-sm btn-outline-primary" href="{{ url_for('reports.reports_home') }}">Explore other reports</a></div>{% endif %}
+  </section>
+  <div class="readiness-footnote mt-3"><strong>Scope:</strong> Fieldglass is represented by RSR Supplier Worker Details. Superseded workers are excluded. This report highlights evidence gaps for human review; it does not make a hiring or access decision.</div>
 </div>
 {% endblock %}
 <!-- #endfile -->

@@ -92,8 +92,11 @@ class ApplicationAdminOperationsTests(unittest.TestCase):
             self.assertEqual(service.list_for_user("admin")[0].notification_id, notification_id)
             self.assertFalse((base / "sharepoint" / "notifications").exists())
             self.assertTrue((base / ".iam_notifications").is_dir())
-            with sqlite3.connect(database) as connection:
+            connection = sqlite3.connect(database)
+            try:
                 self.assertEqual(connection.execute("SELECT COUNT(*) FROM notifications").fetchone()[0], 0)
+            finally:
+                connection.close()
 
     def test_only_database_publication_is_written_to_shared_notifications(self):
         with tempfile.TemporaryDirectory() as tmp:

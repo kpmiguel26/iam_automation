@@ -28,7 +28,12 @@
 
   function exportText(data) {
     var holder = document.createElement('div');
-    holder.innerHTML = String(data == null ? '' : data);
+    var html = String(data == null ? '' : data)
+      // Keep the visual separation used by stacked labels such as employee
+      // name + email when DataTables strips the markup for CSV/XLSX.
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(div|p|li|tr|td|th)>/gi, '\n');
+    holder.innerHTML = html;
     return (holder.textContent || holder.innerText || '').replace(/\s+/g, ' ').trim();
   }
 
@@ -116,12 +121,12 @@
       autoWidth: false,
       columnDefs: disabledColumns.map(function (index) { return { targets: index, orderable: false }; }),
       language: {
-        search: 'Search:',
-        searchPlaceholder: 'Filter this table...',
-        lengthMenu: 'Show _MENU_',
+        search: 'Filter:',
+        searchPlaceholder: 'Search visible records…',
+        lengthMenu: 'Rows _MENU_',
         info: 'Showing _START_ to _END_ of _TOTAL_ records',
         infoEmpty: 'No records to show',
-        zeroRecords: 'No matching records found'
+        zeroRecords: 'No matching records found — adjust the filter or search term.'
       },
       layout: {
         topStart: {

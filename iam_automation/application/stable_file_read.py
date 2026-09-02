@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-def read_stable_bytes(path: Path, *, attempts: int = 3, delay_seconds: float = 0.05) -> bytes:
+def read_stable_bytes(path: Path, *, attempts: int = 8, delay_seconds: float = 0.25) -> bytes:
     """Read bytes only when size and mtime remain stable for the whole read."""
     last_error: OSError | None = None
     for attempt in range(max(1, attempts)):

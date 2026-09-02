@@ -364,7 +364,15 @@ class FileWatchService:
                         # preserve size and timestamp resolution. The content
                         # checksum is also the identity used by ingestion,
                         # so the watcher and source pipeline now agree.
-                        signature = hashlib.sha256(read_stable_bytes(path)).hexdigest()
+                        try:
+                            signature = hashlib.sha256(read_stable_bytes(path)).hexdigest()
+                        except OSError as exc:
+                            # OneDrive may hold a placeholder while it finishes
+                            # downloading or uploading. Do not let one file
+                            # block the remaining source folders; the next
+                            # watcher cycle will retry it.
+                            LOGGER.warning("Skipping temporarily unavailable source file; will retry: %s (%s)", path, exc)
+                            continue
                         observations.append(FileObservation(str(path), kind, signature))
         return observations
 
