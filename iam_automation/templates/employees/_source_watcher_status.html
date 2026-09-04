@@ -1,4 +1,4 @@
-<section id="source-watcher-status" class="surface p-3 mt-3" aria-labelledby="source-watcher-status-heading" aria-live="polite"
+<section id="source-watcher-status" class="border rounded p-3 mb-4" aria-labelledby="source-watcher-status-heading" aria-live="polite"
   hx-get="{{ url_for('employees.source_updates_watcher_status') }}" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML">
   {% set watcher_status = watcher_health.get('status', 'UNKNOWN') %}
   {% set scanning = watcher_status == 'SCANNING' %}
