@@ -281,6 +281,39 @@ class WorkerSourceLineageModel(Base):
     observed_at_utc: Mapped[str] = mapped_column(String, default="")
 
 
+class FieldCatalogModel(Base):
+    """Governed fields allowed in the compact current-state projection."""
+
+    __tablename__ = "field_catalog"
+
+    field_key: Mapped[str] = mapped_column(String, primary_key=True)
+    label: Mapped[str] = mapped_column(String, default="")
+    data_type: Mapped[str] = mapped_column(String, default="TEXT")
+    sensitivity: Mapped[str] = mapped_column(String, default="INTERNAL")
+    reportable: Mapped[bool] = mapped_column(Boolean, default=True)
+    rule_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String, default="ACTIVE")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class EmployeeFieldValueModel(Base):
+    """One current value per employee, source, and governed field."""
+
+    __tablename__ = "employee_field_values"
+    __table_args__ = (UniqueConstraint("worker_id", "source_system", "field_key", name="uq_employee_field_current"),)
+
+    value_id: Mapped[str] = mapped_column(String, primary_key=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey("workers.worker_id"))
+    source_system: Mapped[str] = mapped_column(String)
+    field_key: Mapped[str] = mapped_column(ForeignKey("field_catalog.field_key"))
+    value_text: Mapped[str] = mapped_column(Text, default="")
+    source_record_key: Mapped[str] = mapped_column(String, default="")
+    source_record_id: Mapped[str] = mapped_column(String, default="")
+    observed_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
 class WorkerDiscrepancyModel(Base):
     __tablename__ = "worker_discrepancies"
 

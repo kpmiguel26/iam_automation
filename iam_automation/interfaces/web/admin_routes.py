@@ -14,6 +14,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 from __future__ import annotations
 
 import sqlite3
+import logging
 from functools import wraps
 from pathlib import Path
 from typing import Callable
@@ -43,6 +44,7 @@ from ...identity_discovery import list_pending_discoveries
 
 
 def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None = None, sharepoint_root: Path | None = None, local_runtime_path: Path | None = None, published_runtime_path: Path | None = None, audit_path: Path | None = None) -> Blueprint:
+    logger = logging.getLogger(__name__)
     blueprint = Blueprint("admin", __name__, url_prefix="/admin")
     notifications = NotificationService(database_path, sharepoint_root=sharepoint_root)
     delegations = DelegationService(database_path)
@@ -265,10 +267,18 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             else:
                 try:
                     batch = imports.import_bytes(upload.filename, upload.read(), str(session["iam_user"]))
-                    finding_count = rules.evaluate_batch(batch.batch_id)
+                    try:
+                        finding_count = rules.evaluate_batch(batch.batch_id)
+                    except Exception:
+                        logger.exception("Business rule evaluation failed after import %s", batch.batch_id)
+                        finding_count = 0
+                        error = "Import completed, but rule evaluation failed. Review the startup log and retry evaluation later."
                     message = f"Import {batch.batch_id[:8]} processed: {batch.valid_rows} valid, {batch.quarantine_rows} quarantined. {finding_count} rule finding(s) created."
                 except (ValueError, RuntimeError) as exc:
                     error = str(exc)
+                except Exception:
+                    logger.exception("Import failed safely for %s", upload.filename)
+                    error = "The import failed safely. The next import can be attempted; review the startup log for details."
         return render_template("admin/imports.html", **imports_page_context(message=message, error=error))
 
     @blueprint.post("/imports/records/<record_id>/promote")

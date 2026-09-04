@@ -30,6 +30,7 @@ are linked.
 | F-006 | Alert definition framework | Active / findings surface started | AL-001–AL-004 | [Architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md), [feature brief](./features/2026-09-business-rules-framework.md) |
 | F-007 | Database publication and workspace refresh | Active investigation | DB-001–DB-003 | [Bug record](./bugs/2026-09-refresh-alert.md) |
 | F-008 | Canonical mutation, approval and publication writer | Deferred | Future controlled-change stories | [Architecture boundary](../ARCHITECTURE.md) |
+| F-009 | Compact employee current-state projection pilot | Active / pilot | DATA-001–DATA-003 | [Pilot architecture](./architecture/COMPACT_EMPLOYEE_DATA_PILOT.md) |
 
 ## User story registry
 
@@ -42,6 +43,7 @@ are linked.
 | AL-001–AL-003 | Planned | Alert administration, conditions and severity | [Business Rules brief](./features/2026-09-business-rules-framework.md) |
 | AL-004 | Active / findings center | Open and critical post-import findings in Overview/Dashboard plus operational disposition center | [Business Rules architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md) |
 | DB-001 | Active investigation | Fix missing refresh notification | [Refresh alert bug](./bugs/2026-09-refresh-alert.md) |
+| DATA-001–DATA-003 | Active / pilot | Governed field catalog, compact employee values, resilient retryable imports | [Pilot architecture](./architecture/COMPACT_EMPLOYEE_DATA_PILOT.md) |
 | DB-002–DB-003 | Planned | Global polling and publication progress | [Refresh alert bug](./bugs/2026-09-refresh-alert.md) |
 | Master Roster read-only stories | Mixed | Staging/import completed; matching, comparison and conflict views pending | [Requirements](./work_tracking/2026-08-27_MASTER_ROSTER_REQUIREMENTS.md) |
 | Change-role submission stories | Deferred | Not part of current read-only release | [Scope decision](./work_tracking/DECISIONS.md) |

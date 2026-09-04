@@ -36,6 +36,7 @@ from ..infrastructure.sqlite.orm import (
     orm_session,
 )
 from .worker_history_service import record_worker_version, version_dict
+from .employee_field_projection_service import EmployeeFieldProjectionService
 from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session
 from .rehire_alert_service import RehireAlertService
@@ -681,6 +682,7 @@ class EmployeeService:
         profile.snapshot_json = record.normalized_json
         profile.status = "CURRENT"
         profile.last_seen_at_utc = now
+        EmployeeFieldProjectionService.project_record_in_session(session, record, worker_id, now)
 
     @staticmethod
     def _record_source_lineage_in_session(session, record: IngestionRecordModel, worker_id: str, now: str) -> None:

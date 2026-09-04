@@ -349,3 +349,10 @@
 - Added AccessNow NUID, Vendor Employee ID, Work Order ID, NPN and technical Worker ID to the termination detail table and export.
 - Kept each identifier labeled by source and purpose; Work Order ID is an assignment identifier, not a person identifier.
 - Preserved AccessNow as the sole source for termination dates and Roster Lock as the source for vendor employee identifiers.
+
+### Compact Employee Data Pilot and Import Resilience - 2026-09-04
+
+- Added migration `0012_compact_employee_fields` with governed `field_catalog` and one-current-value `employee_field_values` tables.
+- Projected approved fields when a staged source record is promoted; unknown report columns remain outside the compact layer until explicitly governed.
+- Isolated post-import rule evaluation failures from import success and added a safe retry path for unexpected import exceptions.
+- Kept all existing JSON evidence and history unchanged while the pilot is measured.
