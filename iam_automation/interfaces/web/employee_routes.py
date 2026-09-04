@@ -27,7 +27,11 @@ from sqlalchemy import select
 
 from ...application.audit_service import record_audit
 from ...application.employee_service import EmployeeService
-from ...application.file_watch_service import load_watcher_health
+from ...application.file_watch_service import load_watcher_health, load_watcher_manifest
+from ...application.roster_lock_ingestion_service import RosterLockIngestionService
+from ...application.master_roster_ingestion_service import MasterRosterIngestionService
+from ...application.accessnow_ingestion_service import AccessNowIngestionService
+from ...source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 from ...application.notification_service import NotificationService
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.shared_request_service import SharedRequestService
@@ -166,6 +170,28 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         previous_complete = True
         for source_system in source_order:
             files = service.list_source_files(source_system)
+            manifest = load_watcher_manifest(database_path).get("observations", {})
+            if isinstance(manifest, dict):
+                known_paths = {str(item.get("source_path", item.get("source_file", ""))) for item in files}
+                for item in manifest.values():
+                    if not isinstance(item, dict) or item.get("source_system") != source_system:
+                        continue
+                    if str(item.get("path", "")) in known_paths:
+                        continue
+                    files.append({
+                        "source_file": str(item.get("source_file", Path(str(item.get("path", ""))).name)),
+                        "source_path": str(item.get("path", "")),
+                        "source_checksum": str(item.get("source_checksum", "")),
+                        "record_count": 0,
+                        "pending_count": 0,
+                        "ambiguous_count": 0,
+                        "conflict_count": 0,
+                        "linked_count": 0,
+                        "imported": False,
+                        "latest_at": item.get("updated_at_utc", ""),
+                        "source_modified_at": item.get("updated_at_utc", ""),
+                    })
+            files.sort(key=lambda item: (str(item.get("source_modified_at") or item.get("latest_at") or ""), str(item.get("source_file", "")).casefold()))
             imported = bool(files) and all(bool(item.get("imported")) for item in files)
             stage_complete = not files or imported
             item = grouped.get(source_system, {"source_system": source_system, "label": "Fieldglass" if source_system == "RSR_SUPPLIER_WORKER_DETAILS" else service._source_label(source_system), "file_count": 0, "record_count": 0, "pending_count": 0, "linked_count": 0})
@@ -373,7 +399,22 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             return "Invalid source import request.", 400
         summary = service.get_source_file_summary(source_system, source_file)
         if summary is None:
-            return "Source file was not found in staging.", 404
+            manifest = load_watcher_manifest(database_path).get("observations", {})
+            candidate = next((item for item in manifest.values() if isinstance(item, dict) and item.get("source_system") == source_system and item.get("source_file") == source_file), None) if isinstance(manifest, dict) else None
+            if not candidate or not Path(str(candidate.get("path", ""))).is_file():
+                return "Source file was not found in discovery manifest.", 404
+            source_path = Path(str(candidate["path"]))
+            if source_system == "ROSTER_LOCK":
+                RosterLockIngestionService(database_path).ingest_file(source_path)
+            elif source_system == "MASTER_ROSTER":
+                MasterRosterIngestionService(database_path).ingest_file(source_path)
+            elif source_system == "RSR_SUPPLIER_WORKER_DETAILS":
+                RsrSupplierWorkerDetailsAdapter(database_path).ingest_file(source_path)
+            elif source_system == "ACCESSNOW":
+                AccessNowIngestionService(database_path).ingest_folder(source_path.parent)
+            summary = service.get_source_file_summary(source_system, source_file)
+        if summary is None:
+            return "Source file could not be staged for import.", 422
         if load_watcher_health(database_path).get("status") == "SCANNING":
             message = "The SharePoint watcher is still discovering files. Wait until scanning finishes before starting an import."
             if request.headers.get("HX-Request"):

@@ -56,6 +56,45 @@ def watcher_health_path(database_path: Path) -> Path:
     return database_path.with_name(database_path.name + ".watcher-health.json")
 
 
+def watcher_manifest_path(database_path: Path) -> Path:
+    """Return the local discovery manifest; it is deliberately not SQLite data."""
+    return database_path.with_name(database_path.name + ".watcher-manifest.json")
+
+
+def load_watcher_manifest(database_path: Path) -> dict[str, object]:
+    path = watcher_manifest_path(database_path)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def save_watcher_manifest(database_path: Path, observations: list[FileObservation]) -> None:
+    previous = load_watcher_manifest(database_path)
+    previous_items = previous.get("observations", {})
+    items = dict(previous_items) if isinstance(previous_items, dict) else {}
+    active_paths = {item.path for item in observations}
+    for item in observations:
+        old = items.get(item.path, {})
+        old = old if isinstance(old, dict) else {}
+        items[item.path] = {
+            "path": item.path,
+            "source_system": item.file_kind,
+            "source_file": Path(item.path).name,
+            "source_checksum": item.signature,
+            "status": old.get("status", "DETECTED"),
+            "detected_at_utc": old.get("detected_at_utc") or datetime.now(timezone.utc).isoformat(),
+            "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+    # A deleted OneDrive file should disappear from the active discovery list.
+    items = {path: item for path, item in items.items() if path in active_paths}
+    path = watcher_manifest_path(database_path)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(json.dumps({"version": 1, "observations": items}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
 def load_watcher_health(database_path: Path) -> dict[str, object]:
     """Read the last watcher state without making health part of SQLite data."""
     path = watcher_health_path(database_path)
@@ -125,12 +164,14 @@ class FileWatchService:
             raise last_error
 
     def scan_once(self) -> int:
-        # Refresh replaces the local SQLite file atomically. Hold the same
-        # process-wide lock across discovery and ingestion so a checksum/read,
-        # SQLite connection, and file replacement cannot overlap.
+        # Discovery is intentionally filesystem-only. Importing a report is an
+        # explicit user action and is the only operation allowed to populate
+        # SQLite with source rows and star facts.
         with WORKSPACE_IO_LOCK:
             observations = self._discover_files()
-            if not observations:
+            save_watcher_manifest(self.database_path, observations)
+            return len(observations)
+            if not observations:  # pragma: no cover - retained for old traces
                 return 0
             # The watcher itself writes observations to the local runtime and
             # notifications to the local file store. Preserve a genuine user edit, but advance the
