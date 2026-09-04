@@ -92,7 +92,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             for table_name in expected_tables:
                 if table_name in table_names:
                     result["columns"][table_name] = [row[1] for row in connection.execute(f"PRAGMA table_info({table_name})")]
-            result["indexes"] = [row[1] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_employee_field%'")]
+            result["indexes"] = [row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_star_%'")]
             if "dim_field" in table_names:
                 result["field_count"] = connection.execute("SELECT COUNT(*) FROM dim_field WHERE active = 1").fetchone()[0]
             if "fact_worker_field" in table_names:
