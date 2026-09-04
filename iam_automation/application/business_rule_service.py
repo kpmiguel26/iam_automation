@@ -75,7 +75,9 @@ class BusinessRuleService:
         now = datetime.now(timezone.utc).isoformat()
         created = 0
         with orm_session(self.database_path) as session:
-            rules = session.scalars(
+            # A multi-entity SELECT must use execute(); scalars() intentionally
+            # returns only the first selected entity (BusinessRuleModel).
+            rules = session.execute(
                 select(BusinessRuleModel, BusinessRuleVersionModel)
                 .join(BusinessRuleVersionModel, BusinessRuleVersionModel.rule_id == BusinessRuleModel.rule_id)
                 .where(BusinessRuleModel.status == "ACTIVE")
