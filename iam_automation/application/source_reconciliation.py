@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from ..infrastructure.sqlite.orm import IngestionRecordModel, WorkerIdentifierModel, WorkerModel
 from .source_date import parse_source_date
 from .status_catalog import is_inactive_source_status, normalize_accessnow_status
+from .star_schema_writer import StarSchemaWriter
 
 
 def source_identifiers(source_system: str, payload: dict[str, object]) -> list[tuple[str, str]]:
@@ -143,7 +144,7 @@ def reconcile_worker_status_in_session(session, worker_id: str) -> str:
     undated_inactive = False
     for record in records:
         try:
-            payload = json.loads(record.normalized_json or "{}")
+            payload = StarSchemaWriter.payload_for_record(session, record)
         except json.JSONDecodeError:
             payload = {}
         if record.source_system == "ACCESSNOW":

@@ -40,6 +40,7 @@ from .employee_field_projection_service import EmployeeFieldProjectionService
 from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session
 from .rehire_alert_service import RehireAlertService
+from .star_schema_writer import StarSchemaWriter
 
 
 @dataclass(frozen=True)
@@ -682,12 +683,13 @@ class EmployeeService:
         profile.snapshot_json = record.normalized_json
         profile.status = "CURRENT"
         profile.last_seen_at_utc = now
+        StarSchemaWriter.link_record_in_session(session, record, worker_id)
         EmployeeFieldProjectionService.project_record_in_session(session, record, worker_id, now)
 
     @staticmethod
     def _record_source_lineage_in_session(session, record: IngestionRecordModel, worker_id: str, now: str) -> None:
         """Attach every field in an immutable source row to the employee once."""
-        payload = json.loads(record.normalized_json or "{}")
+        payload = StarSchemaWriter.payload_for_record(session, record)
         existing = {
             (item.source_file, item.row_number, item.field_name)
             for item in session.scalars(select(WorkerSourceLineageModel).where(
@@ -717,7 +719,7 @@ class EmployeeService:
             rows = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(selected)).order_by(IngestionRecordModel.row_number)).all()
             previews = []
             for row in rows:
-                payload = json.loads(row.normalized_json)
+                payload = StarSchemaWriter.payload_for_record(session, row)
                 previews.append({
                     "record_id": row.record_id,
                     "source_record_key": row.source_record_key,
@@ -892,7 +894,7 @@ class EmployeeService:
             for record in records:
                 if record.status not in {"STAGED", "MATCHED", "CONFLICT"}:
                     continue
-                payload = json.loads(record.normalized_json)
+                payload = StarSchemaWriter.payload_for_record(session, record)
                 if record.source_system == "ACCESSNOW":
                     record_engagement = None
                 elif record.source_system in {"ROSTER_LOCK", "RSR_SUPPLIER_WORKER_DETAILS"}:
@@ -1706,7 +1708,7 @@ class EmployeeService:
 
     def _promote_record_in_session(self, session, record: IngestionRecordModel, now: str, actor: str = "system") -> tuple[str, bool]:
         """Promote one record while the caller owns the transaction."""
-        payload = json.loads(record.normalized_json)
+        payload = StarSchemaWriter.payload_for_record(session, record)
         identifier_value = str(payload.get("vendor_employee_id") or payload.get("employee_number") or payload.get("nuid_login_id") or payload.get("npn_login_id") or "").strip()
         if not identifier_value and not record.matched_worker_id:
             raise ValueError("The staged record has no Vendor Employee ID.")

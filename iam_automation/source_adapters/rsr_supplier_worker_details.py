@@ -142,7 +142,7 @@ class RsrSupplierWorkerDetailsAdapter:
             records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.batch_id == batch_id, IngestionRecordModel.source_system == SOURCE_SYSTEM, IngestionRecordModel.status == "STAGED").order_by(IngestionRecordModel.row_number)).all()
             preview = []
             for record in records:
-                payload = json.loads(record.normalized_json)
+                payload = StarSchemaWriter.payload_for_record(session, record)
                 matches, match_reason = self._find_match_detail(session, payload)
                 if len(matches) == 1:
                     worker_id = matches[0]
@@ -182,7 +182,7 @@ class RsrSupplierWorkerDetailsAdapter:
                 .order_by(IngestionRecordModel.created_at_utc, IngestionRecordModel.row_number)
             ).all()
             for record in records:
-                payload = json.loads(record.normalized_json)
+                payload = StarSchemaWriter.payload_for_record(session, record)
                 matches, match_reason = self._find_match_detail(session, payload)
                 previous = record.match_status
                 if len(matches) == 1:
@@ -221,7 +221,7 @@ class RsrSupplierWorkerDetailsAdapter:
             ).all()
             source_by_worker_and_order: dict[tuple[str, str], dict[str, str]] = {}
             for record in applied_records:
-                payload = json.loads(record.normalized_json)
+                payload = StarSchemaWriter.payload_for_record(session, record)
                 worker_id = record.matched_worker_id
                 work_order_id = payload.get("work_order_id", "")
                 if worker_id and work_order_id:
@@ -271,7 +271,7 @@ class RsrSupplierWorkerDetailsAdapter:
                         progress_callback(handled, len(records), created, reused, failed)
                     continue
                 try:
-                    payload = json.loads(record.normalized_json)
+                    payload = StarSchemaWriter.payload_for_record(session, record)
                     worker_id = record.matched_worker_id
                     if record.match_status == "UNMATCHED":
                         # Matching is calculated when the file is ingested, but

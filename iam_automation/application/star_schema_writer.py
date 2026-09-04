@@ -93,6 +93,32 @@ class StarSchemaWriter:
                     record.payload_json = ""
 
     @classmethod
+    def payload_for_record(cls, session, record) -> dict[str, str]:
+        """Reconstruct a staged payload from star facts, with old-data fallback."""
+        snapshot = session.get(FactSourceSnapshotModel, cls._id("snapshot", record.record_id))
+        if snapshot is not None:
+            rows = session.execute(
+                select(DimFieldModel.field_key, FactWorkerFieldModel.value_text)
+                .join(FactWorkerFieldModel, FactWorkerFieldModel.field_id == DimFieldModel.field_id)
+                .where(FactWorkerFieldModel.snapshot_id == snapshot.snapshot_id)
+            ).all()
+            if rows:
+                return {str(field_key): str(value or "") for field_key, value in rows}
+        raw = record.normalized_json or record.payload_json or "{}"
+        return json.loads(raw)
+
+    @classmethod
+    def link_record_in_session(cls, session, record, worker_id: str) -> None:
+        """Attach star facts to the canonical employee after promotion."""
+        snapshot = session.get(FactSourceSnapshotModel, cls._id("snapshot", record.record_id))
+        if snapshot is None:
+            return
+        snapshot.worker_id = worker_id
+        session.query(FactWorkerFieldModel).filter(FactWorkerFieldModel.snapshot_id == snapshot.snapshot_id).update({"worker_id": worker_id}, synchronize_session=False)
+        session.query(FactTerminationModel).filter(FactTerminationModel.snapshot_id == snapshot.snapshot_id).update({"worker_id": worker_id}, synchronize_session=False)
+        session.query(FactAssignmentModel).filter(FactAssignmentModel.snapshot_id == snapshot.snapshot_id).update({"worker_id": worker_id}, synchronize_session=False)
+
+    @classmethod
     def _write_termination(cls, session, snapshot, record, payload: dict[str, object]) -> None:
         date_text = str(payload.get("terminated_date") or payload.get("termination_date") or "").strip()
         if not date_text:

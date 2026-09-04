@@ -318,7 +318,7 @@ class AccessNowIngestionService:
                         progress_callback(handled, len(records), created, reused, failed)
                     continue
                 try:
-                    payload = json.loads(record.normalized_json)
+                    payload = StarSchemaWriter.payload_for_record(session, record)
                     worker_id = record.matched_worker_id
                     # AccessNow files can be staged before the preceding
                     # sources are imported. Re-evaluate an unmatched record
