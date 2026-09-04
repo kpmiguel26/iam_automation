@@ -28,7 +28,7 @@ from iam_automation.runtime_sync import runtime_manifest_path, sha256_file, sync
 
 
 class WorkspaceRefreshTests(unittest.TestCase):
-    def test_version_detects_local_runtime_changes_after_refresh(self):
+    def test_version_does_not_treat_local_runtime_changes_as_external_refresh(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             published = root / "database" / "snapshots" / "iam_runtime.sqlite"
@@ -47,7 +47,7 @@ class WorkspaceRefreshTests(unittest.TestCase):
                 connection.close()
             version = service.version()
             self.assertTrue(version.local_dirty)
-            self.assertTrue(version.update_available)
+            self.assertFalse(version.update_available)
 
     def test_version_uses_published_manifest_checksum(self):
         with tempfile.TemporaryDirectory() as tmp:

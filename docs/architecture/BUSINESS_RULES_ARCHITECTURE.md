@@ -21,6 +21,10 @@ Source file -> import/stage -> SQLite commit -> rule evaluation -> findings
 An evaluator failure is observable and retriable, but cannot turn a successful
 import into a failed import.
 
+Rule configuration and findings are local SQLite changes until the existing
+controlled publication workflow publishes the runtime snapshot. They must not
+be interpreted as an external workspace refresh.
+
 ## Proposed registry
 
 - `BusinessRule`: stable identity, name, description, type and lifecycle.

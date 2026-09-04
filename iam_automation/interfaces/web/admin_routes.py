@@ -34,6 +34,7 @@ from ...application.request_service import RequestService
 from ...application.shared_request_service import SharedRequestService
 from ...application.governance_service import GovernanceService
 from ...application.publication_state import publication_pending
+from ...application.publication_state import mark_publication_pending
 from ...database.migration_runner import current_database_revision
 from ...application.session_service import SessionService
 from ...application.user_service import UserService
@@ -145,11 +146,12 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         if request.method == "POST":
             try:
                 rule_id = rules.create_rule(name=request.form.get("name", ""), description=request.form.get("description", ""), field=request.form.get("field", ""), operator=request.form.get("operator", ""), value=request.form.get("value", ""), severity=request.form.get("severity", "WARNING"), actor=str(session["iam_user"]))
+                mark_publication_pending(database_path, actor=str(session["iam_user"]), reason="Business rule created")
                 record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_CREATED", "business_rule", rule_id, new_values={"name": request.form.get("name", ""), "field": request.form.get("field", ""), "operator": request.form.get("operator", ""), "severity": request.form.get("severity", "WARNING")})
                 message = "Rule created as DRAFT. Activate it after reviewing the condition."
             except ValueError as exc:
                 error = str(exc)
-        return render_template("admin/business_rules.html", rules=rules.list_rules(), operators=BusinessRuleService.ALLOWED_OPERATORS, severities=BusinessRuleService.ALLOWED_SEVERITIES, message=message, error=error)
+        return render_template("admin/business_rules.html", rules=rules.list_rules(), operators=BusinessRuleService.ALLOWED_OPERATORS, severities=BusinessRuleService.ALLOWED_SEVERITIES, message=message or request.args.get("notice"), error=error)
 
     @blueprint.post("/business-rules/<rule_id>/status")
     @admin_required
@@ -157,8 +159,11 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         try:
             status = request.form.get("status", "").upper()
             rules.set_status(rule_id, status)
+            mark_publication_pending(database_path, actor=str(session["iam_user"]), reason=f"Business rule status changed: {status}")
+            finding_count = rules.evaluate_all_batches() if status == "ACTIVE" else 0
             record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_STATUS_CHANGED", "business_rule", rule_id, new_values={"status": status})
-            return redirect(url_for("admin.business_rules"))
+            notice = f"Rule {status.lower()}. Historical batches evaluated: {finding_count} new finding(s)." if status == "ACTIVE" else "Rule disabled. Existing findings were preserved."
+            return redirect(url_for("admin.business_rules", notice=notice))
         except ValueError as exc:
             return render_template("admin/business_rules.html", rules=rules.list_rules(), operators=BusinessRuleService.ALLOWED_OPERATORS, severities=BusinessRuleService.ALLOWED_SEVERITIES, message=None, error=str(exc)), 400
 
@@ -235,7 +240,8 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             else:
                 try:
                     batch = imports.import_bytes(upload.filename, upload.read(), str(session["iam_user"]))
-                    message = f"Import {batch.batch_id[:8]} processed: {batch.valid_rows} valid, {batch.quarantine_rows} quarantined."
+                    finding_count = rules.evaluate_batch(batch.batch_id)
+                    message = f"Import {batch.batch_id[:8]} processed: {batch.valid_rows} valid, {batch.quarantine_rows} quarantined. {finding_count} rule finding(s) created."
                 except (ValueError, RuntimeError) as exc:
                     error = str(exc)
         return render_template("admin/imports.html", **imports_page_context(message=message, error=error))

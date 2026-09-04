@@ -62,6 +62,14 @@ class BusinessRuleService:
             version = session.scalar(select(BusinessRuleVersionModel).where(BusinessRuleVersionModel.rule_id == rule_id, BusinessRuleVersionModel.version == rule.current_version))
             if version is not None: version.status = status
 
+    def evaluate_all_batches(self) -> int:
+        """Run active rules against all historical imported batches."""
+        if not self.database_path.exists():
+            return 0
+        with orm_session(self.database_path) as session:
+            batch_ids = session.scalars(select(IngestionRecordModel.batch_id).distinct()).all()
+        return sum(self.evaluate_batch(str(batch_id)) for batch_id in batch_ids)
+
     def evaluate_batch(self, batch_id: str) -> int:
         """Evaluate active rules against one already-persisted import batch."""
         now = datetime.now(timezone.utc).isoformat()

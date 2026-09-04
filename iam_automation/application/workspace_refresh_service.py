@@ -110,7 +110,8 @@ class WorkspaceVersion:
 
     @property
     def update_available(self) -> bool:
-        return bool(self.local_dirty or (self.published_checksum and self.local_checksum and self.published_checksum != self.local_checksum))
+        # Local edits belong to publication workflow, not external refresh.
+        return bool(self.published_checksum and self.local_checksum and self.published_checksum != self.local_checksum)
 
 
 class WorkspaceRefreshService:

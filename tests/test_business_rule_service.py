@@ -37,6 +37,17 @@ class BusinessRuleServiceTests(unittest.TestCase):
             with orm_session(database) as session:
                 self.assertEqual(session.query(RuleFindingModel).count(), 1)
 
+    def test_activation_evaluates_existing_batches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            now = datetime.now(timezone.utc).isoformat()
+            with orm_session(database) as session:
+                session.add(BusinessRuleModel(rule_id="rule-2", name="Terminated review", status="ACTIVE", current_version=1, created_at_utc=now, updated_at_utc=now))
+                session.add(BusinessRuleVersionModel(rule_version_id="rule-2-v1", rule_id="rule-2", version=1, condition_json=json.dumps({"field": "status", "operator": "equals", "value": "TERMINATED"}), scope_json="{}", status="ACTIVE", created_at_utc=now))
+                session.add(IngestionRecordModel(record_id=str(uuid.uuid4()), batch_id="batch-old", source_system="MASTER_ROSTER", source_file="x.xlsx", source_checksum="checksum", row_number=1, source_record_key="worker-2", normalized_json=json.dumps({"status": "TERMINATED"}), payload_json="{}", created_at_utc=now))
+            self.assertEqual(BusinessRuleService(database).evaluate_all_batches(), 1)
+            self.assertEqual(BusinessRuleService(database).summary()["open"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -308,3 +308,9 @@
 - Users with an administrator role can create a rule draft with a field, allow-listed operator, value and severity, then activate or disable it.
 - Rule status changes and creation are recorded in the existing audit trail; activation controls the post-import evaluator only.
 - The interface clearly states that rules alert after SQLite persistence and never block imports in phase one.
+
+### Business Rules Activation and Workspace Refresh Correction - 2026-09-04
+
+- Activating a rule now evaluates all previously imported SQLite batches immediately; new manual imports use the same evaluator.
+- Separated local dirty state from external refresh availability. Local rule changes now show as pending publication and do not repeatedly open the external-refresh modal.
+- External refresh remains reserved for a different published runtime snapshot from SharePoint.
