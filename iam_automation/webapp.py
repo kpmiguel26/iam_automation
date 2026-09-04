@@ -24,6 +24,7 @@ import queue
 import hmac
 import re
 import secrets
+import signal
 import threading
 import webbrowser
 from dataclasses import dataclass
@@ -76,17 +77,41 @@ def stop_local_webapp() -> str:
         method="POST",
         headers={"X-IAM-Shutdown-Token": str(data["token"])},
     )
+    target_pid = int(data.get("pid", 0))
     try:
         with urlopen(shutdown_request, timeout=3) as response:
-            return response.read().decode("utf-8")
+            message = response.read().decode("utf-8")
     except OSError:
         # A crashed or externally stopped child can leave the control panel
         # with a stale URL. Remove only the local marker and let the UI restart.
+        message = "The local webapp was no longer reachable and was reset."
+    # The HTTP response only confirms that shutdown was requested. Wait for
+    # the spawned webapp process so Stop/Close cannot leave an orphan behind.
+    deadline = time.monotonic() + 5
+    while target_pid and time.monotonic() < deadline:
         try:
-            pid_path.unlink()
-        except FileNotFoundError:
-            pass
-        return "The local webapp was no longer reachable and was reset."
+            os.kill(target_pid, 0)
+        except (OSError, ProcessLookupError):
+            break
+        time.sleep(0.1)
+    else:
+        if target_pid:
+            try:
+                os.kill(target_pid, signal.SIGTERM)
+            except (OSError, ProcessLookupError):
+                pass
+            terminate_deadline = time.monotonic() + 2
+            while time.monotonic() < terminate_deadline:
+                try:
+                    os.kill(target_pid, 0)
+                except (OSError, ProcessLookupError):
+                    break
+                time.sleep(0.1)
+    try:
+        pid_path.unlink()
+    except FileNotFoundError:
+        pass
+    return message
 
 
 def launch_local_webapp(preflight_result: PreflightResult, *, open_browser: bool = True) -> "LocalWebAppServer":

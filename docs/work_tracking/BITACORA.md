@@ -327,3 +327,9 @@
 - Added evidence expansion showing source system, batch, record and persisted payload context.
 - Added HTMX dispositions for acknowledge, resolve and suppress; resolve/suppress require a note.
 - Recorded finding status changes in the existing audit trail and linked the center from Operations and Dashboard.
+
+### Webapp Shutdown and Orphan Process Hardening - 2026-09-04
+
+- Stop/Close now waits for the spawned webapp PID after requesting the Waitress shutdown endpoint.
+- The launcher cleans the PID marker only after shutdown handling and terminates the exact recorded PID as a bounded fallback if it remains alive.
+- This prevents the control panel from reporting a stopped app while the Flask/Waitress child and watcher remain in the background.
