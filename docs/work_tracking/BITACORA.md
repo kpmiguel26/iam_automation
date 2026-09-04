@@ -343,3 +343,9 @@
 
 - Added the AccessNow Employee ID to the termination detail table and its DataTables export.
 - The value is read from persisted AccessNow source evidence, with a clear fallback when unavailable.
+
+### Termination Report Identifier Expansion - 2026-09-04
+
+- Added AccessNow NUID, Vendor Employee ID, Work Order ID, NPN and technical Worker ID to the termination detail table and export.
+- Kept each identifier labeled by source and purpose; Work Order ID is an assignment identifier, not a person identifier.
+- Preserved AccessNow as the sole source for termination dates and Roster Lock as the source for vendor employee identifiers.

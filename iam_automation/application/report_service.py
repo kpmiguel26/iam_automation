@@ -136,6 +136,10 @@ class NewHireReadinessRow:
 class TerminationReportRow:
     worker_id: str
     employee_id: str
+    accessnow_nuid: str
+    vendor_employee_id: str
+    work_order_id: str
+    npn: str
     display_name: str
     email: str
     termination_date: str
@@ -690,7 +694,7 @@ class ReportService:
             engagements = session.scalars(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id.in_(worker_ids))).all()
             profiles = session.scalars(select(WorkerSourceProfileModel).where(
                 WorkerSourceProfileModel.worker_id.in_(worker_ids),
-                WorkerSourceProfileModel.source_system == "ACCESSNOW",
+                WorkerSourceProfileModel.source_system.in_(("ACCESSNOW", "ROSTER_LOCK")),
             )).all()
 
         worker_by_id = {worker.worker_id: worker for worker in workers}
@@ -705,6 +709,9 @@ class ReportService:
 
         termination_by_worker: dict[str, tuple[date, str]] = {}
         employee_id_by_worker: dict[str, str] = {}
+        accessnow_nuid_by_worker: dict[str, str] = {}
+        vendor_employee_id_by_worker: dict[str, str] = {}
+        work_order_id_by_worker: dict[str, str] = {}
         for profile in profiles:
             try:
                 payload = json.loads(profile.snapshot_json or "{}")
@@ -715,6 +722,16 @@ class ReportService:
             employee_id = str(payload.get("accessnow_employee_id") or payload.get("employee_id") or "").strip()
             if employee_id:
                 employee_id_by_worker[profile.worker_id] = employee_id
+            if profile.source_system == "ACCESSNOW":
+                accessnow_nuid = str(payload.get("accessnow_nuid") or payload.get("nuid") or "").strip()
+                work_order_id = str(payload.get("work_order_id") or "").strip()
+                if accessnow_nuid: accessnow_nuid_by_worker[profile.worker_id] = accessnow_nuid
+                if work_order_id: work_order_id_by_worker[profile.worker_id] = work_order_id
+            if profile.source_system == "ROSTER_LOCK":
+                vendor_employee_id = str(payload.get("vendor_employee_id") or payload.get("employee_id") or "").strip()
+                if vendor_employee_id: vendor_employee_id_by_worker[profile.worker_id] = vendor_employee_id
+            if profile.source_system != "ACCESSNOW":
+                continue
             for key in ("terminated_date", "termination_date", "deactivated_date", "end_date"):
                 parsed = parse_source_date(payload.get(key))
                 if parsed is None:
@@ -748,6 +765,10 @@ class ReportService:
             rows.append(TerminationReportRow(
                 worker_id=worker_id,
                 employee_id=employee_id_by_worker.get(worker_id, ""),
+                accessnow_nuid=accessnow_nuid_by_worker.get(worker_id, ""),
+                vendor_employee_id=vendor_employee_id_by_worker.get(worker_id, ""),
+                work_order_id=work_order_id_by_worker.get(worker_id, ""),
+                npn=next((str(item.npn or "").strip() for item in roster_engagements if str(item.npn or "").strip()), ""),
                 display_name=worker.display_name or "Unnamed worker",
                 email=worker.canonical_email or "",
                 termination_date=termination[1],
