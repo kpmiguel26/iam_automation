@@ -63,6 +63,8 @@ class EmployeeResetService:
         backup_path = self._backup_database()
         counts: dict[str, int] = {}
         removed_request_ids: list[str] = []
+        size_before = self.runtime_path.stat().st_size
+        vacuum_error = ""
         connection = sqlite3.connect(self.runtime_path, timeout=30)
         try:
             connection.execute("PRAGMA busy_timeout = 30000")
@@ -95,13 +97,21 @@ class EmployeeResetService:
 
             connection.commit()
             connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            try:
+                # DELETE frees SQLite pages logically; VACUUM compacts the
+                # file so the Windows file size reflects the clean runtime.
+                connection.execute("VACUUM")
+            except sqlite3.Error as exc:
+                # The reset already committed successfully. Preserve that
+                # result and expose the compaction issue to the administrator.
+                vacuum_error = str(exc)
         except Exception:
             connection.rollback()
             raise
         finally:
             connection.close()
 
-        result = {"backup": str(backup_path), "counts": counts, "removed_request_count": len(removed_request_ids), "clear_workflow_records": clear_workflow_records}
+        result = {"backup": str(backup_path), "counts": counts, "removed_request_count": len(removed_request_ids), "clear_workflow_records": clear_workflow_records, "size_before_bytes": size_before, "size_after_bytes": self.runtime_path.stat().st_size, "vacuum_error": vacuum_error}
         mark_publication_pending(self.runtime_path, actor=actor, reason="Employee test data reset")
         record_audit(self.audit_path, actor, "EMPLOYEE_TEST_DATA_RESET", "runtime_database", self.runtime_path.name, new_values=result)
         return result

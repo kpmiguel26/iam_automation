@@ -376,3 +376,8 @@
 - Connected AccessNow, Roster Lock, Master Roster and RSR imports to write governed snapshots and facts into the star schema after staging.
 - Kept the legacy evidence columns temporarily so existing reports and review flows remain compatible during the transition.
 - Added deterministic identifiers and idempotent upserts for star snapshots, fields, terminations and assignments.
+
+### SQLite Compaction After Testing Reset - 2026-09-04
+
+- Added a post-reset `VACUUM` so deleting test data also returns unused SQLite pages to the filesystem.
+- The Governance reset now reports the database size before and after compaction and preserves the backup created before cleanup.

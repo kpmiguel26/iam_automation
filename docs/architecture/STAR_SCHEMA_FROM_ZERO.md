@@ -91,7 +91,9 @@ import into a failed import.
 5. Add an Administration dry-run showing batches, row counts and cleanup scope.
 6. Add a confirmed migration/retention action with automatic backup and a
    post-cleanup integrity check.
-7. Run `VACUUM` only after the transaction and validation succeed.
+7. Run `VACUUM` only after the transaction and validation succeed. This is
+   required because SQLite does not automatically shrink the file after
+   `DELETE`.
 
 For testing, Administration → Governance exposes **Rebuild star-schema testing
 runtime**. It requires typing `REBUILD STAR TESTING RUNTIME`, creates a backup,
