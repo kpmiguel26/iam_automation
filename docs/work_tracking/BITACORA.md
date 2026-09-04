@@ -381,3 +381,9 @@
 
 - Added a post-reset `VACUUM` so deleting test data also returns unused SQLite pages to the filesystem.
 - The Governance reset now reports the database size before and after compaction and preserves the backup created before cleanup.
+
+### Experimental No-JSON Imports - 2026-09-04
+
+- Valid staged rows now clear `normalized_json` and `payload_json` after their selected values are written to the star facts.
+- Quarantine payloads remain available for invalid-row review.
+- This is intentionally a breaking experiment: legacy screens that still read source JSON may fail and are the migration backlog for the next phase.

@@ -163,6 +163,7 @@ class AccessNowIngestionService:
             batch.quarantine_rows = quarantined
             batch.status = "COMPLETED" if quarantined == 0 else "COMPLETED_WITH_WARNINGS"
             batch.completed_at_utc = datetime.now(timezone.utc).isoformat()
+        StarSchemaWriter.clear_legacy_payloads(self.database_path, batch_id)
         return AccessNowIngestionResult(batch_id, source_file, source_checksum, total_rows, staged, quarantined)
 
     @staticmethod

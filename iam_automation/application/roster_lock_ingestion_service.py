@@ -94,6 +94,7 @@ class RosterLockIngestionService:
             batch.quarantine_rows = quarantined
             batch.status = "COMPLETED" if quarantined == 0 else "COMPLETED_WITH_WARNINGS"
             batch.completed_at_utc = datetime.now(timezone.utc).isoformat()
+        StarSchemaWriter.clear_legacy_payloads(self.database_path, batch_id)
         return RosterLockIngestionResult(batch_id, path.name, len(rows), staged, quarantined)
 
     @staticmethod

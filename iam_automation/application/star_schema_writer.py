@@ -18,6 +18,7 @@ from ..infrastructure.sqlite.orm import (
     FactWorkerFieldModel,
     ImportBatchModel,
     IngestionRecordModel,
+    orm_session,
 )
 from .employee_field_projection_service import EmployeeFieldProjectionService
 
@@ -80,6 +81,16 @@ class StarSchemaWriter:
             cls._write_termination(session, snapshot, record, payload)
             cls._write_assignment(session, snapshot, record, payload)
         return written
+
+    @staticmethod
+    def clear_legacy_payloads(database_path, batch_id: str) -> None:
+        """Remove per-row JSON after the star facts have been committed."""
+        with orm_session(database_path) as session:
+            records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.batch_id == batch_id)).all()
+            for record in records:
+                if record.status != "QUARANTINED":
+                    record.normalized_json = ""
+                    record.payload_json = ""
 
     @classmethod
     def _write_termination(cls, session, snapshot, record, payload: dict[str, object]) -> None:

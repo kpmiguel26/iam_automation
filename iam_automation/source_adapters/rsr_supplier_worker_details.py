@@ -134,6 +134,7 @@ class RsrSupplierWorkerDetailsAdapter:
             batch.completed_at_utc = _utc_now()
             session.commit()
         self.match_batch(batch_id)
+        StarSchemaWriter.clear_legacy_payloads(self.database_path, batch_id)
         return RsrIngestionResult(batch_id, path.name, len(rows), staged, quarantined)
 
     def match_batch(self, batch_id: str) -> list[dict[str, str]]:

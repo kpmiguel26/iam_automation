@@ -105,3 +105,12 @@ in the next implementation step.
 The existing JSON-oriented tables and compact pilot tables are intentionally
 not part of this clean-start design. They can remain in the old branch for
 reference, but must not be recreated in the new runtime schema.
+
+## Experimental no-JSON import mode
+
+The experimental branch now writes the selected import values to the star
+facts and clears `normalized_json` and `payload_json` for valid staged rows
+after the transaction is complete. Quarantine payloads remain JSON so a
+malformed row can still be inspected. This intentionally exposes remaining
+legacy readers in reports, matching, promotion and rule screens for the next
+refactor phase.
