@@ -34,6 +34,7 @@ _REVISION_TO_LEGACY_VERSION = {
     "0010_accessnow_match_indexes": "v010_accessnow_match_indexes",
     "0011_business_rules": "v011_business_rules",
     "0012_compact_employee_fields": "v012_compact_employee_fields",
+    "0013_star_schema": "v013_star_schema",
 }
 _LEGACY_TO_REVISION = {value: key for key, value in _REVISION_TO_LEGACY_VERSION.items()}
 
@@ -92,6 +93,8 @@ def _legacy_version_for_revision(revision: str | None) -> tuple[str, ...]:
         return (*_legacy_version_for_revision("0010_accessnow_match_indexes"), "v011_business_rules")
     if revision == "0012_compact_employee_fields":
         return (*_legacy_version_for_revision("0011_business_rules"), "v012_compact_employee_fields")
+    if revision == "0013_star_schema":
+        return (*_legacy_version_for_revision("0012_compact_employee_fields"), "v013_star_schema")
     if revision == "0001_baseline":
         return ("v001_initial_schema",)
     return ()

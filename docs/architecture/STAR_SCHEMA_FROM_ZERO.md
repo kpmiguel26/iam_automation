@@ -83,7 +83,7 @@ import into a failed import.
 
 ## Migration implementation order
 
-1. Replace the runtime schema with a new Alembic baseline for the star tables.
+1. Apply the Alembic star-schema migration (`0013_star_schema`) to the runtime.
 2. Add repository/service methods for batch lifecycle, typed facts and governed
    field values.
 3. Update each source adapter to write the star facts directly.
@@ -92,6 +92,13 @@ import into a failed import.
 6. Add a confirmed migration/retention action with automatic backup and a
    post-cleanup integrity check.
 7. Run `VACUUM` only after the transaction and validation succeed.
+
+For testing, Administration → Governance exposes **Rebuild star-schema testing
+runtime**. It requires typing `REBUILD STAR TESTING RUNTIME`, creates a backup,
+clears employee/import data and star facts, and preserves access-control data.
+It does not publish to SharePoint. The action is a data reset plus schema
+preparation; source adapters still need to be switched to write the new facts
+in the next implementation step.
 
 The existing JSON-oriented tables and compact pilot tables are intentionally
 not part of this clean-start design. They can remain in the old branch for

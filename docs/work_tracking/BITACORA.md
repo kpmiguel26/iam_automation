@@ -364,3 +364,9 @@
 - Designed a relational star schema with employee/source/field dimensions, import batches, source snapshots, termination and assignment facts, and governed extensible fields.
 - Defined retention as the latest three completed files per source/report, with backup, validation and explicit Administration confirmation before cleanup.
 - Defined imports and rule evaluation as separate transactions so one malformed file cannot block the next import.
+
+### Star Schema Testing Reset - 2026-09-04
+
+- Added the `0013_star_schema` migration with relational dimensions and facts.
+- Added an Administration-only testing reset that creates a backup, clears employee/import data and preserves users, roles, settings and audit evidence.
+- The reset also clears rule findings and star-schema facts, but does not publish or alter SharePoint data.

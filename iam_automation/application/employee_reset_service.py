@@ -26,6 +26,17 @@ class EmployeeResetService:
     """Safely remove employee/import test data while preserving access control."""
 
     EMPLOYEE_TABLES = (
+        "fact_worker_field",
+        "fact_termination",
+        "fact_assignment",
+        "fact_source_snapshot",
+        "dim_vendor",
+        "dim_date",
+        "dim_field",
+        "dim_source",
+        "employee_field_values",
+        "field_catalog",
+        "rule_findings",
         "worker_profile_versions",
         "worker_merge_events",
         "worker_source_profiles",

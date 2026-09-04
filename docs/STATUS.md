@@ -31,7 +31,7 @@ are linked.
 | F-007 | Database publication and workspace refresh | Active investigation | DB-001–DB-003 | [Bug record](./bugs/2026-09-refresh-alert.md) |
 | F-008 | Canonical mutation, approval and publication writer | Deferred | Future controlled-change stories | [Architecture boundary](../ARCHITECTURE.md) |
 | F-009 | Compact employee current-state projection pilot | Active / pilot | DATA-001–DATA-003 | [Pilot architecture](./architecture/COMPACT_EMPLOYEE_DATA_PILOT.md) |
-| F-010 | Star-schema runtime rebuild | Planned / clean-start design | STAR-001–STAR-006 | [Star schema design](./architecture/STAR_SCHEMA_FROM_ZERO.md) |
+| F-010 | Star-schema runtime rebuild | Active / testing reset ready | STAR-001–STAR-006 | [Star schema design](./architecture/STAR_SCHEMA_FROM_ZERO.md) |
 
 ## User story registry
 

@@ -67,7 +67,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
 
     def migration_health() -> dict[str, object]:
         """Return read-only checks for the current schema and compact pilot."""
-        expected = "0012_compact_employee_fields"
+        expected = "0013_star_schema"
         result: dict[str, object] = {
             "expected_revision": expected,
             "revision": current_database_revision(local_runtime_path or database_path),
@@ -84,16 +84,19 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             connection = sqlite3.connect(str(path))
             connection.execute("PRAGMA query_only = ON")
             table_names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-            expected_tables = ("field_catalog", "employee_field_values")
+            expected_tables = (
+                "dim_source", "dim_field", "dim_date", "dim_vendor",
+                "fact_source_snapshot", "fact_worker_field", "fact_termination", "fact_assignment",
+            )
             result["tables"] = [{"name": name, "present": name in table_names} for name in expected_tables]
             for table_name in expected_tables:
                 if table_name in table_names:
                     result["columns"][table_name] = [row[1] for row in connection.execute(f"PRAGMA table_info({table_name})")]
             result["indexes"] = [row[1] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_employee_field%'")]
-            if "field_catalog" in table_names:
-                result["field_count"] = connection.execute("SELECT COUNT(*) FROM field_catalog WHERE status = 'ACTIVE'").fetchone()[0]
-            if "employee_field_values" in table_names:
-                result["value_count"] = connection.execute("SELECT COUNT(*) FROM employee_field_values").fetchone()[0]
+            if "dim_field" in table_names:
+                result["field_count"] = connection.execute("SELECT COUNT(*) FROM dim_field WHERE active = 1").fetchone()[0]
+            if "fact_worker_field" in table_names:
+                result["value_count"] = connection.execute("SELECT COUNT(*) FROM fact_worker_field").fetchone()[0]
             result["revision_ok"] = result["revision"] == expected and all(item["present"] for item in result["tables"])
         except sqlite3.Error as exc:
             result["error"] = str(exc)
@@ -459,6 +462,20 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             )
         except (OSError, sqlite3.Error, ValueError) as exc:
             return render_governance(error=f"Employee test-data cleanup failed: {exc}"), 400
+
+    @blueprint.post("/governance/rebuild-star-testing-runtime")
+    @database_publish_required
+    def rebuild_star_testing_runtime():
+        if request.form.get("confirmation", "").strip() != "REBUILD STAR TESTING RUNTIME":
+            return render_governance(error="Type REBUILD STAR TESTING RUNTIME exactly to confirm this testing reset."), 400
+        try:
+            result = employee_reset.reset(str(session["iam_user"]), clear_workflow_records=True)
+            return render_governance(
+                message="Testing runtime rebuilt for the star schema. Users, roles, settings and audit evidence were preserved; employee/import data was cleared locally.",
+                reset_result=result,
+            )
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            return render_governance(error=f"Star-schema testing reset failed: {exc}"), 400
 
     @blueprint.post("/governance/publish")
     @database_publish_required
