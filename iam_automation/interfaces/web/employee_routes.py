@@ -70,6 +70,28 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             task_id = import_task_by_file.get((source_system, source_file))
         return task_snapshot(task_id)
 
+    def pending_source_update_count() -> int:
+        """Count database review work plus reports found only by discovery."""
+        count = service.pending_source_update_count()
+        manifest = load_watcher_manifest(database_path).get("observations", {})
+        if not isinstance(manifest, dict):
+            return count
+        source_kinds = set(source_order)
+        imported_paths = {
+            str(file.get("source_path", ""))
+            for source_system in source_order
+            for file in service.list_source_files(source_system)
+            if file.get("source_path")
+        }
+        discovered_only = sum(
+            1
+            for item in manifest.values()
+            if isinstance(item, dict)
+            and item.get("source_system") in source_kinds
+            and str(item.get("path", "")) not in imported_paths
+        )
+        return count + discovered_only
+
     def notify_import_result(task: dict[str, object], actor: str, *, status: str, result: dict[str, object] | None = None, error: str = "") -> str:
         """Persist the import outcome for the actor in the shared notification center."""
         source_system = str(task.get("source_system", ""))
@@ -261,7 +283,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             page_count = 1
             # Keep the directory on-demand, but load lightweight review
             # counters so the Updates/Alerts actions never look stale.
-            pending_source_updates = service.pending_source_update_count()
+            pending_source_updates = pending_source_update_count()
             rehire_alerts = service.rehire_alerts()
             NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
         else:
@@ -273,7 +295,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size)
             rehire_alerts = service.rehire_alerts()
             NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
-            pending_source_updates = service.pending_source_update_count()
+            pending_source_updates = pending_source_update_count()
         return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "updated": updated, "sort": sort, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=pending_source_updates, rehire_alert_count=len(rehire_alerts))
 
     @blueprint.get("/source-updates")
