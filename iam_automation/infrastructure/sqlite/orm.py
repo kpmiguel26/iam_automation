@@ -314,6 +314,90 @@ class EmployeeFieldValueModel(Base):
     updated_at_utc: Mapped[str] = mapped_column(String, default="")
 
 
+class DimSourceModel(Base):
+    __tablename__ = "dim_source"
+    source_id: Mapped[str] = mapped_column(String, primary_key=True)
+    source_system: Mapped[str] = mapped_column(String, unique=True)
+    label: Mapped[str] = mapped_column(String, default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class DimFieldModel(Base):
+    __tablename__ = "dim_field"
+    field_id: Mapped[str] = mapped_column(String, primary_key=True)
+    field_key: Mapped[str] = mapped_column(String, unique=True)
+    label: Mapped[str] = mapped_column(String, default="")
+    data_type: Mapped[str] = mapped_column(String, default="TEXT")
+    sensitivity: Mapped[str] = mapped_column(String, default="INTERNAL")
+    reportable: Mapped[bool] = mapped_column(Boolean, default=True)
+    rule_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class DimDateModel(Base):
+    __tablename__ = "dim_date"
+    date_key: Mapped[int] = mapped_column(Integer, primary_key=True)
+    calendar_date: Mapped[str] = mapped_column(String, unique=True)
+    year: Mapped[int] = mapped_column(Integer)
+    month: Mapped[int] = mapped_column(Integer)
+    day: Mapped[int] = mapped_column(Integer)
+    day_of_week: Mapped[int] = mapped_column(Integer)
+    is_weekend: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class DimVendorModel(Base):
+    __tablename__ = "dim_vendor"
+    vendor_id: Mapped[str] = mapped_column(String, primary_key=True)
+    vendor_name: Mapped[str] = mapped_column(String, unique=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class FactSourceSnapshotModel(Base):
+    __tablename__ = "fact_source_snapshot"
+    __table_args__ = (UniqueConstraint("batch_id", "source_id", "source_record_key", name="uq_star_snapshot"),)
+    snapshot_id: Mapped[str] = mapped_column(String, primary_key=True)
+    worker_id: Mapped[str | None] = mapped_column(ForeignKey("workers.worker_id"), nullable=True)
+    batch_id: Mapped[str] = mapped_column(ForeignKey("import_batches.batch_id"))
+    source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    source_record_key: Mapped[str] = mapped_column(String)
+    observed_at_utc: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="CURRENT")
+    retention_rank: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class FactWorkerFieldModel(Base):
+    __tablename__ = "fact_worker_field"
+    __table_args__ = (UniqueConstraint("snapshot_id", "field_id", name="uq_star_field"),)
+    field_value_id: Mapped[str] = mapped_column(String, primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(ForeignKey("fact_source_snapshot.snapshot_id"))
+    worker_id: Mapped[str | None] = mapped_column(ForeignKey("workers.worker_id"), nullable=True)
+    field_id: Mapped[str] = mapped_column(ForeignKey("dim_field.field_id"))
+    value_text: Mapped[str] = mapped_column(Text, default="")
+
+
+class FactTerminationModel(Base):
+    __tablename__ = "fact_termination"
+    termination_id: Mapped[str] = mapped_column(String, primary_key=True)
+    snapshot_id: Mapped[str | None] = mapped_column(ForeignKey("fact_source_snapshot.snapshot_id"), nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(ForeignKey("workers.worker_id"), nullable=True)
+    date_key: Mapped[int | None] = mapped_column(ForeignKey("dim_date.date_key"), nullable=True)
+    termination_date: Mapped[str] = mapped_column(String, default="")
+    termination_type: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="ACTIVE")
+
+
+class FactAssignmentModel(Base):
+    __tablename__ = "fact_assignment"
+    assignment_id: Mapped[str] = mapped_column(String, primary_key=True)
+    snapshot_id: Mapped[str | None] = mapped_column(ForeignKey("fact_source_snapshot.snapshot_id"), nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(ForeignKey("workers.worker_id"), nullable=True)
+    vendor_id: Mapped[str | None] = mapped_column(ForeignKey("dim_vendor.vendor_id"), nullable=True)
+    work_order_id: Mapped[str] = mapped_column(String, default="")
+    job_title: Mapped[str] = mapped_column(String, default="")
+    supervisor_name: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="ACTIVE")
+
+
 class WorkerDiscrepancyModel(Base):
     __tablename__ = "worker_discrepancies"
 

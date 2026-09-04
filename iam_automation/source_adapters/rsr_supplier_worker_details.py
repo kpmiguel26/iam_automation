@@ -38,6 +38,7 @@ from ..infrastructure.sqlite.orm import (
 )
 from ..application.stable_file_read import file_modified_at_utc, read_stable_bytes
 from ..application.ingestion_dedup import latest_payload_digests, payload_digest, serialize_payload
+from ..application.star_schema_writer import StarSchemaWriter
 from ..application.worker_history_service import record_worker_version
 from ..application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 
@@ -126,6 +127,7 @@ class RsrSupplierWorkerDetailsAdapter:
                     continue
                 session.add(IngestionRecordModel(record_id=record_id, batch_id=batch_id, source_system=SOURCE_SYSTEM, source_file=str(path), source_checksum=checksum, row_number=row_number, source_record_key=source_key, normalized_json=normalized_json, payload_json=json.dumps(payload, sort_keys=True), status="STAGED", match_status="NOT_EVALUATED", created_at_utc=now))
                 staged += 1
+            StarSchemaWriter.write_batch_in_session(session, batch_id, now)
             batch.valid_rows = staged
             batch.quarantine_rows = quarantined
             batch.status = "COMPLETED" if quarantined == 0 else "COMPLETED_WITH_WARNINGS"

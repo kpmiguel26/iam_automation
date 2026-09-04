@@ -40,6 +40,7 @@ from .publication_state import mark_publication_pending
 from .source_reconciliation import _match_types, ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session, source_identifiers
 from .worker_history_service import record_worker_version
 from .stable_file_read import file_modified_at_utc, read_stable_bytes
+from .star_schema_writer import StarSchemaWriter
 from .status_catalog import normalize_accessnow_status, status_rank
 from .ingestion_dedup import latest_payload_digests, payload_digest, serialize_payload
 
@@ -156,6 +157,7 @@ class AccessNowIngestionService:
                 else:
                     record.match_status = "UNMATCHED"
                     record.match_reason = "No canonical employee match; approved creation is available."
+            StarSchemaWriter.write_batch_in_session(session, batch_id, now)
             batch = session.get(ImportBatchModel, batch_id)
             batch.valid_rows = staged
             batch.quarantine_rows = quarantined

@@ -370,3 +370,9 @@
 - Added the `0013_star_schema` migration with relational dimensions and facts.
 - Added an Administration-only testing reset that creates a backup, clears employee/import data and preserves users, roles, settings and audit evidence.
 - The reset also clears rule findings and star-schema facts, but does not publish or alter SharePoint data.
+
+### Star Schema Import Writers - 2026-09-04
+
+- Connected AccessNow, Roster Lock, Master Roster and RSR imports to write governed snapshots and facts into the star schema after staging.
+- Kept the legacy evidence columns temporarily so existing reports and review flows remain compatible during the transition.
+- Added deterministic identifiers and idempotent upserts for star snapshots, fields, terminations and assignments.

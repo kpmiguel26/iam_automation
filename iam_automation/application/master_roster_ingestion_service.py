@@ -16,6 +16,7 @@ from sqlalchemy import select
 from ..infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, QuarantineRecordModel, orm_session
 from .ingestion_dedup import latest_payload_digests, payload_digest, serialize_payload
 from .stable_file_read import file_modified_at_utc, read_stable_bytes
+from .star_schema_writer import StarSchemaWriter
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,7 @@ class MasterRosterIngestionService:
                 seen_keys.add(source_key)
                 staged += 1
                 session.add(IngestionRecordModel(record_id=str(uuid.uuid4()), batch_id=batch_id, source_system=self.SOURCE_SYSTEM, source_file=str(path), source_checksum=checksum, row_number=row_number, source_record_key=source_key, normalized_json=normalized_json, payload_json=json.dumps(payload, sort_keys=True), status="STAGED", created_at_utc=now))
+            StarSchemaWriter.write_batch_in_session(session, batch_id, now)
             batch = session.get(ImportBatchModel, batch_id)
             batch.valid_rows = staged
             batch.quarantine_rows = quarantined
