@@ -309,9 +309,10 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
     @authenticated
     def source_updates_watcher_status():
         return render_template(
-            "employees/_source_watcher_status.html",
+            "employees/_source_import_timeline.html",
             watcher_health=load_watcher_health(database_path),
-            source_timeline=source_timeline(include_imported=False, max_files=25),
+            source_timeline=source_timeline(include_imported=request.args.get("view", "ATTENTION").upper() == "RECENT_FILES", max_files=25 if request.args.get("view", "ATTENTION").upper() == "RECENT_FILES" else None),
+            show_history_files=request.args.get("view", "ATTENTION").upper() == "RECENT_FILES",
         )
 
     @blueprint.get("/source-updates/history")

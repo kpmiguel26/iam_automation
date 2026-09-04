@@ -1,4 +1,6 @@
-<section class="surface p-4 mt-4" id="source-timeline" aria-labelledby="source-timeline-heading">
+<section class="surface p-4 mt-4" id="source-timeline" aria-labelledby="source-timeline-heading"
+  hx-get="{{ url_for('employees.source_updates_watcher_status', view='RECENT_FILES' if show_history_files is defined and show_history_files else 'ATTENTION') }}"
+  hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML">
   {% include "employees/_source_watcher_status.html" %}
   <div class="section-heading">
     <div><p class="eyebrow mb-1">Import workflow</p><h2 class="h5 mb-0" id="source-timeline-heading">{% if show_history_files is defined and not show_history_files %}Files needing attention{% elif show_history_files is defined %}Recent source files{% else %}Source import timeline{% endif %}</h2><p class="text-secondary small mb-0">{% if show_history_files is defined and not show_history_files %}Only new or incomplete files are shown here. Completed imports are available in Review history.{% elif show_history_files is defined %}The 25 most recent files per source are shown here. Review history contains the complete archive.{% else %}Files are ordered from oldest to newest. Import the next pending file to build the employee history in sequence; duplicate resolution remains separate.{% endif %}</p></div>

@@ -1,5 +1,4 @@
-<section id="source-watcher-status" class="border rounded p-3 mb-4" aria-labelledby="source-watcher-status-heading" aria-live="polite"
-  hx-get="{{ url_for('employees.source_updates_watcher_status') }}" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML">
+<section id="source-watcher-status" class="border rounded p-3 mb-4" aria-labelledby="source-watcher-status-heading" aria-live="polite">
   {% set watcher_status = watcher_health.get('status', 'UNKNOWN') %}
   {% set scanning = watcher_status == 'SCANNING' %}
   <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
@@ -7,6 +6,9 @@
     <span class="badge {% if scanning %}text-bg-primary{% elif watcher_status == 'HEALTHY' %}text-bg-success{% elif watcher_status == 'DEGRADED' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{% if scanning %}Scanning{% else %}{{ watcher_status|replace('_', ' ')|title }}{% endif %}</span>
   </div>
   <div class="small text-secondary mt-3 d-flex gap-3 flex-wrap"><span>Last cycle: {{ watcher_health.get('last_cycle_at_utc')|human_datetime or 'Not available' }}</span><span>Files/records processed: {{ watcher_health.get('last_processed_count', 0) }}</span>{% if watcher_health.get('consecutive_failures', 0)|int %}<span class="text-danger">Failures: {{ watcher_health.get('consecutive_failures') }}</span>{% endif %}</div>
+  <div class="progress mt-3" role="progressbar" aria-label="SharePoint discovery progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{% if scanning %}0{% else %}100{% endif %}">
+    <div class="progress-bar {% if scanning %}progress-bar-striped progress-bar-animated{% else %}bg-success{% endif %}" style="width: {% if scanning %}100{% else %}100{% endif %}%">{% if scanning %}Discovering files…{% else %}Ready{% endif %}</div>
+  </div>
   {% if watcher_health.get('last_error') %}<div class="alert alert-danger py-2 mt-3 mb-0 small">{{ watcher_health.get('last_error') }}</div>{% endif %}
   {% set detected = namespace(count=0) %}{% for source in source_timeline %}{% for file in source.files %}{% set detected.count = detected.count + 1 %}{% endfor %}{% endfor %}
   {% if detected.count %}<div class="mt-3"><strong class="small">Files detected and waiting for import</strong><div class="d-flex flex-wrap gap-2 mt-2">{% for source in source_timeline %}{% for file in source.files %}<span class="badge rounded-pill text-bg-light border">{{ source.label }} · {{ file.source_file }}{% if file.record_count is defined %} ({{ file.record_count }} rows){% endif %}</span>{% endfor %}{% endfor %}</div></div>{% else %}<p class="small text-secondary mt-3 mb-0">No new files are waiting for import.</p>{% endif %}
