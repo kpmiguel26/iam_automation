@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from ..infrastructure.sqlite.orm import EmployeeFieldValueModel, FieldCatalogModel
+from ..infrastructure.sqlite.orm import DimFieldModel, EmployeeFieldValueModel, FactSourceSnapshotModel, FactWorkerFieldModel, FieldCatalogModel
 
 
 class EmployeeFieldProjectionService:
@@ -25,6 +25,10 @@ class EmployeeFieldProjectionService:
     def project_record_in_session(cls, session, record, worker_id: str, now: str | None = None) -> int:
         observed_at = now or datetime.now(timezone.utc).isoformat()
         payload = json.loads(record.normalized_json or "{}")
+        if not payload:
+            snapshot = session.get(FactSourceSnapshotModel, str(uuid.uuid5(uuid.NAMESPACE_URL, f"iam-automation:snapshot:{record.record_id}")))
+            if snapshot is not None:
+                payload = dict(session.execute(select(DimFieldModel.field_key, FactWorkerFieldModel.value_text).join(FactWorkerFieldModel, FactWorkerFieldModel.field_id == DimFieldModel.field_id).where(FactWorkerFieldModel.snapshot_id == snapshot.snapshot_id)).all())
         count = 0
         for field_key, raw_value in payload.items():
             field_key = str(field_key).strip().lower()
