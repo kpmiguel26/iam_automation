@@ -19,6 +19,8 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
   <div class="page-heading mt-3">
     <div><p class="eyebrow">Operations</p><h1>Source update review</h1><p class="text-secondary mb-0">Start with files that need attention. Completed files remain available in Review history.</p></div>
   </div>
+
+  {% include "employees/_source_watcher_status.html" %}
   <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mt-3">
     <div class="small text-secondary">The inbox stays focused on new, pending, ambiguous or conflicting files.</div>
     <div class="d-flex gap-2 align-items-center flex-wrap">
@@ -101,5 +103,6 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
     </section>
   {% endif %}
 </div>
+{% include "employees/_source_import_modal.html" %}
 {% endblock %}
 <!-- #endfile -->

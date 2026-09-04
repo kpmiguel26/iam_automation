@@ -479,6 +479,7 @@ class FileWatcher:
         consecutive_failures = 0
         while not self._stop.is_set():
             try:
+                self.service.record_watcher_health(status="SCANNING", consecutive_failures=consecutive_failures)
                 processed_count = self.service.scan_once()
                 if consecutive_failures:
                     self.service.record_watcher_recovery()

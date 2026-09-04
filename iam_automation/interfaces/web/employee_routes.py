@@ -27,6 +27,7 @@ from sqlalchemy import select
 
 from ...application.audit_service import record_audit
 from ...application.employee_service import EmployeeService
+from ...application.file_watch_service import load_watcher_health
 from ...application.notification_service import NotificationService
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.shared_request_service import SharedRequestService
@@ -301,6 +302,16 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             rehire_alerts=rehire_alerts,
             view=view,
             source_timeline=source_timeline(include_imported=view == "RECENT_FILES", max_files=25 if view == "RECENT_FILES" else None),
+            watcher_health=load_watcher_health(database_path),
+        )
+
+    @blueprint.get("/source-updates/watcher-status")
+    @authenticated
+    def source_updates_watcher_status():
+        return render_template(
+            "employees/_source_watcher_status.html",
+            watcher_health=load_watcher_health(database_path),
+            source_timeline=source_timeline(include_imported=False, max_files=25),
         )
 
     @blueprint.get("/source-updates/history")
