@@ -151,6 +151,8 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                 message = "Rule created as DRAFT. Activate it after reviewing the condition."
             except ValueError as exc:
                 error = str(exc)
+        if request.headers.get("HX-Request") == "true":
+            return render_template("admin/_business_rule_results.html", rules=rules.list_rules(), message=message, error=error)
         return render_template("admin/business_rules.html", rules=rules.list_rules(), operators=BusinessRuleService.ALLOWED_OPERATORS, severities=BusinessRuleService.ALLOWED_SEVERITIES, message=message or request.args.get("notice"), error=error)
 
     @blueprint.post("/business-rules/<rule_id>/status")
@@ -163,6 +165,8 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             finding_count = rules.evaluate_all_batches() if status == "ACTIVE" else 0
             record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_STATUS_CHANGED", "business_rule", rule_id, new_values={"status": status})
             notice = f"Rule {status.lower()}. Historical batches evaluated: {finding_count} new finding(s)." if status == "ACTIVE" else "Rule disabled. Existing findings were preserved."
+            if request.headers.get("HX-Request") == "true":
+                return render_template("admin/_business_rule_results.html", rules=rules.list_rules(), message=notice, error=None)
             return redirect(url_for("admin.business_rules", notice=notice))
         except ValueError as exc:
             return render_template("admin/business_rules.html", rules=rules.list_rules(), operators=BusinessRuleService.ALLOWED_OPERATORS, severities=BusinessRuleService.ALLOWED_SEVERITIES, message=None, error=str(exc)), 400

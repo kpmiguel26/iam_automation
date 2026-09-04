@@ -314,3 +314,9 @@
 - Activating a rule now evaluates all previously imported SQLite batches immediately; new manual imports use the same evaluator.
 - Separated local dirty state from external refresh availability. Local rule changes now show as pending publication and do not repeatedly open the external-refresh modal.
 - External refresh remains reserved for a different published runtime snapshot from SharePoint.
+
+### Business Rules HTMX Progress Feedback - 2026-09-04
+
+- Added HTMX partial responses for rule creation and status changes so the configured-rule region updates without a full page reload.
+- Added a visible spinner and “Evaluating historical SQLite data…” indicator while activating or disabling a rule.
+- Preserved the normal POST fallback for environments where HTMX is unavailable.
