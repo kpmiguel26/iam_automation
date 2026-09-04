@@ -249,11 +249,16 @@ def create_app(
         unread_count = notification_service.unread_count(username) if notification_service else 0
         unread_notifications = notification_service.list_for_user(username, unread_only=True) if notification_service else []
         recent_notifications = unread_notifications[:5]
+        workspace_update_available = False
+        if runtime_path and username and runtime_path.is_file() and preflight_result.settings:
+            workspace = WorkspaceRefreshService(runtime_path, preflight_result.settings.published_runtime_db_path, preflight_result.settings.sharepoint_root_path)
+            workspace_update_available = workspace.version().update_available
         return {
             "csrf_token": csrf_token(),
             "is_admin": bool({"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"} & {str(role).upper() for role in roles}),
             "unread_notification_count": unread_count,
             "recent_notifications": recent_notifications,
+            "workspace_update_available": workspace_update_available,
             "static_version": static_version,
             "publication_pending": publication_pending(runtime_path),
         }
@@ -315,7 +320,7 @@ def create_app(
         if not username:
             return redirect(url_for("login"))
         workspace = WorkspaceRefreshService(runtime_path, preflight_result.settings.published_runtime_db_path, preflight_result.settings.sharepoint_root_path)
-        return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path).snapshot(str(username)), workspace_version=workspace.version(), workspace_message=request.args.get("refreshed"))
+        return render_template("dashboard.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), username=username, roles=tuple(session.get("iam_roles", ())), overview=OverviewService(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path).snapshot(str(username)), workspace_message=request.args.get("refreshed"))
 
     @app.get("/workspace/status")
     def workspace_status():

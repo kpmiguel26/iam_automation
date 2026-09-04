@@ -177,6 +177,16 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
   {% if session.get('iam_user') %}<div class="container-fluid px-4 px-lg-5 pt-2">
     <div class="workspace-mode-banner" role="status"><span class="workspace-mode-dot" aria-hidden="true"></span><span><strong>Workspace actions:</strong> review, apply and publish are available according to your role and current workspace policy.</span></div>
   </div>{% endif %}
+  {% if session.get('iam_user') %}
+  <div id="workspace-update-alert" class="d-none" data-update-available="{{ 'true' if workspace_update_available else 'false' }}" aria-hidden="true"></div>
+  <div class="modal fade workspace-update-modal" id="workspaceUpdateModal" tabindex="-1" aria-labelledby="workspaceUpdateModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+      <div class="modal-header"><div class="d-flex align-items-center gap-3"><span class="workspace-update-modal-icon">!</span><div><p class="eyebrow mb-1">Immediate attention required</p><h2 class="modal-title h4 mb-0" id="workspaceUpdateModalLabel">New workspace version available</h2></div></div></div>
+      <div class="modal-body"><p class="mb-2">A new database or workspace snapshot was published by another workstation.</p><p class="text-secondary mb-0">Refresh now to continue with the latest data. Pending requests will be preserved as shared JSON files. This workspace is temporarily locked until the refresh is completed.</p></div>
+      <div class="modal-footer"><form method="post" action="{{ url_for('refresh_workspace') }}" data-loading-message="Refreshing the workspace and preserving pending requests…"><button class="btn btn-primary btn-lg px-4" type="submit">Refresh workspace now</button></form></div>
+    </div></div>
+  </div>
+  {% endif %}
   {% if session.get('is_admin') and publication_pending %}<div class="container-fluid px-4 px-lg-5 pt-3">
     <div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mb-0"><span><strong>Local
           changes are waiting for publication.</strong> User, role, or password changes are currently available only on
@@ -199,6 +209,36 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
   {% block scripts %}{% endblock %}
   <script src="{{ url_for('static', filename='js/data-tables.js', v=static_version) }}"></script>
   <script src="{{ url_for('static', filename='js/utc-date-inputs.js') }}"></script>
+  {% if session.get('iam_user') %}
+  <script>
+    (function () {
+      function initializeWorkspaceGuard() {
+        var alertBox = document.getElementById('workspace-update-alert');
+        var modalElement = document.getElementById('workspaceUpdateModal');
+        if (!alertBox || !modalElement) return;
+        if (!window.bootstrap) { window.setTimeout(initializeWorkspaceGuard, 50); return; }
+        var updateModal = bootstrap.Modal.getOrCreateInstance(modalElement, { backdrop: 'static', keyboard: false });
+        function showUpdateModal() {
+          if (alertBox.dataset.updateAvailable === 'true' && !modalElement.classList.contains('show')) updateModal.show();
+        }
+        function checkWorkspace() {
+          fetch('{{ url_for("workspace_status") }}', { headers: { 'X-Requested-With': 'XMLHttpRequest' }, cache: 'no-store' })
+            .then(function (response) { return response.ok ? response.json() : null; })
+            .then(function (data) {
+              if (!data) return;
+              alertBox.dataset.updateAvailable = data.update_available ? 'true' : 'false';
+              if (data.update_available) showUpdateModal();
+            })
+            .catch(function () { /* The next poll retries when SharePoint is unavailable. */ });
+        }
+        showUpdateModal();
+        checkWorkspace();
+        window.setInterval(checkWorkspace, 5000);
+      }
+      initializeWorkspaceGuard();
+    }());
+  </script>
+  {% endif %}
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       var toast = document.getElementById('iamToast');

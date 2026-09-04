@@ -74,6 +74,24 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(b"PRE-001", response.data)
         self.assertIn(b"Report a bug", response.data)
 
+    def test_workspace_refresh_guard_is_loaded_on_every_authenticated_page(self):
+        user = type("User", (), {"username": "tester", "roles": ("REQUESTER",)})()
+        app = webapp.create_app(self.make_result(True), app_authenticator=lambda username, password: user)
+        client = app.test_client()
+        with client.session_transaction() as session:
+            session["iam_user"] = "tester"
+            session["iam_roles"] = ["REQUESTER"]
+            session["iam_session_started_at"] = "2026-09-04T12:00:00+00:00"
+
+        profile = client.get("/profile")
+        self.assertEqual(profile.status_code, 200)
+        self.assertIn(b'id="workspaceUpdateModal"', profile.data)
+        self.assertIn(b"/workspace/status", profile.data)
+
+        dashboard = client.get("/dashboard")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(dashboard.data.count(b'id="workspaceUpdateModal"'), 1)
+
     def test_workspace_status_requires_login(self):
         app = webapp.create_app(self.make_result(True))
         self.assertEqual(app.test_client().get("/workspace/status").status_code, 401)

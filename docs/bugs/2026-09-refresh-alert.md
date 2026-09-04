@@ -23,10 +23,11 @@ data-freshness risk is real.
   create a local notification (`application/file_watch_service.py`).
 - The workspace status endpoint exposes `update_available` in
   `webapp.py`.
-- The modal and five-second polling loop are implemented only in
-  `templates/dashboard.html`.
-- Therefore, pages other than Dashboard do not run the workspace freshness
-  check, which explains the observed behavior.
+- The modal and polling guard are now loaded from the shared authenticated
+  `templates/base.html` layout.
+- The dashboard no longer owns a second copy of the guard.
+- The endpoint remains polled immediately on page load and every five seconds,
+  including on Employees, Reports, Administration and Notifications.
 
 ## Proposed fix
 

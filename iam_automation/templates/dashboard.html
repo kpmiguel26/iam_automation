@@ -16,42 +16,11 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 {% block content %}
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell">
   <div class="page-heading"><div><p class="eyebrow">IAM Automation</p><h1>Workspace overview</h1><p class="text-secondary mb-0">A controlled workspace for identity and access operations.</p></div><span class="status-pill status-active"><span></span>Session active</span></div>
-  <div id="workspace-update-alert" class="d-none" data-update-available="{{ 'true' if workspace_version.update_available else 'false' }}"></div>
-  <div class="modal fade workspace-update-modal" id="workspaceUpdateModal" tabindex="-1" aria-labelledby="workspaceUpdateModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
-      <div class="modal-header"><div class="d-flex align-items-center gap-3"><span class="workspace-update-modal-icon">!</span><div><p class="eyebrow mb-1">Immediate attention required</p><h2 class="modal-title h4 mb-0" id="workspaceUpdateModalLabel">New workspace version available</h2></div></div></div>
-      <div class="modal-body"><p class="mb-2">A new database or workspace snapshot was published by another workstation.</p><p class="text-secondary mb-0">Refresh now to continue with the latest data. Pending requests will be preserved as shared JSON files. This workspace is temporarily locked until the refresh is completed.</p></div>
-      <div class="modal-footer"><form method="post" action="{{ url_for('refresh_workspace') }}" data-loading-message="Refreshing the workspace and preserving pending requests…"><button class="btn btn-primary btn-lg px-4" type="submit">Refresh workspace now</button></form></div>
-    </div></div>
-  </div>
   {% if workspace_message %}<div class="alert alert-success mt-4">{{ workspace_message }}</div>{% endif %}{% if workspace_error %}<div class="alert alert-danger mt-4">{{ workspace_error }}</div>{% endif %}
   <div class="row g-3 mt-4"><div class="col-md-4"><section class="surface p-4 h-100 overview-card"><span class="section-label">Signed-in user</span><div class="d-flex align-items-center gap-3"><span class="avatar">{{ username[:1]|upper }}</span><div><strong class="d-block">{{ username }}</strong><a class="small" href="{{ url_for('profile') }}">View profile</a></div></div></section></div><div class="col-md-4"><section class="surface p-4 h-100 overview-card"><span class="section-label">Effective roles</span><div class="d-flex flex-wrap">{% for role in roles %}<span class="badge role-badge">{{ role.replace('_', ' ').title() }}</span>{% endfor %}</div></section></div><div class="col-md-4"><section class="surface p-4 h-100 overview-card"><span class="section-label">Connected workspace</span><code class="small text-break">{{ sharepoint_path }}</code></section></div></div>
   <div class="row g-3 mt-4">{% for label, value, detail in [('Requests', overview.total_requests, 'All lifecycle states'), ('Employees', overview.employees, 'Canonical worker profiles'), ('Unread alerts', overview.unread_notifications, 'Needs attention'), ('Open quarantine', overview.open_quarantine, 'Rows to resolve'), ('Pending publication', overview.pending_publication, 'Controlled writer queue')] %}<div class="col-6 col-xl"><section class="surface p-3 metric-card"><span class="section-label">{{ label }}</span><strong>{{ value }}</strong><span class="small text-secondary">{{ detail }}</span></section></div>{% endfor %}</div>
   <div class="row g-4 mt-2"><div class="col-lg-7"><section class="surface p-4"><div class="section-heading mb-3"><div><p class="eyebrow mb-1">Operational flow</p><h2 class="h5 mb-0">Request lifecycle</h2></div><span class="small text-secondary">{{ overview.total_requests }} total</span></div>{% for status, label in [('PENDING','Pending'),('UNDER_REVIEW','Under review'),('APPROVED','Approved'),('REJECTED','Rejected')] %}{% set count = overview.requests[status] %}{% set width = (count * 100 / overview.total_requests) if overview.total_requests else 0 %}<div class="metric-bar-row"><span>{{ label }}</span><div class="metric-bar"><span class="metric-bar-fill metric-{{ status|lower }}" style="width: {{ width }}%"></span></div><strong>{{ count }}</strong></div>{% endfor %}</section></div><div class="col-lg-5"><section class="surface p-4 h-100"><div class="section-heading mb-3"><div><p class="eyebrow mb-1">Data readiness</p><h2 class="h5 mb-0">Ingestion signals</h2></div></div><div class="d-flex justify-content-between py-2 border-bottom"><span>Import batches</span><strong>{{ overview.import_batches }}</strong></div><div class="d-flex justify-content-between py-2 border-bottom"><span>Active delegations</span><strong>{{ overview.active_delegations }}</strong></div><p class="small text-secondary mt-3 mb-0">Fieldglass and Roster Lock business metrics will appear after the official templates are approved.</p></section></div></div>
   <div class="section-heading mt-5"><div><p class="eyebrow mb-1">Quick access</p><h2 class="h4 mb-0">Work areas</h2></div></div><div class="row g-3 mt-1"><div class="col-md-6 col-xl-3"><a class="surface p-4 h-100 action-card" href="{{ url_for('requests.request_list') }}"><span class="action-icon">▤</span><h3 class="h6">Request intake</h3><p class="small text-secondary">Create and track identity changes.</p><span class="action-link">Open requests →</span></a></div>{% if session.get('is_admin') %}<div class="col-md-6 col-xl-3"><a class="surface p-4 h-100 action-card" href="{{ url_for('admin.home') }}"><span class="action-icon">▦</span><h3 class="h6">Administration</h3><p class="small text-secondary">Manage users, identities and continuity.</p><span class="action-link">Open control center →</span></a></div><div class="col-md-6 col-xl-3"><a class="surface p-4 h-100 action-card" href="{{ url_for('admin.import_center') }}"><span class="action-icon">⇩</span><h3 class="h6">Imports</h3><p class="small text-secondary">Validate source files and quarantine bad rows.</p><span class="action-link">Open imports →</span></a></div>{% endif %}<div class="col-md-6 col-xl-3"><a class="surface p-4 h-100 action-card" href="{{ url_for('notifications_page') }}"><span class="action-icon">●</span><h3 class="h6">Notifications</h3><p class="small text-secondary">Review activity and required actions.</p><span class="action-link">Open notifications →</span></a></div></div>
 </div>
-{% endblock %}
-{% block scripts %}
-<script>
-  (function () {
-    function initializeWorkspaceGuard() {
-      var alertBox = document.getElementById('workspace-update-alert');
-      var modalElement = document.getElementById('workspaceUpdateModal');
-      if (!alertBox || !modalElement) return;
-      if (!window.bootstrap) { window.setTimeout(initializeWorkspaceGuard, 50); return; }
-      var updateModal = bootstrap.Modal.getOrCreateInstance(modalElement, { backdrop: 'static', keyboard: false });
-      function showUpdateModal() { if (alertBox.dataset.updateAvailable === 'true') updateModal.show(); }
-      showUpdateModal();
-      function checkWorkspace() {
-        fetch('{{ url_for("workspace_status") }}', { headers: { 'X-Requested-With': 'XMLHttpRequest' }, cache: 'no-store' })
-          .then(function (response) { return response.ok ? response.json() : null; })
-          .then(function (data) { if (data && data.update_available) { alertBox.dataset.updateAvailable = 'true'; showUpdateModal(); } })
-          .catch(function () { /* The next poll retries when SharePoint is unavailable. */ });
-      }
-      window.setInterval(checkWorkspace, 5000);
-    }
-    initializeWorkspaceGuard();
-  }());
-</script>
 {% endblock %}
 <!-- #endfile -->

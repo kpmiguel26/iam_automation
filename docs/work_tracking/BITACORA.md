@@ -10,6 +10,11 @@
 - Recorded the current refresh-alert diagnosis: the freshness modal/polling loop exists only in `dashboard.html`, while the status endpoint is available globally.
 - Preserved the Phase 1 read-only boundary; unresolved policy decisions remain pending and were not inferred from existing code.
 
+### Refresh alert global guard
+
+- Moved the workspace freshness modal and polling loop from the Dashboard into the shared authenticated layout so every signed-in page detects published runtime updates.
+- Kept `/workspace/status` as the checksum source of truth, added an immediate initial check, and prevented duplicate modal instances.
+
 ### Legacy documentation archive
 
 - Archived the superseded numbered POC/design series, rejected centralized architecture, July meeting materials, historical architecture presentation, WFM workbook and legacy onboarding artifact under `docs/archive/`.
