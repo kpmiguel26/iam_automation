@@ -25,8 +25,9 @@ alert while the user remains on any authenticated page.
 ## Workstream B — Rules foundation
 
 1. Freeze the first rule vocabulary and status model.
-2. Add migration/models for rules, field policies, alert definitions and
-   findings.
+2. Add migration/models for rules, versions and findings; reserve the same
+   registry boundary for calendars, reference sets, field policies,
+   comparisons and alert definitions.
 3. Implement a safe allow-listed condition evaluator; do not evaluate Python,
    SQL or arbitrary user-provided code.
 4. Add administrator CRUD with route/service authorization, optimistic version
@@ -40,9 +41,11 @@ versions are auditable and inactive rules are not evaluated.
 
 1. Adapt existing Thirty-Day Rehire logic behind the rule service.
 2. Preserve explicit date/calendar semantics and surface missing evidence.
-3. Add No-Rehire as a finding-only rule with a documented matching contract.
+3. Add No-Rehire as a post-import, finding-only rule with a documented
+   matching contract.
 4. Apply field protection policies to import validation and review output.
-5. Add import/search summaries and alert dashboard data.
+5. Add post-import Overview/Dashboard summaries and alert data. No rule may
+   alter import outcome in phase one.
 
 **Exit criteria:** BR-002–BR-006 and AL-002/AL-004 have tests, but no rule can
 approve, merge, mutate canonical employees or provision downstream systems.

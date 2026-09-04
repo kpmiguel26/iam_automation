@@ -29,7 +29,7 @@ class MigrationTests(unittest.TestCase):
             first = applied_migrations(database)
             second = apply_pending_migrations(database, actor="test")
 
-            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps", "v009_local_notification_store", "v010_accessnow_match_indexes"))
+            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps", "v009_local_notification_store", "v010_accessnow_match_indexes", "v011_business_rules"))
             self.assertEqual(second, ())
             connection = sqlite3.connect(database)
             try:
@@ -45,12 +45,15 @@ class MigrationTests(unittest.TestCase):
             self.assertIn("worker_profile_versions", table_names)
             self.assertIn("worker_merge_events", table_names)
             self.assertIn("worker_source_profiles", table_names)
+            self.assertIn("business_rules", table_names)
+            self.assertIn("business_rule_versions", table_names)
+            self.assertIn("rule_findings", table_names)
             self.assertIn("superseded_by_worker_id", worker_columns)
             self.assertIn("idx_worker_identifiers_match", worker_identifier_indexes)
             self.assertIn("idx_workers_canonical_email", worker_indexes)
             self.assertIn("idx_workers_canonical_name", worker_indexes)
-            self.assertEqual(alembic_revision, "0010_accessnow_match_indexes")
-            self.assertEqual(current_database_revision(database), "0010_accessnow_match_indexes")
+            self.assertEqual(alembic_revision, "0011_business_rules")
+            self.assertEqual(current_database_revision(database), "0011_business_rules")
 
 
 if __name__ == "__main__":

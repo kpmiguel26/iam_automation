@@ -363,6 +363,60 @@ class TemporaryElevationModel(Base):
     status: Mapped[str] = mapped_column(String, default="ACTIVE")
 
 
+class BusinessRuleModel(Base):
+    """User-managed rule definition; evaluation is always post-import."""
+
+    __tablename__ = "business_rules"
+
+    rule_id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+    description: Mapped[str] = mapped_column(Text, default="")
+    rule_type: Mapped[str] = mapped_column(String, default="RECORD_CONDITION")
+    status: Mapped[str] = mapped_column(String, default="DRAFT")
+    current_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_by: Mapped[str] = mapped_column(String, default="system")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class BusinessRuleVersionModel(Base):
+    __tablename__ = "business_rule_versions"
+    __table_args__ = (UniqueConstraint("rule_id", "version", name="uq_business_rule_version"),)
+
+    rule_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    rule_id: Mapped[str] = mapped_column(ForeignKey("business_rules.rule_id"))
+    version: Mapped[int] = mapped_column(Integer)
+    scope_json: Mapped[str] = mapped_column(Text, default="{}")
+    condition_json: Mapped[str] = mapped_column(Text, default="{}")
+    severity: Mapped[str] = mapped_column(String, default="WARNING")
+    status: Mapped[str] = mapped_column(String, default="DRAFT")
+    created_by: Mapped[str] = mapped_column(String, default="system")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class RuleFindingModel(Base):
+    __tablename__ = "rule_findings"
+    __table_args__ = (UniqueConstraint("fingerprint", name="uq_rule_finding_fingerprint"),)
+
+    finding_id: Mapped[str] = mapped_column(String, primary_key=True)
+    rule_id: Mapped[str] = mapped_column(String)
+    rule_version_id: Mapped[str] = mapped_column(String)
+    batch_id: Mapped[str] = mapped_column(String)
+    record_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_system: Mapped[str] = mapped_column(String, default="")
+    severity: Mapped[str] = mapped_column(String, default="WARNING")
+    status: Mapped[str] = mapped_column(String, default="OPEN")
+    title: Mapped[str] = mapped_column(String)
+    message: Mapped[str] = mapped_column(Text)
+    evidence_json: Mapped[str] = mapped_column(Text, default="{}")
+    fingerprint: Mapped[str] = mapped_column(String)
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+    acknowledged_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    acknowledged_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 def create_engine_for_sqlite(database_path: Path):
     database_path = database_path.expanduser().resolve()
     return create_engine(

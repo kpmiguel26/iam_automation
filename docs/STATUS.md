@@ -26,8 +26,8 @@ are linked.
 | F-002 | Authentication and authorization | Completed for development scope | Existing user/access stories | `identity.py`, admin tests; production hardening pending |
 | F-003 | Admin control center and notifications | Completed for current scope | Existing admin stories | `admin_routes.py`, notification tests |
 | F-004 | Source ingestion and employee evidence review | Active | Master Roster and source reconciliation stories | [Master Roster requirements](./work_tracking/2026-08-27_MASTER_ROSTER_REQUIREMENTS.md) |
-| F-005 | Business Rules Framework | Planned / high priority | BR-001–BR-006 | [Feature brief](./features/2026-09-business-rules-framework.md) |
-| F-006 | Alert definition framework | Planned | AL-001–AL-004 | [Feature brief](./features/2026-09-business-rules-framework.md) |
+| F-005 | Business Rules Framework | Active / foundation implemented | BR-001–BR-006 | [Architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md), [feature brief](./features/2026-09-business-rules-framework.md) |
+| F-006 | Alert definition framework | Active / findings surface started | AL-001–AL-004 | [Architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md), [feature brief](./features/2026-09-business-rules-framework.md) |
 | F-007 | Database publication and workspace refresh | Active investigation | DB-001–DB-003 | [Bug record](./bugs/2026-09-refresh-alert.md) |
 | F-008 | Canonical mutation, approval and publication writer | Deferred | Future controlled-change stories | [Architecture boundary](../ARCHITECTURE.md) |
 
@@ -35,8 +35,12 @@ are linked.
 
 | ID range | State | Summary | Source |
 |---|---|---|---|
-| BR-001–BR-006 | Planned | Rules administration, rehire/no-rehire, field protection and validation | [Business Rules brief](./features/2026-09-business-rules-framework.md) |
-| AL-001–AL-004 | Planned | Alert definitions, custom conditions, severity and dashboard | [Business Rules brief](./features/2026-09-business-rules-framework.md) |
+| BR-001 | Planned | Rules administration UI and authorization | [Business Rules brief](./features/2026-09-business-rules-framework.md) |
+| BR-002–BR-004 | Planned | Rehire/no-rehire, calendars and field governance | [Architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md) |
+| BR-005 | Active / foundation | Post-import evaluator and durable findings; no import blocking | [Business Rules architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md) |
+| BR-006 | Planned | Read-only consumers of existing findings | [Business Rules brief](./features/2026-09-business-rules-framework.md) |
+| AL-001–AL-003 | Planned | Alert administration, conditions and severity | [Business Rules brief](./features/2026-09-business-rules-framework.md) |
+| AL-004 | Active / first surface | Open and critical post-import findings in Overview/Dashboard | [Business Rules architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md) |
 | DB-001 | Active investigation | Fix missing refresh notification | [Refresh alert bug](./bugs/2026-09-refresh-alert.md) |
 | DB-002–DB-003 | Planned | Global polling and publication progress | [Refresh alert bug](./bugs/2026-09-refresh-alert.md) |
 | Master Roster read-only stories | Mixed | Staging/import completed; matching, comparison and conflict views pending | [Requirements](./work_tracking/2026-08-27_MASTER_ROSTER_REQUIREMENTS.md) |

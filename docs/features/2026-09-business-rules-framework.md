@@ -9,9 +9,11 @@
 
 Provide a controlled administration surface for simple business rules and
 their alerts, while preserving the current read-only product boundary.
-Administrators configure rules; imports and searches evaluate them and expose
-findings. No rule may directly mutate a canonical employee or execute a
-downstream provisioning decision in this increment.
+The application first persists imported data in SQLite and then evaluates
+active rules against that persisted state. Phase one is advisory only: a rule
+creates a finding/alert for the human in Overview and Dashboard; it never
+rejects an import, quarantines a row, mutates a canonical employee or executes
+a downstream provisioning decision.
 
 ## Initial domain model
 
@@ -33,10 +35,10 @@ presence/missing values, status and process/source type.
 | ID | Story | Status | Acceptance criteria |
 |---|---|---|---|
 | BR-001 | Business Rules management page | Planned | List, create, edit, disable; server-side authorization and audit. |
-| BR-002 | Configurable Thirty-Day Rehire | Planned | Configurable threshold/calendar/exception; evaluated during import; no automatic approval. |
+| BR-002 | Configurable Thirty-Day Rehire | Planned | Configurable threshold/calendar/exception; evaluated after import; alert only. |
 | BR-003 | Configurable No-Rehire | Planned | Admin configuration, matching evidence, automatic finding; no silent enforcement. |
 | BR-004 | Field protection configuration | Planned | Protected/master/modifiable fields are versioned and enforced during review/import validation. |
-| BR-005 | Import validation engine | Planned | Evaluate active rules, return per-record results, persist evidence and audit summary. |
+| BR-005 | Post-import rule evaluation engine | Planned | Evaluate active rules after SQLite persistence, return per-record findings, persist evidence and audit summary without changing import status. |
 | BR-006 | Search validation engine | Planned | Evaluate applicable restrictions for searches and show warnings without changing data. |
 | AL-001 | Alert definition page | Planned | Create/edit/disable definitions with role protection and audit. |
 | AL-002 | Custom simple alert rules | Planned | Alert definitions reference allow-listed rule conditions, not executable code. |
@@ -50,7 +52,7 @@ presence/missing values, status and process/source type.
 3. Implement admin pages for rules, field policy and alert definitions.
 4. Adapt existing rehire evaluation behind the rule service.
 5. Add no-rehire as evidence/finding only until business ownership is approved.
-6. Integrate import/search evaluation and dashboard views.
+6. Integrate post-import evaluation and Overview/Dashboard alert views; keep search as a read-only consumer of existing findings.
 7. Add fixtures, regression tests and UAT evidence.
 
 ## Decisions still required

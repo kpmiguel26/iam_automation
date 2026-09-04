@@ -18,6 +18,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 
 from ..infrastructure.sqlite.orm import ChangeRequestModel, DelegationModel, ImportBatchModel, PublicationQueueModel, QuarantineRecordModel, WorkerDiscrepancyModel, WorkerModel, orm_session
+from .business_rule_service import BusinessRuleService
 from .notification_service import NotificationService
 
 
@@ -38,13 +39,14 @@ class OverviewService:
                 "import_batches": 0,
                 "employees": 0,
                 "employee_discrepancies": 0,
+                "rule_findings": {"open": 0, "critical": 0, "recent": []},
             }
         with orm_session(self.database_path) as session:
             request_counts = {
                 status: int(session.scalar(select(func.count(ChangeRequestModel.request_id)).where(ChangeRequestModel.status == status)) or 0)
                 for status in ("PENDING", "UNDER_REVIEW", "APPROVED", "REJECTED")
             }
-            return {
+            snapshot = {
                 "requests": request_counts,
                 "total_requests": sum(request_counts.values()),
                 "open_quarantine": int(session.scalar(select(func.count(QuarantineRecordModel.quarantine_id)).where(QuarantineRecordModel.status == "OPEN")) or 0),
@@ -55,4 +57,6 @@ class OverviewService:
                 "employees": int(session.scalar(select(func.count(WorkerModel.worker_id))) or 0),
                 "employee_discrepancies": int(session.scalar(select(func.count(WorkerDiscrepancyModel.discrepancy_id)).where(WorkerDiscrepancyModel.status == "OPEN")) or 0),
             }
+        snapshot["rule_findings"] = BusinessRuleService(self.database_path).summary()
+        return snapshot
 #endfile

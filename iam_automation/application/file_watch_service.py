@@ -30,6 +30,7 @@ from ..change_request import load_request_file
 from ..identity import CurrentUser, ROLE_REQUESTER, computer_name
 from .employee_service import EmployeeService
 from .notification_service import NotificationService
+from .business_rule_service import BusinessRuleService
 from .roster_lock_ingestion_service import RosterLockIngestionService
 from .master_roster_ingestion_service import MasterRosterIngestionService
 from .accessnow_ingestion_service import AccessNowIngestionService
@@ -140,6 +141,7 @@ class FileWatchService:
             changed = self._changed_observations(observations)
             changed.sort(key=self._observation_priority)
             successful_ingestions: set[str] = set()
+            imported_batch_ids: set[str] = set()
             review_requests: set[str] = set()
             accessnow_processed = False
             for observation in changed:
@@ -149,12 +151,15 @@ class FileWatchService:
                 try:
                     if observation.file_kind == "ROSTER_LOCK":
                         result = RosterLockIngestionService(self.database_path).ingest_file(Path(observation.path))
+                        imported_batch_ids.add(str(result.batch_id))
                         self._ensure_import_review_request(observation, result)
                         review_requests.add(observation.path)
                     elif observation.file_kind == "MASTER_ROSTER":
                         result = MasterRosterIngestionService(self.database_path).ingest_file(Path(observation.path))
+                        imported_batch_ids.add(str(result.batch_id))
                     elif observation.file_kind == "RSR_SUPPLIER_WORKER_DETAILS":
                         result = RsrSupplierWorkerDetailsAdapter(self.database_path).ingest_file(Path(observation.path))
+                        imported_batch_ids.add(str(result.batch_id))
                         self._ensure_import_review_request(observation, result)
                         review_requests.add(observation.path)
                     elif observation.file_kind == "ACCESSNOW":
@@ -162,6 +167,7 @@ class FileWatchService:
                             successful_ingestions.add(observation.path)
                             continue
                         result = AccessNowIngestionService(self.database_path).ingest_folder(self.sharepoint_root / "acessnow")
+                        imported_batch_ids.add(str(result.batch_id))
                         self._ensure_import_review_request(observation, result)
                         accessnow_processed = True
                         review_requests.update(item.path for item in changed if item.file_kind == "ACCESSNOW")
@@ -220,6 +226,14 @@ class FileWatchService:
                     entity_id=notification["entity_id"],
                     notification_id=notification["notification_id"],
                 )
+            # Evaluate only after the ingestion service has committed SQLite.
+            # Findings are advisory in phase one and never alter import status.
+            rule_service = BusinessRuleService(self.database_path)
+            for batch_id in imported_batch_ids:
+                try:
+                    rule_service.evaluate_batch(batch_id)
+                except Exception:
+                    LOGGER.exception("Post-import business rule evaluation failed for batch %s", batch_id)
             # Roster Lock can reveal a rehire hold as soon as the source file
             # is staged. The deterministic notification is safe to repeat.
             self.notifications.notify_rehire_alerts(EmployeeService(self.database_path).rehire_alerts())

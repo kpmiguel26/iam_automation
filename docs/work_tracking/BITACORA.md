@@ -292,3 +292,12 @@
 - Connected the watcher to `master_roster/*.xlsx` without creating an approval request or applying data to canonical employees.
 - Real staging result: **698 staged, 0 quarantined**; canonical worker count remained **12,040**.
 - Focused verification passed: **18 tests**.
+
+### Business Rules Post-import Foundation - 2026-09-04
+
+- Saved the business-rules architecture with a strict phase-one boundary: import first commits data to SQLite; rules evaluate afterward and only alert the human.
+- Added versioned SQLite tables for `business_rules`, `business_rule_versions` and durable `rule_findings`, including severity, evidence, lifecycle status and idempotent fingerprints.
+- Added an allow-listed JSON condition evaluator (`exists`, `missing`, `equals`, `not_equals`, `in`, `all`, `any`) with no Python, SQL or arbitrary expression execution.
+- Connected successful watcher ingestions to post-import evaluation without allowing evaluator failures to reject or alter the import.
+- Added open/critical finding counts and recent advisory findings to Overview/Dashboard; updated `docs/STATUS.md`, feature brief and implementation plan.
+- Automated verification remains pending because this workstation lacks the project Python dependencies (`SQLAlchemy`, `Alembic` and `pytest`).
