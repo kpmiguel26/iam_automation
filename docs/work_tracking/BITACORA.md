@@ -356,3 +356,4 @@
 - Projected approved fields when a staged source record is promoted; unknown report columns remain outside the compact layer until explicitly governed.
 - Isolated post-import rule evaluation failures from import success and added a safe retry path for unexpected import exceptions.
 - Kept all existing JSON evidence and history unchanged while the pilot is measured.
+- Added read-only migration diagnostics to Administration → Governance so Windows users can verify the revision, tables, columns, indexes and projection counts from the app.

@@ -42,3 +42,8 @@ again later; it does not make the import page unusable.
 5. Promote a staged record and inspect `field_catalog` and `employee_field_values`.
 6. Compare SQLite size before/after; do not remove legacy JSON until the result
    is reviewed.
+
+The same checks are available in `Administration → Governance → Migration
+diagnostics`. A green `Verified` badge requires revision
+`0012_compact_employee_fields` plus both pilot tables. The panel also shows
+detected columns, indexes, governed-field count and current-value count.

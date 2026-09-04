@@ -65,6 +65,43 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     salesforce = SalesforceExportService(database_path, audit_path=audit_path)
     automatic_source_types = {"ROSTER_LOCK", "MASTER_ROSTER", "RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW"}
 
+    def migration_health() -> dict[str, object]:
+        """Return read-only checks for the current schema and compact pilot."""
+        expected = "0012_compact_employee_fields"
+        result: dict[str, object] = {
+            "expected_revision": expected,
+            "revision": current_database_revision(local_runtime_path or database_path),
+            "revision_ok": False,
+            "tables": [],
+            "columns": {},
+            "indexes": [],
+            "field_count": 0,
+            "value_count": 0,
+            "error": None,
+        }
+        path = (local_runtime_path or database_path).expanduser().resolve()
+        try:
+            connection = sqlite3.connect(str(path))
+            connection.execute("PRAGMA query_only = ON")
+            table_names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            expected_tables = ("field_catalog", "employee_field_values")
+            result["tables"] = [{"name": name, "present": name in table_names} for name in expected_tables]
+            for table_name in expected_tables:
+                if table_name in table_names:
+                    result["columns"][table_name] = [row[1] for row in connection.execute(f"PRAGMA table_info({table_name})")]
+            result["indexes"] = [row[1] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_employee_field%'")]
+            if "field_catalog" in table_names:
+                result["field_count"] = connection.execute("SELECT COUNT(*) FROM field_catalog WHERE status = 'ACTIVE'").fetchone()[0]
+            if "employee_field_values" in table_names:
+                result["value_count"] = connection.execute("SELECT COUNT(*) FROM employee_field_values").fetchone()[0]
+            result["revision_ok"] = result["revision"] == expected and all(item["present"] for item in result["tables"])
+        except sqlite3.Error as exc:
+            result["error"] = str(exc)
+        finally:
+            if "connection" in locals():
+                connection.close()
+        return result
+
     def imports_page_context(*, message=None, error=None):
         batches = imports.list_batches()
         automatic_batch_ids = {
@@ -121,6 +158,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             backups=governance.list_backups(),
             events=governance.list_audit_events(),
             publication_pending=publication_pending(local_runtime_path or database_path),
+            migration_health=migration_health(),
             error=error,
             message=message,
             reset_result=reset_result,
