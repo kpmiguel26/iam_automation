@@ -333,3 +333,8 @@
 - Stop/Close now waits for the spawned webapp PID after requesting the Waitress shutdown endpoint.
 - The launcher cleans the PID marker only after shutdown handling and terminates the exact recorded PID as a bounded fallback if it remains alive.
 - This prevents the control panel from reporting a stopped app while the Flask/Waitress child and watcher remain in the background.
+
+### Windows Shutdown Compatibility Fix - 2026-09-04
+
+- Replaced the POSIX-style `os.kill(pid, 0)` liveness check on Windows with `tasklist` and the exact-PID `taskkill /T /F` fallback.
+- This resolves the native Windows error shown by the control panel while stopping the webapp.

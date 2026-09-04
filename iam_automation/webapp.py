@@ -25,6 +25,7 @@ import hmac
 import re
 import secrets
 import signal
+import subprocess
 import threading
 import webbrowser
 from dataclasses import dataclass
@@ -66,6 +67,45 @@ def webapp_pid_path() -> Path:
     return Path(__file__).resolve().parents[1] / ".iam_webapp.pid"
 
 
+def _process_alive(pid: int) -> bool:
+    """Check a child PID using the platform-safe process API."""
+    if not pid:
+        return False
+    if os.name == "nt":
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+            capture_output=True,
+            text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        )
+        return result.returncode == 0 and str(pid) in result.stdout
+    try:
+        os.kill(pid, 0)
+    except (OSError, ProcessLookupError, SystemError):
+        return False
+    return True
+
+
+def _terminate_process(pid: int) -> None:
+    """Terminate only the recorded webapp process and its descendants."""
+    if not pid:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        )
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (OSError, ProcessLookupError, SystemError):
+        pass
+
+
 def stop_local_webapp() -> str:
     pid_path = webapp_pid_path()
     try:
@@ -89,22 +129,15 @@ def stop_local_webapp() -> str:
     # the spawned webapp process so Stop/Close cannot leave an orphan behind.
     deadline = time.monotonic() + 5
     while target_pid and time.monotonic() < deadline:
-        try:
-            os.kill(target_pid, 0)
-        except (OSError, ProcessLookupError):
+        if not _process_alive(target_pid):
             break
         time.sleep(0.1)
     else:
         if target_pid:
-            try:
-                os.kill(target_pid, signal.SIGTERM)
-            except (OSError, ProcessLookupError):
-                pass
+            _terminate_process(target_pid)
             terminate_deadline = time.monotonic() + 2
             while time.monotonic() < terminate_deadline:
-                try:
-                    os.kill(target_pid, 0)
-                except (OSError, ProcessLookupError):
+                if not _process_alive(target_pid):
                     break
                 time.sleep(0.1)
     try:
