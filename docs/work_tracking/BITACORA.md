@@ -357,3 +357,10 @@
 - Isolated post-import rule evaluation failures from import success and added a safe retry path for unexpected import exceptions.
 - Kept all existing JSON evidence and history unchanged while the pilot is measured.
 - Added read-only migration diagnostics to Administration → Governance so Windows users can verify the revision, tables, columns, indexes and projection counts from the app.
+
+### Star Schema Clean-Start Design - 2026-09-04
+
+- Decided that the testing runtime will be deleted by the user and rebuilt from an empty SQLite database.
+- Designed a relational star schema with employee/source/field dimensions, import batches, source snapshots, termination and assignment facts, and governed extensible fields.
+- Defined retention as the latest three completed files per source/report, with backup, validation and explicit Administration confirmation before cleanup.
+- Defined imports and rule evaluation as separate transactions so one malformed file cannot block the next import.
