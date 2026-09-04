@@ -392,3 +392,9 @@
 
 - Added `fact_worker_field_history` and a protected Administration action to migrate governed fields from legacy profile snapshots.
 - The action creates a backup, preserves normalized lineage, and clears only `worker_profile_versions.snapshot_json` and `worker_source_profiles.snapshot_json` after migration.
+
+### Relational Worker Version Writes - 2026-09-04
+
+- New employee versions no longer serialize a complete worker snapshot or changed-field list into JSON.
+- Worker scalar and engagement values are written to `fact_worker_field_history` during the same transaction.
+- The legacy migration remains available only for pre-existing databases; fresh testing databases do not need it.

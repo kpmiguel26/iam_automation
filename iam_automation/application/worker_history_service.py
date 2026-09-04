@@ -25,6 +25,7 @@ from ..infrastructure.sqlite.orm import (
     WorkerIdentifierModel,
     WorkerModel,
     WorkerProfileVersionModel,
+    FactWorkerFieldHistoryModel,
     WorkerSourceLineageModel,
     orm_session,
 )
@@ -87,14 +88,13 @@ def record_worker_version(
     next_version = current + 1
     worker.record_version = next_version
     worker.updated_at_utc = _now()
-    snapshot = worker_snapshot(session, worker_id)
     item = WorkerProfileVersionModel(
         version_id=str(uuid.uuid4()),
         worker_id=worker_id,
         version_number=next_version,
         change_type=change_type,
-        snapshot_json=json.dumps(snapshot, sort_keys=True),
-        changed_fields_json=json.dumps(sorted(set(changed_fields or []))),
+        snapshot_json="",
+        changed_fields_json="",
         source_system=source_system,
         source_file=source_file,
         source_checksum=source_checksum,
@@ -103,6 +103,38 @@ def record_worker_version(
         created_at_utc=_now(),
     )
     session.add(item)
+    session.flush()
+    values = {
+        "first_name": worker.first_name,
+        "last_name": worker.last_name,
+        "display_name": worker.display_name,
+        "canonical_email": worker.canonical_email,
+        "status": worker.status,
+    }
+    engagements = session.scalars(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker_id)).all()
+    for engagement in engagements:
+        prefix = f"engagement.{engagement.source_system or 'UNKNOWN'}"
+        values.update({
+            f"{prefix}.vendor_name": engagement.vendor_name,
+            f"{prefix}.job_title": engagement.job_title,
+            f"{prefix}.supervisor_name": engagement.supervisor_name,
+            f"{prefix}.country": engagement.country,
+            f"{prefix}.site_location": engagement.site_location,
+            f"{prefix}.work_order_id": engagement.work_order_id,
+            f"{prefix}.npn": engagement.npn,
+            f"{prefix}.status": engagement.status,
+        })
+    for field_key, value in values.items():
+        session.add(FactWorkerFieldHistoryModel(
+            history_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"iam-automation:history:{item.version_id}:{field_key}")),
+            worker_id=worker_id,
+            source_system=source_system or "CANONICAL",
+            field_key=field_key,
+            value_text=str(value or ""),
+            version_number=next_version,
+            observed_at_utc=item.created_at_utc,
+            source_file=source_file,
+        ))
     return item
 
 

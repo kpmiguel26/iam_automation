@@ -120,3 +120,8 @@ copies governed fields from `worker_profile_versions` into
 `fact_worker_field_history` and current source profiles into
 `employee_field_values`, creates a backup, then clears only the legacy JSON
 snapshot columns. Lineage remains because it is already normalized audit data.
+
+For clean-start testing, new worker versions now write relational field history
+directly and leave both `snapshot_json` and `changed_fields_json` empty. The
+legacy conversion action is only for a database that already contains older
+profiles; it is not needed after a fresh reset.
