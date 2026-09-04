@@ -1,5 +1,8 @@
 # RSR Supplier Worker Details: Action Plan
 
+> **Historical record — 2026-07-30.** Current status is maintained only in
+> [`../../../STATUS.md`](../../../STATUS.md).
+
 ## Objective
 
 Ingest the `rsrsuplierworkerdetails` SharePoint folder automatically, reconcile its worker details against the canonical Employee domain, and keep every source value traceable without making an Excel row the identity of a worker.

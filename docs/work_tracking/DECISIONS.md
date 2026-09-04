@@ -1,5 +1,17 @@
 # Working Decisions
 
+## DEC-2026-09-04-01: Documentation Status Registry
+
+The canonical documentation entry point is `docs/README.md`, and the
+authoritative cross-document delivery registry is `docs/STATUS.md`. Active
+features belong under `docs/features/`, confirmed defects under `docs/bugs/`,
+execution plans under `docs/work/`, unresolved decisions/dependencies under
+`docs/pending/`, and architecture records under `docs/architecture/`.
+Historical meeting and evidence documents remain in place to preserve links.
+Every completed work item must link implementation, authorization behavior,
+tests, documentation and a bitacora entry before its status changes to
+`Completed`.
+
 ## DEC-2026-08-27-01: Read-only Employee & Evidence Review Phase
 
 The current release is a read-only review surface over the validated runtime

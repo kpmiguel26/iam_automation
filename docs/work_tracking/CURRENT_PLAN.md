@@ -1,10 +1,19 @@
 # Current Implementation Plan
 
 **Project:** IAM Automation  
-**Last updated:** 2026-08-27
+**Last updated:** 2026-09-04
 **Current phase:** Read-only Employee & Evidence Review
-**Branch:** `feature/master-roster-read-only` (requirements only; no implementation planned)
+**Branch:** `production` (documentation baseline; implementation work requires a dedicated feature/fix branch)
 **Release branch:** `production`
+
+## September 8 milestone
+
+The active plan is now [`../work/2026-09-04-implementation-plan.md`](../work/2026-09-04-implementation-plan.md). It adds two high-priority workstreams:
+
+- Configurable Business Rules and Alerts: [`../features/2026-09-business-rules-framework.md`](../features/2026-09-business-rules-framework.md).
+- Published-runtime refresh alert: [`../bugs/2026-09-refresh-alert.md`](../bugs/2026-09-refresh-alert.md).
+
+The status registry is [`../STATUS.md`](../STATUS.md). Business Rules must preserve the current read-only boundary until the pending scope decision is resolved.
 
 ## Objective
 
@@ -36,7 +45,7 @@ Deliver a safe read-only review increment with:
 | D08 | Application user CRUD and last-admin protection | Completed | `UserService`, `/admin/users`, service tests |
 | D09 | Admin control center shell | Completed | `/admin`, `admin_routes.py`, role-aware avatar |
 | D09.1 | Windows identity CRUD | Completed | `/admin/windows-identities`, `IdentityService` |
-| D09.2 | User and access refinement | Completed for current development scope | [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACCESS_REFINEMENT.md) |
+| D09.2 | User and access refinement | Completed for current development scope | [Historical work session](../archive/work-tracking/2026-07/2026-07-24_USER_ACCESS_REFINEMENT.md) |
 | D10 | Notifications and delegation workflows | Completed | Real avatar counter, local and SharePoint JSON-backed read/resolve/expire states, immutable recipient snapshots, manual reviewer assignment, SLA escalation and delegation expiry |
 | D10.1 | Master session revocation | Completed | `SessionService`, `/admin/security/sessions` |
 | D11 | Audit-integrated administrative operations | Completed | Master audit center, JSON export/archive and CRUD/request/delegation audit events |

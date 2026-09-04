@@ -1,5 +1,8 @@
 # IAM Automation - Daily Closure
 
+> **Historical record — 2026-07-31.** Current status is maintained only in
+> [`../../../STATUS.md`](../../../STATUS.md).
+
 **Date:** 2026-07-31  
 **Status:** Development work closed for today  
 **Active branch:** `feature/worker-identity-history`  

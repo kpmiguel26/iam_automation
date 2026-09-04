@@ -1,5 +1,8 @@
 # Work Session: User and Access Refinement
 
+> **Historical record — 2026-07-24.** Current status is maintained only in
+> [`../../../STATUS.md`](../../../STATUS.md).
+
 **Date:** 2026-07-24  
 **Project:** IAM Automation  
 **Branch:** `feature/iam-data-ingestion-foundation`  

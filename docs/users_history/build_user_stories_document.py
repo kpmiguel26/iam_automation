@@ -27,8 +27,8 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "docs" / "users_history.md"
-OUTPUT_DIR = ROOT / "docs" / "users_history"
+SOURCE = ROOT / "docs" / "users_history" / "source" / "users_history.md"
+OUTPUT_DIR = ROOT / "docs" / "users_history" / "generated"
 DOCX_PATH = OUTPUT_DIR / "IAM_Automation_User_Stories_and_Stakeholder_Guide.docx"
 LOGO = ROOT / "iam_automation" / "static" / "kaiser_permanente_logo.png"
 

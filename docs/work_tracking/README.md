@@ -1,6 +1,6 @@
 # IAM Automation Work Tracking
 
-This folder is the working control center for implementation planning and project traceability.
+This folder is the working control center for implementation planning and project traceability. The wider documentation hub and cross-document status registry are in [`../README.md`](../README.md) and [`../STATUS.md`](../STATUS.md).
 
 ## Files
 
@@ -8,6 +8,11 @@ This folder is the working control center for implementation planning and projec
 - [`BACKLOG.md`](./BACKLOG.md): remaining work, grouped by feature and priority.
 - [`BITACORA.md`](./BITACORA.md): chronological record of implementation, tests, findings and follow-up actions.
 - [`DECISIONS.md`](./DECISIONS.md): working decisions that affect architecture or delivery.
+- [`../STATUS.md`](../STATUS.md): authoritative feature and user-story status registry.
+- [`../work/2026-09-04-implementation-plan.md`](../work/2026-09-04-implementation-plan.md): active plan for the September 8 milestone.
+- [`../bugs/`](../bugs/): confirmed defects and verification plans.
+- [`../features/`](../features/): feature briefs and story acceptance criteria.
+- [`../pending/`](../pending/): unresolved decisions and dependencies.
 
 ## Working Rules
 
@@ -16,10 +21,11 @@ This folder is the working control center for implementation planning and projec
 3. New findings are added to `BACKLOG.md` instead of being kept only in chat.
 4. A task is marked complete only after implementation and relevant tests are recorded.
 5. Production hardening decisions remain explicit and are not silently inferred from development behavior.
+6. Every active feature or bug has one canonical document under `docs/features/` or `docs/bugs/`, with references recorded in `docs/STATUS.md`.
 
 ## Current Branch
 
-`feature/master-roster-read-only` (requirements only; no implementation planned)
+`production` (documentation baseline; implementation work requires a dedicated feature/fix branch)
 
 Release baseline: `production`
 

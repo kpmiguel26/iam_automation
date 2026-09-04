@@ -4,7 +4,7 @@
 
 Status: Accepted
 
-The actual infrastructure has no server, central API, service host, persistent VM, or database engine. The previous coordinator-style architecture is archived under `docs/rejected_architecture`.
+The actual infrastructure has no server, central API, service host, persistent VM, or database engine. The previous coordinator-style architecture is archived under `docs/archive/rejected-architecture`.
 
 ## 2026-07-17: Use Single-Writer Approval Workflow
 

@@ -29,10 +29,10 @@ from PIL import ImageFont
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "docs" / "architecture_presentation" / "iam_architecture_brief.md"
-OUT = ROOT / "docs" / "architecture_presentation" / "IAM_Automation_Architecture_Brief.docx"
+SOURCE = ROOT / "docs" / "archive" / "presentations" / "architecture-presentation" / "iam_architecture_brief.md"
+OUT = ROOT / "docs" / "archive" / "presentations" / "architecture-presentation" / "IAM_Automation_Architecture_Brief.docx"
 DIAGRAM_PNG = ROOT / "docs" / "diagrams" / "png"
-LABELED_DIAGRAM_PNG = ROOT / "docs" / "architecture_presentation" / "diagram_pages"
+LABELED_DIAGRAM_PNG = ROOT / "docs" / "archive" / "presentations" / "architecture-presentation" / "diagram_pages"
 
 BLUE = RGBColor(46, 116, 181)
 DARK_BLUE = RGBColor(31, 77, 120)

@@ -1,5 +1,8 @@
 # Work Tracking - Worker Identity History
 
+> **Historical record — 2026-07-31.** Current status is maintained only in
+> [`../../../STATUS.md`](../../../STATUS.md).
+
 ## Objective
 
 Keep one canonical employee profile while preserving every approved change,

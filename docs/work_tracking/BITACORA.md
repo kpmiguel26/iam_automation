@@ -1,5 +1,21 @@
 # Implementation Bitacora
 
+## 2026-09-04
+
+### Documentation architecture and September milestone
+
+- Created the documentation hub, status registry and canonical folders for bugs, features, work, pending decisions and architecture.
+- Added the September 8 implementation plan for configurable Business Rules/Alerts and the published-runtime refresh alert.
+- Registered BR-001–BR-006, AL-001–AL-004 and DB-001–DB-003 with explicit statuses and cross-document references.
+- Recorded the current refresh-alert diagnosis: the freshness modal/polling loop exists only in `dashboard.html`, while the status endpoint is available globally.
+- Preserved the Phase 1 read-only boundary; unresolved policy decisions remain pending and were not inferred from existing code.
+
+### Legacy documentation archive
+
+- Archived the superseded numbered POC/design series, rejected centralized architecture, July meeting materials, historical architecture presentation, WFM workbook and legacy onboarding artifact under `docs/archive/`.
+- Preserved active architecture, ADRs, IAM requirements, UAT decisions, guides and current work tracking in their original active locations.
+- Updated the documentation hub, archive manifest, decision log and architecture-presentation build script references.
+
 ## 2026-07-23
 
 ### UI Page Refinement
@@ -134,7 +150,7 @@
 
 ### User and Access Refinement Session - 2026-07-24
 
-- Created `2026-07-24_USER_ACCESS_REFINEMENT.md` as the working document for today.
+- Created the historical work session [`2026-07-24_USER_ACCESS_REFINEMENT.md`](../archive/work-tracking/2026-07/2026-07-24_USER_ACCESS_REFINEMENT.md) as the working document for that day.
 - Separated the Windows identity gate, IAM application account, business worker identity and local session as distinct concepts.
 - Documented controlled account states, human-readable role labels, administrator boundaries, delegation continuity and notification ownership.
 - Added user/access acceptance scenarios for login, authorization, last-admin protection, identity discovery, delegation expiry and session revocation.

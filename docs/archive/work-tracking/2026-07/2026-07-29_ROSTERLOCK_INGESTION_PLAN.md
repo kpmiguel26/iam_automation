@@ -1,5 +1,8 @@
 # Roster Lock Ingestion Foundation
 
+> **Historical record — 2026-07-29.** Current status is maintained only in
+> [`../../../STATUS.md`](../../../STATUS.md).
+
 **Branch:** `feature/iam-data-ingestion-foundation`  
 **Date:** 2026-07-29  
 **Scope:** first automated source ingestion increment

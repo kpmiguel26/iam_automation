@@ -1,5 +1,18 @@
 # Implementation Backlog
 
+## 2026-09-04 active milestone
+
+Canonical plan: [`../work/2026-09-04-implementation-plan.md`](../work/2026-09-04-implementation-plan.md). Status registry: [`../STATUS.md`](../STATUS.md).
+
+- [ ] DB-001/DB-002 — move refresh freshness polling to the authenticated shared layout; see [`../bugs/2026-09-refresh-alert.md`](../bugs/2026-09-refresh-alert.md).
+- [ ] BR-001–BR-006 — implement configurable Business Rules; see [`../features/2026-09-business-rules-framework.md`](../features/2026-09-business-rules-framework.md).
+- [ ] AL-001–AL-004 — implement configurable Alert Definitions and dashboard; see [`../features/2026-09-business-rules-framework.md`](../features/2026-09-business-rules-framework.md).
+- [ ] Resolve P-001–P-007 before treating policy behavior as complete; see [`../pending/2026-09-business-rules-decisions.md`](../pending/2026-09-business-rules-decisions.md).
+
+Older sections below retain historical work items and prior phase detail. For
+current status, use [`../STATUS.md`](../STATUS.md); do not infer completion
+from an older unchecked item without checking the linked evidence.
+
 ## High Priority
 
 - [x] Complete the first Windows identity CRUD increment.
@@ -29,7 +42,7 @@
 
 ## User And Access Refinement - Current Work Session
 
-Working document: [`2026-07-24_USER_ACCESS_REFINEMENT.md`](./2026-07-24_USER_ACCESS_REFINEMENT.md)
+Historical working document: [`2026-07-24_USER_ACCESS_REFINEMENT.md`](../archive/work-tracking/2026-07/2026-07-24_USER_ACCESS_REFINEMENT.md)
 
 - [ ] Approve the identity-layer glossary: Windows identity, application account, worker identity and session.
 - [~] Confirm controlled account states and recovery behavior; initial SQLite/ORM implementation is complete, recovery and rehire policy remain open.
