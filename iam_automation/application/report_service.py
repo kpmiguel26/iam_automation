@@ -135,6 +135,7 @@ class NewHireReadinessRow:
 @dataclass(frozen=True)
 class TerminationReportRow:
     worker_id: str
+    employee_id: str
     display_name: str
     email: str
     termination_date: str
@@ -703,6 +704,7 @@ class ReportService:
                 fieldglass_by_worker.setdefault(engagement.worker_id, []).append(engagement)
 
         termination_by_worker: dict[str, tuple[date, str]] = {}
+        employee_id_by_worker: dict[str, str] = {}
         for profile in profiles:
             try:
                 payload = json.loads(profile.snapshot_json or "{}")
@@ -710,6 +712,9 @@ class ReportService:
                 payload = {}
             if not isinstance(payload, dict):
                 continue
+            employee_id = str(payload.get("accessnow_employee_id") or payload.get("employee_id") or "").strip()
+            if employee_id:
+                employee_id_by_worker[profile.worker_id] = employee_id
             for key in ("terminated_date", "termination_date", "deactivated_date", "end_date"):
                 parsed = parse_source_date(payload.get(key))
                 if parsed is None:
@@ -742,6 +747,7 @@ class ReportService:
             )
             rows.append(TerminationReportRow(
                 worker_id=worker_id,
+                employee_id=employee_id_by_worker.get(worker_id, ""),
                 display_name=worker.display_name or "Unnamed worker",
                 email=worker.canonical_email or "",
                 termination_date=termination[1],

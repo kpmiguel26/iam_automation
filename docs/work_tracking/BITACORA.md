@@ -338,3 +338,8 @@
 
 - Replaced the POSIX-style `os.kill(pid, 0)` liveness check on Windows with `tasklist` and the exact-PID `taskkill /T /F` fallback.
 - This resolves the native Windows error shown by the control panel while stopping the webapp.
+
+### Termination Report Employee ID - 2026-09-04
+
+- Added the AccessNow Employee ID to the termination detail table and its DataTables export.
+- The value is read from persisted AccessNow source evidence, with a clear fallback when unavailable.
