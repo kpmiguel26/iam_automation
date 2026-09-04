@@ -138,6 +138,27 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         severity = request.args.get("severity", "ALL").upper()
         return redirect(url_for("notifications_page", status=status, severity=severity))
 
+    @blueprint.get("/business-rule-findings")
+    @admin_required
+    def business_rule_findings():
+        status = request.args.get("status", "OPEN").upper()
+        severity = request.args.get("severity", "ALL").upper()
+        return render_template("admin/business_rule_findings.html", findings=rules.list_findings(status=status, severity=severity), status=status, severity=severity, severities=BusinessRuleService.ALLOWED_SEVERITIES, message=request.args.get("notice"), error=None)
+
+    @blueprint.post("/business-rule-findings/<finding_id>/status")
+    @admin_required
+    def business_rule_finding_status(finding_id: str):
+        try:
+            status = request.form.get("status", "").upper()
+            note = request.form.get("note", "")
+            rules.update_finding(finding_id, status=status, actor=str(session["iam_user"]), note=note)
+            record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_FINDING_STATUS_CHANGED", "rule_finding", finding_id, new_values={"status": status, "note": note})
+            if request.headers.get("HX-Request") == "true":
+                return render_template("admin/_business_finding_row.html", finding=next((item for item in rules.list_findings(status="ALL") if item.finding_id == finding_id), None))
+            return redirect(url_for("admin.business_rule_findings", notice="Finding updated."))
+        except ValueError as exc:
+            return redirect(url_for("admin.business_rule_findings", notice=str(exc)))
+
     @blueprint.route("/business-rules", methods=["GET", "POST"])
     @admin_required
     def business_rules():

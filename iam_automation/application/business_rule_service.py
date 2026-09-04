@@ -118,6 +118,33 @@ class BusinessRuleService:
                 "recent": [{"title": item.title, "message": item.message, "severity": item.severity, "status": item.status} for item in open_findings],
             }
 
+    def list_findings(self, *, status: str = "OPEN", severity: str = "ALL", rule_id: str = "ALL") -> list[RuleFindingModel]:
+        with orm_session(self.database_path) as session:
+            query = select(RuleFindingModel).order_by(RuleFindingModel.created_at_utc.desc())
+            if status != "ALL": query = query.where(RuleFindingModel.status == status)
+            if severity != "ALL": query = query.where(RuleFindingModel.severity == severity)
+            if rule_id != "ALL": query = query.where(RuleFindingModel.rule_id == rule_id)
+            return list(session.scalars(query).all())
+
+    def update_finding(self, finding_id: str, *, status: str, actor: str, note: str = "") -> RuleFindingModel:
+        status = status.upper()
+        if status not in {"ACKNOWLEDGED", "RESOLVED", "SUPPRESSED"}:
+            raise ValueError("Invalid finding status.")
+        if status in {"RESOLVED", "SUPPRESSED"} and not note.strip():
+            raise ValueError("A note is required to resolve or suppress a finding.")
+        with orm_session(self.database_path) as session:
+            finding = session.get(RuleFindingModel, finding_id)
+            if finding is None: raise ValueError("Finding not found.")
+            now = datetime.now(timezone.utc).isoformat()
+            finding.status = status
+            finding.updated_at_utc = now
+            finding.acknowledged_by = actor
+            finding.acknowledged_at_utc = now
+            evidence = self._json(finding.evidence_json)
+            evidence["last_action_note"] = note.strip()
+            finding.evidence_json = json.dumps(evidence, sort_keys=True)
+            return finding
+
     @staticmethod
     def _json(value: str) -> dict:
         try:

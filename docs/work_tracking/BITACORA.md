@@ -320,3 +320,10 @@
 - Added HTMX partial responses for rule creation and status changes so the configured-rule region updates without a full page reload.
 - Added a visible spinner and “Evaluating historical SQLite data…” indicator while activating or disabling a rule.
 - Preserved the normal POST fallback for environments where HTMX is unavailable.
+
+### Business Rules Findings Center - 2026-09-04
+
+- Added the administrator Findings Center with status and severity filters.
+- Added evidence expansion showing source system, batch, record and persisted payload context.
+- Added HTMX dispositions for acknowledge, resolve and suppress; resolve/suppress require a note.
+- Recorded finding status changes in the existing audit trail and linked the center from Operations and Dashboard.

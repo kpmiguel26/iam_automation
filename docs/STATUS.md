@@ -40,7 +40,7 @@ are linked.
 | BR-005 | Active / foundation | Post-import evaluator and durable findings; no import blocking | [Business Rules architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md) |
 | BR-006 | Planned | Read-only consumers of existing findings | [Business Rules brief](./features/2026-09-business-rules-framework.md) |
 | AL-001–AL-003 | Planned | Alert administration, conditions and severity | [Business Rules brief](./features/2026-09-business-rules-framework.md) |
-| AL-004 | Active / first surface | Open and critical post-import findings in Overview/Dashboard | [Business Rules architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md) |
+| AL-004 | Active / findings center | Open and critical post-import findings in Overview/Dashboard plus operational disposition center | [Business Rules architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md) |
 | DB-001 | Active investigation | Fix missing refresh notification | [Refresh alert bug](./bugs/2026-09-refresh-alert.md) |
 | DB-002–DB-003 | Planned | Global polling and publication progress | [Refresh alert bug](./bugs/2026-09-refresh-alert.md) |
 | Master Roster read-only stories | Mixed | Staging/import completed; matching, comparison and conflict views pending | [Requirements](./work_tracking/2026-08-27_MASTER_ROSTER_REQUIREMENTS.md) |
