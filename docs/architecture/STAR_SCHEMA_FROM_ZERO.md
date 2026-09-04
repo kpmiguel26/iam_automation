@@ -114,3 +114,9 @@ after the transaction is complete. Quarantine payloads remain JSON so a
 malformed row can still be inspected. This intentionally exposes remaining
 legacy readers in reports, matching, promotion and rule screens for the next
 refactor phase.
+
+Legacy profile conversion is available from Administration → Governance. It
+copies governed fields from `worker_profile_versions` into
+`fact_worker_field_history` and current source profiles into
+`employee_field_values`, creates a backup, then clears only the legacy JSON
+snapshot columns. Lineage remains because it is already normalized audit data.

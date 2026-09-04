@@ -24,6 +24,7 @@ from flask import Blueprint, redirect, render_template, request, send_file, sess
 from ...application.delegation_service import DelegationService
 from ...application.employee_service import EmployeeService
 from ...application.employee_reset_service import EmployeeResetService
+from ...application.legacy_star_migration_service import LegacyStarMigrationService
 from ...application.audit_service import record_audit
 from ...application.import_service import ImportService
 from ...application.notification_service import NotificationService
@@ -62,12 +63,13 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         audit_path=audit_path or database_path.parent / "audit",
         backup_directory=(published_runtime_path or database_path).parent / "backups",
     )
+    legacy_star_migration = LegacyStarMigrationService(local_runtime_path or database_path, backup_directory=(published_runtime_path or database_path).parent / "backups")
     salesforce = SalesforceExportService(database_path, audit_path=audit_path)
     automatic_source_types = {"ROSTER_LOCK", "MASTER_ROSTER", "RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW"}
 
     def migration_health() -> dict[str, object]:
         """Return read-only checks for the current schema and compact pilot."""
-        expected = "0013_star_schema"
+        expected = "0014_worker_field_history"
         result: dict[str, object] = {
             "expected_revision": expected,
             "revision": current_database_revision(local_runtime_path or database_path),
@@ -87,6 +89,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             expected_tables = (
                 "dim_source", "dim_field", "dim_date", "dim_vendor",
                 "fact_source_snapshot", "fact_worker_field", "fact_termination", "fact_assignment",
+                "fact_worker_field_history",
             )
             result["tables"] = [{"name": name, "present": name in table_names} for name in expected_tables]
             for table_name in expected_tables:
@@ -476,6 +479,17 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             )
         except (OSError, sqlite3.Error, ValueError) as exc:
             return render_governance(error=f"Star-schema testing reset failed: {exc}"), 400
+
+    @blueprint.post("/governance/migrate-legacy-star")
+    @database_publish_required
+    def migrate_legacy_star():
+        if request.form.get("confirmation", "").strip() != "MIGRATE LEGACY TO STAR":
+            return render_governance(error="Type MIGRATE LEGACY TO STAR exactly to confirm this migration."), 400
+        try:
+            result = legacy_star_migration.migrate(str(session["iam_user"]))
+            return render_governance(message=f"Legacy snapshots migrated: {result['history_fields_written']} history fields and {result['current_fields_written']} current fields. Backup created at {result['backup']}.")
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            return render_governance(error=f"Legacy star migration failed: {exc}"), 400
 
     @blueprint.post("/governance/publish")
     @database_publish_required

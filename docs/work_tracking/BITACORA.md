@@ -387,3 +387,8 @@
 - Valid staged rows now clear `normalized_json` and `payload_json` after their selected values are written to the star facts.
 - Quarantine payloads remain available for invalid-row review.
 - This is intentionally a breaking experiment: legacy screens that still read source JSON may fail and are the migration backlog for the next phase.
+
+### Legacy Worker Snapshot Migration - 2026-09-04
+
+- Added `fact_worker_field_history` and a protected Administration action to migrate governed fields from legacy profile snapshots.
+- The action creates a backup, preserves normalized lineage, and clears only `worker_profile_versions.snapshot_json` and `worker_source_profiles.snapshot_json` after migration.

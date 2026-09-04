@@ -398,6 +398,19 @@ class FactAssignmentModel(Base):
     status: Mapped[str] = mapped_column(String, default="ACTIVE")
 
 
+class FactWorkerFieldHistoryModel(Base):
+    __tablename__ = "fact_worker_field_history"
+    __table_args__ = (UniqueConstraint("worker_id", "source_system", "field_key", "version_number", name="uq_star_field_history"),)
+    history_id: Mapped[str] = mapped_column(String, primary_key=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey("workers.worker_id"))
+    source_system: Mapped[str] = mapped_column(String, default="CANONICAL")
+    field_key: Mapped[str] = mapped_column(String)
+    value_text: Mapped[str] = mapped_column(Text, default="")
+    version_number: Mapped[int] = mapped_column(Integer, default=1)
+    observed_at_utc: Mapped[str] = mapped_column(String, default="")
+    source_file: Mapped[str] = mapped_column(String, default="")
+
+
 class WorkerDiscrepancyModel(Base):
     __tablename__ = "worker_discrepancies"
 
