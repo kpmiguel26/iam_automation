@@ -301,3 +301,10 @@
 - Connected successful watcher ingestions to post-import evaluation without allowing evaluator failures to reject or alter the import.
 - Added open/critical finding counts and recent advisory findings to Overview/Dashboard; updated `docs/STATUS.md`, feature brief and implementation plan.
 - Automated verification remains pending because this workstation lacks the project Python dependencies (`SQLAlchemy`, `Alembic` and `pytest`).
+
+### Business Rules Administration CRUD - 2026-09-04
+
+- Added the administrator Business Rules page in the Control Center.
+- Users with an administrator role can create a rule draft with a field, allow-listed operator, value and severity, then activate or disable it.
+- Rule status changes and creation are recorded in the existing audit trail; activation controls the post-import evaluator only.
+- The interface clearly states that rules alert after SQLite persistence and never block imports in phase one.

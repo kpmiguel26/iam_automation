@@ -35,7 +35,7 @@ are linked.
 
 | ID range | State | Summary | Source |
 |---|---|---|---|
-| BR-001 | Planned | Rules administration UI and authorization | [Business Rules brief](./features/2026-09-business-rules-framework.md) |
+| BR-001 | Active / first CRUD | Rules administration UI, validation and authorization | [Business Rules architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md) |
 | BR-002–BR-004 | Planned | Rehire/no-rehire, calendars and field governance | [Architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md) |
 | BR-005 | Active / foundation | Post-import evaluator and durable findings; no import blocking | [Business Rules architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md) |
 | BR-006 | Planned | Read-only consumers of existing findings | [Business Rules brief](./features/2026-09-business-rules-framework.md) |

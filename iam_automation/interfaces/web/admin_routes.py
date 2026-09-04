@@ -26,6 +26,7 @@ from ...application.employee_reset_service import EmployeeResetService
 from ...application.audit_service import record_audit
 from ...application.import_service import ImportService
 from ...application.notification_service import NotificationService
+from ...application.business_rule_service import BusinessRuleService
 from ...application.file_watch_service import load_watcher_health
 from ...application.publication_service import PublicationService
 from ...application.salesforce_export_service import SalesforceExportService
@@ -50,6 +51,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     governance = GovernanceService(local_runtime_path=local_runtime_path or database_path, published_runtime_path=published_runtime_path or database_path, audit_path=audit_path or database_path.parent / "audit")
     sessions = SessionService(database_path)
     imports = ImportService(database_path)
+    rules = BusinessRuleService(database_path)
     users = UserService(database_path)
     employees = EmployeeService(database_path)
     employee_reset = EmployeeResetService(
@@ -134,6 +136,31 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         status = request.args.get("status", "ALL").upper()
         severity = request.args.get("severity", "ALL").upper()
         return redirect(url_for("notifications_page", status=status, severity=severity))
+
+    @blueprint.route("/business-rules", methods=["GET", "POST"])
+    @admin_required
+    def business_rules():
+        error = None
+        message = None
+        if request.method == "POST":
+            try:
+                rule_id = rules.create_rule(name=request.form.get("name", ""), description=request.form.get("description", ""), field=request.form.get("field", ""), operator=request.form.get("operator", ""), value=request.form.get("value", ""), severity=request.form.get("severity", "WARNING"), actor=str(session["iam_user"]))
+                record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_CREATED", "business_rule", rule_id, new_values={"name": request.form.get("name", ""), "field": request.form.get("field", ""), "operator": request.form.get("operator", ""), "severity": request.form.get("severity", "WARNING")})
+                message = "Rule created as DRAFT. Activate it after reviewing the condition."
+            except ValueError as exc:
+                error = str(exc)
+        return render_template("admin/business_rules.html", rules=rules.list_rules(), operators=BusinessRuleService.ALLOWED_OPERATORS, severities=BusinessRuleService.ALLOWED_SEVERITIES, message=message, error=error)
+
+    @blueprint.post("/business-rules/<rule_id>/status")
+    @admin_required
+    def business_rule_status(rule_id: str):
+        try:
+            status = request.form.get("status", "").upper()
+            rules.set_status(rule_id, status)
+            record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_STATUS_CHANGED", "business_rule", rule_id, new_values={"status": status})
+            return redirect(url_for("admin.business_rules"))
+        except ValueError as exc:
+            return render_template("admin/business_rules.html", rules=rules.list_rules(), operators=BusinessRuleService.ALLOWED_OPERATORS, severities=BusinessRuleService.ALLOWED_SEVERITIES, message=None, error=str(exc)), 400
 
     @blueprint.post("/notifications/<notification_id>/read")
     @admin_required

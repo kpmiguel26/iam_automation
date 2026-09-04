@@ -25,6 +25,43 @@ class BusinessRuleService:
     def __init__(self, database_path: Path):
         self.database_path = database_path
 
+    ALLOWED_OPERATORS = ("exists", "missing", "equals", "not_equals", "in")
+    ALLOWED_SEVERITIES = ("INFO", "WARNING", "ERROR", "CRITICAL")
+
+    def list_rules(self) -> list[dict]:
+        with orm_session(self.database_path) as session:
+            rules = session.scalars(select(BusinessRuleModel).order_by(BusinessRuleModel.name.asc())).all()
+            result = []
+            for rule in rules:
+                version = session.scalar(select(BusinessRuleVersionModel).where(BusinessRuleVersionModel.rule_id == rule.rule_id, BusinessRuleVersionModel.version == rule.current_version))
+                result.append({"rule": rule, "version": version})
+            return result
+
+    def create_rule(self, *, name: str, description: str, field: str, operator: str, value: str, severity: str, actor: str) -> str:
+        name, field, operator, severity = name.strip(), field.strip(), operator.strip(), severity.strip().upper()
+        if not name or not field or operator not in self.ALLOWED_OPERATORS or severity not in self.ALLOWED_SEVERITIES:
+            raise ValueError("Name, field, valid operator and severity are required.")
+        rule_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        condition = {"field": field, "operator": operator}
+        if operator in {"equals", "not_equals"}: condition["value"] = value
+        if operator == "in": condition["value"] = [item.strip() for item in value.split(",") if item.strip()]
+        with orm_session(self.database_path) as session:
+            session.add(BusinessRuleModel(rule_id=rule_id, name=name, description=description.strip(), status="DRAFT", current_version=1, created_by=actor, created_at_utc=now, updated_at_utc=now))
+            session.add(BusinessRuleVersionModel(rule_version_id=f"{rule_id}:1", rule_id=rule_id, version=1, condition_json=json.dumps(condition, sort_keys=True), scope_json="{}", severity=severity, status="DRAFT", created_by=actor, created_at_utc=now))
+        return rule_id
+
+    def set_status(self, rule_id: str, status: str) -> None:
+        status = status.upper()
+        if status not in {"ACTIVE", "DISABLED"}:
+            raise ValueError("Invalid rule status.")
+        with orm_session(self.database_path) as session:
+            rule = session.get(BusinessRuleModel, rule_id)
+            if rule is None: raise ValueError("Rule not found.")
+            rule.status = status
+            version = session.scalar(select(BusinessRuleVersionModel).where(BusinessRuleVersionModel.rule_id == rule_id, BusinessRuleVersionModel.version == rule.current_version))
+            if version is not None: version.status = status
+
     def evaluate_batch(self, batch_id: str) -> int:
         """Evaluate active rules against one already-persisted import batch."""
         now = datetime.now(timezone.utc).isoformat()
