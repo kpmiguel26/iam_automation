@@ -373,6 +373,11 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         summary = service.get_source_file_summary(source_system, source_file)
         if summary is None:
             return "Source file was not found in staging.", 404
+        if load_watcher_health(database_path).get("status") == "SCANNING":
+            message = "The SharePoint watcher is still discovering files. Wait until scanning finishes before starting an import."
+            if request.headers.get("HX-Request"):
+                return render_template("employees/_source_import_message.html", message=message), 200
+            return message, 409
         timeline = source_timeline()
         with orm_session(database_path) as db_session:
             record_ids = list(db_session.scalars(select(IngestionRecordModel.record_id).where(IngestionRecordModel.source_system == source_system, IngestionRecordModel.source_file == summary["source_path"], IngestionRecordModel.status == "STAGED")).all())
