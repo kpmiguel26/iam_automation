@@ -15,7 +15,7 @@ class EmployeeFieldProjectionService:
     """Project only approved fields; source JSON remains audit evidence for now."""
 
     PILOT_FIELDS = {
-        "employee_id", "accessnow_employee_id", "accessnow_nuid", "vendor_employee_id", "work_order_id", "npn",
+        "employee_id", "employee_number", "accessnow_employee_id", "accessnow_nuid", "vendor_employee_id", "nuid_login_id", "npn_login_id", "work_order_id", "npn",
         "first_name", "last_name", "full_name", "email", "work_email", "personal_email", "phone",
         "status", "accessnow_status", "termination_date", "terminated_date", "hire_date", "start_date",
         "vendor_name", "supervisor_name", "manager_name", "job_title", "country", "site_location",
