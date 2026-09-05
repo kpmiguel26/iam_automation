@@ -56,7 +56,7 @@
 
   {% if task.status in ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED'] %}
     <div class="d-flex gap-2 flex-wrap mt-4">
-      <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="window.location.reload()">Close and refresh timeline</button>
+      <button type="button" class="btn btn-primary" onclick="this.closest('.source-import-task').remove()">Close</button>
     </div>
   {% endif %}
 </div>
