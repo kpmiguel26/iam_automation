@@ -20,11 +20,16 @@ from ..infrastructure.sqlite.orm import (
     IngestionRecordModel,
     orm_session,
 )
-from .employee_field_projection_service import EmployeeFieldProjectionService
 
 
 class StarSchemaWriter:
-    """Add compact facts while legacy evidence remains available during transition."""
+    """Persist every non-empty source column as a relational source fact.
+
+    The compact employee projection remains governed separately by
+    ``EmployeeFieldProjectionService``. Source facts are intentionally wider:
+    they are the lossless, queryable replacement for the per-row JSON payload
+    used by imports and reconciliation.
+    """
 
     @staticmethod
     def _id(prefix: str, value: str) -> str:
@@ -64,7 +69,10 @@ class StarSchemaWriter:
                 snapshot.status = "QUARANTINED" if record.status == "QUARANTINED" else "CURRENT"
             for field_key, raw_value in payload.items():
                 field_key = str(field_key).strip().lower()
-                if field_key not in EmployeeFieldProjectionService.PILOT_FIELDS:
+                # Empty cells do not carry source information and would add
+                # substantial row volume for wide workbooks. The field
+                # dimension still records every populated column encountered.
+                if not str(raw_value or "").strip():
                     continue
                 field = session.scalar(select(DimFieldModel).where(DimFieldModel.field_key == field_key))
                 if field is None:

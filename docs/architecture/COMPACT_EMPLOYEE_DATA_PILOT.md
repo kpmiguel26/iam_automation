@@ -15,9 +15,11 @@ workers 1 ── * employee_field_values * ── 1 field_catalog
 
 ## What is included
 
-The pilot starts with identifiers, names, email/phone, status, dates and common
-assignment fields. Unknown report columns are not copied into this layer. A
-new report field is added deliberately by registering it in
+The compact projection starts with identifiers, names, email/phone, status,
+dates and common assignment fields. Unknown report columns are preserved in the
+wide relational source-fact layer (`dim_field` + `fact_worker_field`), but are
+not promoted into this current employee view automatically. A new report field
+is added deliberately by registering it in
 `EmployeeFieldProjectionService.PILOT_FIELDS` and then assigning its catalog
 metadata (type, sensitivity, reportable and rule-enabled).
 

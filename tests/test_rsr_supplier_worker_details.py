@@ -18,14 +18,13 @@ import unittest
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.roster_lock_ingestion_service import RosterLockIngestionService
-from iam_automation.application.file_watch_service import FileWatchService
-from iam_automation.application.shared_request_service import SharedRequestService
+from iam_automation.application.file_watch_service import FileWatchService, load_watcher_manifest
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, WorkerIdentifierModel, WorkerModel, orm_session
+from iam_automation.infrastructure.sqlite.orm import DimFieldModel, FactWorkerFieldModel, IngestionRecordModel, WorkerIdentifierModel, WorkerModel, orm_session
 from iam_automation.source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 
 
@@ -40,6 +39,16 @@ class RsrSupplierWorkerDetailsTests(unittest.TestCase):
             self.assertEqual(result.staged_rows, 615)
             self.assertEqual(result.quarantined_rows, 0)
             self.assertEqual(len(EmployeeService(database).list_staged_records()), result.staged_rows)
+            with orm_session(database) as session:
+                field_keys = set(session.scalars(select(DimFieldModel.field_key)).all())
+                self.assertTrue({
+                    "statement_of_work", "worker_status", "work_order_id", "supplier_reference",
+                    "worker_id", "buyer_reference", "worker", "first_name", "last_name",
+                    "sow_worker_role", "worker_primary_contact", "worker_start_date",
+                    "worker_end_date", "resident_license_number", "lob", "npn",
+                    "resident_license_state",
+                }.issubset(field_keys))
+                self.assertGreater(session.scalar(select(func.count()).select_from(FactWorkerFieldModel)), 600)
 
     def _write_roster(self, path: Path) -> None:
         workbook = Workbook()
@@ -256,14 +265,12 @@ class RsrSupplierWorkerDetailsTests(unittest.TestCase):
             watcher = FileWatchService(database, root)
             self.assertEqual(watcher.scan_once(), 1)
             with orm_session(database) as session:
-                self.assertEqual(session.scalar(select(IngestionRecordModel.source_system).limit(1)), "RSR_SUPPLIER_WORKER_DETAILS")
-                self.assertEqual(session.scalar(select(WorkerModel.worker_id).limit(1)), None)
-            requests = SharedRequestService(root).list_requests(queue=True)
-            self.assertEqual(len(requests), 1)
-            self.assertEqual(requests[0].operation_type, "IMPORT_RSR_SUPPLIER_DETAILS")
-            self.assertEqual(requests[0].payload["record_count"], 1)
+                self.assertIsNone(session.scalar(select(IngestionRecordModel.source_system).limit(1)))
+            manifest = load_watcher_manifest(database)
+            self.assertEqual(len(manifest.get("observations", {})), 1)
+            self.assertEqual(next(iter(manifest["observations"].values()))["source_system"], "RSR_SUPPLIER_WORKER_DETAILS")
             watcher.scan_once()
-            self.assertEqual(len(SharedRequestService(root).list_requests(queue=True)), 1)
+            self.assertEqual(len(load_watcher_manifest(database).get("observations", {})), 1)
 
 
 if __name__ == "__main__":

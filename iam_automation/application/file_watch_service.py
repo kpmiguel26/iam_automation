@@ -106,12 +106,11 @@ def load_watcher_health(database_path: Path) -> dict[str, object]:
 
 
 class FileWatchService:
-    """Detect shared changes and stage source reports safely.
+    """Detect shared changes without writing source reports to SQLite.
 
-    JSON/configuration changes remain notification-driven. Source workbooks and
-    AccessNow reports
-    are validated and staged automatically, but promotion into canonical workers
-    remains an explicit administrative action.
+    The watcher writes only its discovery manifest and health sidecars. Source
+    workbooks and AccessNow reports are staged when a human starts an import;
+    promotion into canonical workers remains an explicit administrative action.
     """
 
     def __init__(self, database_path: Path, sharepoint_root: Path):

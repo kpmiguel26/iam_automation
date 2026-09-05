@@ -386,7 +386,7 @@ class EmployeeService:
     def list_staged_records(self) -> list[dict[str, str]]:
         with orm_session(self.database_path) as session:
             rows = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.status.in_(("STAGED", "MATCHED", "CONFLICT", "UNMATCHED", "AMBIGUOUS"))).order_by(IngestionRecordModel.created_at_utc.desc())).all()
-            return [{"record_id": row.record_id, "batch_id": row.batch_id, "source_system": row.source_system, "source_record_key": row.source_record_key, "source_file": self._source_file_name(row.source_file), "status": row.status, "match_status": row.match_status, "matched_worker_id": row.matched_worker_id or "", "match_reason": row.match_reason, "payload": json.loads(row.normalized_json)} for row in rows]
+            return [{"record_id": row.record_id, "batch_id": row.batch_id, "source_system": row.source_system, "source_record_key": row.source_record_key, "source_file": self._source_file_name(row.source_file), "status": row.status, "match_status": row.match_status, "matched_worker_id": row.matched_worker_id or "", "match_reason": row.match_reason, "payload": StarSchemaWriter.payload_for_record(session, row)} for row in rows]
 
     def pending_source_update_count(self) -> int:
         """Count staged source rows without loading their payloads."""
@@ -582,32 +582,25 @@ class EmployeeService:
             rows = session.execute(statement).all()
         page_rows = rows
         record_ids = [str(row[0]) for row in page_rows]
-        payloads = {}
-        if record_ids:
-            with orm_session(self.database_path) as session:
-                payloads = dict(session.execute(
-                    select(IngestionRecordModel.record_id, IngestionRecordModel.normalized_json)
-                    .where(IngestionRecordModel.record_id.in_(record_ids))
-                ).all())
         result = []
         worker_ids = {str(row[7]) for row in page_rows if row[7]}
         workers = {}
         if worker_ids:
             with orm_session(self.database_path) as session:
                 workers = {worker.worker_id: worker.display_name for worker in session.scalars(select(WorkerModel).where(WorkerModel.worker_id.in_(worker_ids))).all()}
-        for row in page_rows:
-            try:
-                payload = json.loads(payloads.get(str(row[0]), "{}") or "{}")
-            except json.JSONDecodeError:
-                payload = {}
-            import_result = self._source_import_result(row[4], row[6], row[7], row[8])
-            result.append({
-                "record_id": row[0], "batch_id": row[1], "source_system": row[2],
-                "source_record_key": row[3], "worker_name": workers.get(row[7], ""),
-                "status": row[4], "match_status": row[5], "match_reason": row[6],
-                "matched_worker_id": row[7] or "", "observation_state": row[8] or "PENDING",
-                "import_result": import_result, "created_at_utc": row[9], "payload": payload,
-            })
+        with orm_session(self.database_path) as session:
+            records_by_id = {record.record_id: record for record in session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(record_ids))).all()}
+            for row in page_rows:
+                record = records_by_id.get(str(row[0]))
+                payload = StarSchemaWriter.payload_for_record(session, record) if record is not None else {}
+                import_result = self._source_import_result(row[4], row[6], row[7], row[8])
+                result.append({
+                    "record_id": row[0], "batch_id": row[1], "source_system": row[2],
+                    "source_record_key": row[3], "worker_name": workers.get(row[7], ""),
+                    "status": row[4], "match_status": row[5], "match_reason": row[6],
+                    "matched_worker_id": row[7] or "", "observation_state": row[8] or "PENDING",
+                    "import_result": import_result, "created_at_utc": row[9], "payload": payload,
+                })
         return result, total
 
     @staticmethod

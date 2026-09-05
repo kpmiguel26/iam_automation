@@ -115,6 +115,23 @@ malformed row can still be inspected. This intentionally exposes remaining
 legacy readers in reports, matching, promotion and rule screens for the next
 refactor phase.
 
+### Lossless source facts
+
+New imports now write every non-empty normalized workbook column to
+`fact_worker_field`, creating its key in `dim_field` when needed. The
+`employee_field_values` table remains intentionally narrower and continues to
+serve as the governed current-state projection for employee screens and
+reports. This means a new Excel column is queryable immediately as source
+evidence; it only needs an explicit projection entry when it should become a
+canonical employee field.
+
+The valid-row JSON payload is cleared only after these relational facts are
+written. Quarantine rows retain their JSON because the original malformed row
+is needed for review. RSR matching and approval reconstruct their payload from
+the relational facts, so identifiers, dates, contacts, role, LOB, licensing,
+status and other populated columns remain available without storing the
+workbook as a JSON blob.
+
 Legacy profile conversion is available from Administration → Governance. It
 copies governed fields from `worker_profile_versions` into
 `fact_worker_field_history` and current source profiles into
