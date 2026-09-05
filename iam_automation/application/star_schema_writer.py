@@ -103,7 +103,13 @@ class StarSchemaWriter:
                 .where(FactWorkerFieldModel.snapshot_id == snapshot.snapshot_id)
             ).all()
             if rows:
-                return {str(field_key): str(value or "") for field_key, value in rows}
+                payload = {str(field_key): str(value or "") for field_key, value in rows}
+                # Master Roster uses Employee Number as its stable source key.
+                # Preserve that identifier even for batches projected before
+                # employee_number was added to the compact field allow-list.
+                if str(record.source_system) == "MASTER_ROSTER" and not payload.get("employee_number"):
+                    payload["employee_number"] = str(record.source_record_key or "")
+                return payload
         raw = record.normalized_json or record.payload_json or "{}"
         return json.loads(raw)
 
