@@ -35,7 +35,7 @@ from ...source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDeta
 from ...application.notification_service import NotificationService
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.shared_request_service import SharedRequestService
-from ...infrastructure.sqlite.orm import IngestionRecordModel, orm_session
+from ...infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, orm_session
 from ...identity import CurrentUser
 
 
@@ -233,7 +233,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 # Keep the operational inbox focused on files that can still
                 # require action. The complete list remains available in the
                 # dedicated history view and the import workflow.
-                item["files"] = [file for file in files if not file.get("imported") or int(file.get("pending_count", 0) or 0) > 0 or int(file.get("ambiguous_count", 0) or 0) > 0 or int(file.get("conflict_count", 0) or 0) > 0 or (file.get("import_task") or {}).get("status") == "FAILED"]
+                item["files"] = [file for file in files if not file.get("imported") or int(file.get("pending_count", 0) or 0) > 0 or int(file.get("ambiguous_count", 0) or 0) > 0 or int(file.get("conflict_count", 0) or 0) > 0 or (file.get("import_task") or {}).get("status") in {"FAILED", "COMPLETED", "COMPLETED_WITH_WARNINGS"}]
             elif max_files is not None:
                 item["files"] = files[-max_files:]
             timeline.append(item)
@@ -440,6 +440,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         timeline = source_timeline()
         with orm_session(database_path) as db_session:
             record_ids = list(db_session.scalars(select(IngestionRecordModel.record_id).where(IngestionRecordModel.source_system == source_system, IngestionRecordModel.source_file == summary["source_path"], IngestionRecordModel.status == "STAGED")).all())
+            quarantine_rows = int(db_session.scalar(select(ImportBatchModel.quarantine_rows).where(ImportBatchModel.batch_id == select(IngestionRecordModel.batch_id).where(IngestionRecordModel.record_id == record_ids[0]).scalar_subquery())) or 0) if record_ids else 0
         if not record_ids:
             if request.headers.get("HX-Request"):
                 return render_template("employees/_source_import_message.html", message="This file has already been imported."), 200
@@ -467,6 +468,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 "created": 0,
                 "reused": 0,
                 "failed": 0,
+                "quarantined": quarantine_rows,
                 "errors": [],
                 "message": "Queued for import…",
             }

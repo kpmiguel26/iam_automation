@@ -30,6 +30,7 @@
     <div class="import-result-stat"><strong>{{ task.created|int }}</strong><span>New employees</span></div>
     <div class="import-result-stat"><strong>{{ task.reused|int }}</strong><span>Existing employees updated</span></div>
     <div class="import-result-stat"><strong>{{ task.failed|int }}</strong><span>Errors</span></div>
+    <div class="import-result-stat"><strong>{{ task.quarantined|int }}</strong><span>Quarantined rows</span></div>
   </div>
 
   {% if task.status in ['COMPLETED', 'COMPLETED_WITH_WARNINGS'] %}
