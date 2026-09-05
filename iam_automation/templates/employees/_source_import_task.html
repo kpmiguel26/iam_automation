@@ -57,7 +57,8 @@
 
   {% if task.status in ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED'] %}
     <div class="d-flex gap-2 flex-wrap mt-4">
-      <button type="button" class="btn btn-primary" onclick="this.closest('.source-import-task').remove()">Close</button>
+      <button type="button" class="btn btn-primary" onclick="const task=this.closest('.source-import-task'); const link=task.querySelector('[data-review-link]'); link.hidden=false; task.replaceWith(link);">Close</button>
+      <a data-review-link hidden class="btn btn-sm btn-outline-primary" href="{{ task.review_url or '#' }}">Review history</a>
     </div>
   {% endif %}
 </div>

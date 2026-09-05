@@ -233,7 +233,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 # Keep the operational inbox focused on files that can still
                 # require action. The complete list remains available in the
                 # dedicated history view and the import workflow.
-                item["files"] = [file for file in files if not file.get("imported") or int(file.get("pending_count", 0) or 0) > 0 or int(file.get("ambiguous_count", 0) or 0) > 0 or int(file.get("conflict_count", 0) or 0) > 0 or (file.get("import_task") or {}).get("status") in {"FAILED", "COMPLETED", "COMPLETED_WITH_WARNINGS"}]
+                item["files"] = [file for file in files if not file.get("imported") or int(file.get("pending_count", 0) or 0) > 0 or int(file.get("ambiguous_count", 0) or 0) > 0 or int(file.get("conflict_count", 0) or 0) > 0 or (file.get("import_task") or {}).get("status") == "FAILED"]
             elif max_files is not None:
                 item["files"] = files[-max_files:]
             timeline.append(item)
@@ -462,6 +462,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 "source_label": str(current["label"]),
                 "detected_at": str(summary.get("source_modified_at") or summary.get("latest_at", "")),
                 "source_checksum": str(summary.get("source_checksum", "")),
+                "review_url": url_for("employees.source_updates_overview", source=source_system, file=str(summary["source_file"])),
                 "status": "QUEUED",
                 "processed": 0,
                 "total": len(record_ids),
