@@ -502,7 +502,7 @@ def start_file_watcher(preflight_result: PreflightResult):
     if not preflight_result.settings:
         return None
     database_path = preflight_result.settings.local_runtime_db_path
-    watcher = FileWatchService(database_path, preflight_result.settings.sharepoint_root_path).start()
+    watcher = FileWatchService(database_path, preflight_result.settings.sharepoint_root_path).start(interval_seconds=120.0)
     return watcher
 
 

@@ -121,7 +121,7 @@ class FileWatchService:
         # only global notification is emitted explicitly by database publish.
         self.notifications = NotificationService(database_path)
 
-    def start(self, interval_seconds: float = 1.0) -> "FileWatcher":
+    def start(self, interval_seconds: float = 120.0) -> "FileWatcher":
         watcher = FileWatcher(self, interval_seconds)
         watcher.start()
         return watcher
