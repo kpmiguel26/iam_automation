@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from ..infrastructure.sqlite.orm import IngestionRecordModel, WorkerIdentifierModel, WorkerModel
 from .source_date import parse_source_date
 from .status_catalog import is_inactive_source_status, normalize_accessnow_status
-from .star_schema_writer import StarSchemaWriter
+from ..infrastructure.sqlite.star_schema_writer import StarSchemaWriter
 
 
 def source_identifiers(source_system: str, payload: dict[str, object]) -> list[tuple[str, str]]:

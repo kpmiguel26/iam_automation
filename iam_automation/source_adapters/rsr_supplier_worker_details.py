@@ -36,7 +36,7 @@ from ..infrastructure.sqlite.orm import (
 )
 from ..application.ingestion.common import file_modified_at_utc, read_stable_bytes
 from ..application.ingestion.dedup import latest_payload_digests, payload_digest, serialize_payload
-from ..application.star_schema_writer import StarSchemaWriter
+from ..infrastructure.sqlite.star_schema_writer import StarSchemaWriter
 from ..application.worker_history_service import record_worker_version
 from ..application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 from ..application.source_change_service import apply_engagement_changes, material_source_fields, record_changed_lineage

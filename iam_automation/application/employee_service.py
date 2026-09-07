@@ -40,7 +40,7 @@ from .employee_field_projection_service import EmployeeFieldProjectionService
 from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session, source_identifiers
 from .rehire_alert_service import RehireAlertService
-from .star_schema_writer import StarSchemaWriter
+from ..infrastructure.sqlite.star_schema_writer import StarSchemaWriter
 
 
 @dataclass(frozen=True)

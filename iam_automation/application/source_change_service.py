@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from ..infrastructure.sqlite.orm import IngestionRecordModel, WorkerEngagementModel, WorkerIdentifierModel, WorkerSourceLineageModel
 from .source_reconciliation import source_identifiers
-from .star_schema_writer import StarSchemaWriter
+from ..infrastructure.sqlite.star_schema_writer import StarSchemaWriter
 
 
 SOURCE_ENGAGEMENT_FIELDS = {

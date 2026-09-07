@@ -10,7 +10,7 @@ from pathlib import Path
 
 from sqlalchemy import func, select
 
-from .star_schema_writer import StarSchemaWriter
+from ..infrastructure.sqlite.star_schema_writer import StarSchemaWriter
 from ..infrastructure.sqlite.orm import (
     BusinessRuleModel,
     BusinessRuleVersionModel,

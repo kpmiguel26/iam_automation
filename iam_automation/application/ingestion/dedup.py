@@ -53,7 +53,7 @@ def latest_payload_digests(session, source_system: str, source_keys: set[str]) -
 
     # Import lazily to avoid a module cycle. payload_for_record merges delta
     # facts with the previous source observation before hashing the row.
-    from ..star_schema_writer import StarSchemaWriter
+    from ...infrastructure.sqlite.star_schema_writer import StarSchemaWriter
 
     latest: dict[str, str] = {}
     for key, record_id in latest_rows.items():

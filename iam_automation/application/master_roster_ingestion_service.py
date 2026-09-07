@@ -14,7 +14,7 @@ from sqlalchemy import select
 from ..infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, QuarantineRecordModel, orm_session
 from .ingestion.common import file_modified_at_utc, read_stable_bytes
 from .ingestion.dedup import latest_payload_digests, payload_digest, serialize_payload
-from .star_schema_writer import StarSchemaWriter
+from ..infrastructure.sqlite.star_schema_writer import StarSchemaWriter
 from ..source_adapters.master_roster import (
     HEADER_SCAN_LIMIT,
     REQUIRED_HEADERS,

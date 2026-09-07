@@ -38,7 +38,7 @@ from .source_reconciliation import _match_types, ensure_source_identifiers, find
 from .worker_history_service import record_worker_version
 from .source_change_service import apply_engagement_changes, latest_engagement, material_source_fields, record_changed_lineage
 from .ingestion.common import file_modified_at_utc, read_stable_bytes
-from .star_schema_writer import StarSchemaWriter
+from ..infrastructure.sqlite.star_schema_writer import StarSchemaWriter
 from .ingestion.dedup import latest_payload_digests, payload_digest, serialize_payload
 from ..source_adapters.accessnow import key, merge_rows, normalize_row, normalize_status, read_rows, validation_error, value as source_value
 
