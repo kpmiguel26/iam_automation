@@ -25,6 +25,7 @@ from sqlalchemy import func, select
 
 from ..infrastructure.sqlite.orm import (
     ImportBatchModel,
+    DimSourceModel,
     IngestionRecordModel,
     QuarantineRecordModel,
     WorkerEngagementModel,
@@ -323,6 +324,16 @@ class AccessNowIngestionService:
                             else:
                                 apply_engagement_changes(session, engagement, payload, changed_fields, now)
                     self._add_identifiers(session, worker_id, payload, now)
+                    # The target star model is written in the same transaction
+                    # as the approval.  Legacy worker tables remain available
+                    # only while downstream consumers are being migrated.
+                    if session.get(ImportBatchModel, record.batch_id) is not None:
+                        target_employee = StarSchemaWriter.ensure_target_employee(session, worker_id, payload, now)
+                        source = session.scalar(select(DimSourceModel).where(DimSourceModel.source_system == SOURCE_SYSTEM))
+                        if source is not None:
+                            StarSchemaWriter.add_accessnow_identifiers(session, target_employee.employee_key, source, payload, record.record_id, now)
+                            StarSchemaWriter.append_employee_field_history(session, target_employee, source, record.record_id, now)
+                        StarSchemaWriter.add_accessnow_status_event(session, target_employee.employee_key, record, payload, now)
                     if was_created or source_initial:
                         for field_name, value in payload.items():
                             session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=engagement.engagement_id, batch_id=record.batch_id, source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
