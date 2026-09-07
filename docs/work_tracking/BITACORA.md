@@ -398,3 +398,18 @@
 - New employee versions no longer serialize a complete worker snapshot or changed-field list into JSON.
 - Worker scalar and engagement values are written to `fact_worker_field_history` during the same transaction.
 - The legacy migration remains available only for pre-existing databases; fresh testing databases do not need it.
+
+### Relational Rule Evaluation and Transition Review — 2026-09-07
+
+- Created `fix/sqlite-relational-rule-evaluation` from `bbead33`.
+- Rules and source update preview now read relational source facts with legacy fallback.
+- Added four rule regressions covering JSON cleanup, missing-field accuracy,
+  source precedence, evidence, idempotency and transactional rollback/retry.
+- Rules and employee-domain checks: 11 passed. The full-suite baseline had
+  nine failures, independently reproduced before the preview correction.
+- Final full suite: 177 passed, 8 existing failures, 1 skipped; whitespace check passed.
+- Read-only inspection found the repository-root runtime still at revision
+  `0007_source_observations`; no runtime migration or reset was performed.
+- Recorded remaining consumers, deduplication, watcher tests and cleanup work
+  in [the canonical transition review](../bugs/2026-09-sqlite-consumer-transition.md)
+  and `BACKLOG.md`; the overall migration remains active.

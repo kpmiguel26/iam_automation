@@ -1195,7 +1195,7 @@ class EmployeeService:
             seen: set[tuple[str, str, str]] = set()
             incoming_by_field: dict[str, dict[str, str]] = {}
             for row in rows:
-                payload = json.loads(row.normalized_json)
+                payload = StarSchemaWriter.payload_for_record(session, row)
                 changes: list[dict[str, str]] = []
                 for source_field, canonical_field in source_fields.items():
                     incoming = str(payload.get(source_field) or "").strip()

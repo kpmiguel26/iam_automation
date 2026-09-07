@@ -10,6 +10,7 @@ from pathlib import Path
 
 from sqlalchemy import func, select
 
+from .star_schema_writer import StarSchemaWriter
 from ..infrastructure.sqlite.orm import (
     BusinessRuleModel,
     BusinessRuleVersionModel,
@@ -85,12 +86,22 @@ class BusinessRuleService:
                 .where(BusinessRuleVersionModel.version == BusinessRuleModel.current_version)
             ).all()
             records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.batch_id == batch_id)).all()
+            payloads = {}
             for rule, version in rules:
                 scope = self._json(version.scope_json)
                 for record in records:
                     if scope.get("source_system") and scope["source_system"] != record.source_system:
                         continue
-                    payload = self._json(record.normalized_json or record.payload_json)
+                    # Valid imports clear their JSON once source facts exist.
+                    # Read those facts once per record, retaining compatibility
+                    # with legacy and quarantine rows during the transition.
+                    if record.record_id not in payloads:
+                        try:
+                            payload = StarSchemaWriter.payload_for_record(session, record)
+                        except (TypeError, ValueError):
+                            payload = {}
+                        payloads[record.record_id] = payload if isinstance(payload, dict) else {}
+                    payload = payloads[record.record_id]
                     if not self._matches(self._json(version.condition_json), payload):
                         continue
                     fingerprint = hashlib.sha256(f"{rule.rule_id}:{version.rule_version_id}:{record.record_id}".encode()).hexdigest()
