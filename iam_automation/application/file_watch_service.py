@@ -31,13 +31,11 @@ from ..identity import CurrentUser, ROLE_REQUESTER, computer_name
 from .employee_service import EmployeeService
 from .notification_service import NotificationService
 from .business_rule_service import BusinessRuleService
-from .roster_lock_ingestion_service import RosterLockIngestionService
-from .master_roster_ingestion_service import MasterRosterIngestionService
-from .accessnow_ingestion_service import AccessNowIngestionService
 from .shared_request_service import SharedRequestService
 from .workspace_refresh_service import WORKSPACE_IO_LOCK, local_runtime_checksum_path, record_local_runtime_checksum
 from .ingestion.common import read_stable_bytes
 from .ingestion.contracts import quarantine_count
+from .ingestion.orchestrator import IngestionOrchestrator
 from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 
 
@@ -120,6 +118,7 @@ class FileWatchService:
         # File and ingestion notifications belong to this workstation. The
         # only global notification is emitted explicitly by database publish.
         self.notifications = NotificationService(database_path)
+        self.ingestion = IngestionOrchestrator(database_path)
 
     def start(self, interval_seconds: float = 120.0) -> "FileWatcher":
         watcher = FileWatcher(self, interval_seconds)
@@ -191,15 +190,15 @@ class FileWatchService:
                     continue
                 try:
                     if observation.file_kind == "ROSTER_LOCK":
-                        result = RosterLockIngestionService(self.database_path).ingest_file(Path(observation.path))
+                        result = self.ingestion.ingest_file(observation.file_kind, Path(observation.path))
                         imported_batch_ids.add(str(result.batch_id))
                         self._ensure_import_review_request(observation, result)
                         review_requests.add(observation.path)
                     elif observation.file_kind == "MASTER_ROSTER":
-                        result = MasterRosterIngestionService(self.database_path).ingest_file(Path(observation.path))
+                        result = self.ingestion.ingest_file(observation.file_kind, Path(observation.path))
                         imported_batch_ids.add(str(result.batch_id))
                     elif observation.file_kind == "RSR_SUPPLIER_WORKER_DETAILS":
-                        result = RsrSupplierWorkerDetailsAdapter(self.database_path).ingest_file(Path(observation.path))
+                        result = self.ingestion.ingest_file(observation.file_kind, Path(observation.path))
                         imported_batch_ids.add(str(result.batch_id))
                         self._ensure_import_review_request(observation, result)
                         review_requests.add(observation.path)
@@ -207,7 +206,7 @@ class FileWatchService:
                         if accessnow_processed:
                             successful_ingestions.add(observation.path)
                             continue
-                        result = AccessNowIngestionService(self.database_path).ingest_folder(self.sharepoint_root / "acessnow")
+                        result = self.ingestion.ingest_accessnow(self.sharepoint_root / "acessnow")
                         imported_batch_ids.add(str(result.batch_id))
                         self._ensure_import_review_request(observation, result)
                         accessnow_processed = True
