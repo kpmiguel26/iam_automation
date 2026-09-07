@@ -141,7 +141,13 @@ def record_worker_version(
     if requested_fields:
         original_fields = set(requested_fields)
         requested_fields.update({
-            {"resident_license_state": "license_state", "resident_license_number": "license_number", "taxonomy": "taxonomy_code", "worker_primary_contact": "primary_contact_name"}.get(field, field)
+            {
+                "resident_license_state": "license_state", "resident_license_number": "license_number",
+                "taxonomy": "taxonomy_code", "worker_primary_contact": "primary_contact_name",
+                "sponsor_name": "primary_contact_name", "accessnow_status": "status",
+                "worker_status": "status", "fg_status": "status", "worker_start_date": "onboarding_date",
+                "worker_end_date": "production_start_date", "sow_worker_role": "job_title",
+            }.get(field, field)
             for field in original_fields
         })
         values = {

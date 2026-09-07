@@ -51,6 +51,22 @@ class StarSchemaWriter:
         written = 0
         for record in records:
             payload = json.loads(record.normalized_json or "{}")
+            previous = session.scalar(select(IngestionRecordModel).where(
+                IngestionRecordModel.source_system == record.source_system,
+                IngestionRecordModel.source_record_key == record.source_record_key,
+                IngestionRecordModel.record_id != record.record_id,
+                IngestionRecordModel.created_at_utc < record.created_at_utc,
+            ).order_by(IngestionRecordModel.created_at_utc.desc()))
+            previous_payload = cls.payload_for_record(session, previous) if previous is not None else {}
+            # Keep each source snapshot as a delta. The complete source row is
+            # reconstructed by payload_for_record from this delta plus prior
+            # snapshots, while the fact table stores only new evidence.
+            fact_payload = {
+                field_key: raw_value
+                for field_key, raw_value in payload.items()
+                if str(raw_value or "").strip()
+                and str(previous_payload.get(field_key) or "").strip().casefold() != str(raw_value).strip().casefold()
+            }
             snapshot = session.scalar(select(FactSourceSnapshotModel).where(
                 FactSourceSnapshotModel.batch_id == batch_id,
                 FactSourceSnapshotModel.source_id == source.source_id,
@@ -67,7 +83,7 @@ class StarSchemaWriter:
             else:
                 snapshot.worker_id = record.matched_worker_id
                 snapshot.status = "QUARANTINED" if record.status == "QUARANTINED" else "CURRENT"
-            for field_key, raw_value in payload.items():
+            for field_key, raw_value in fact_payload.items():
                 field_key = str(field_key).strip().lower()
                 # Empty cells do not carry source information and would add
                 # substantial row volume for wide workbooks. The field
@@ -103,6 +119,8 @@ class StarSchemaWriter:
     @classmethod
     def payload_for_record(cls, session, record) -> dict[str, str]:
         """Reconstruct a staged payload from star facts, with old-data fallback."""
+        if record is None:
+            return {}
         snapshot = session.get(FactSourceSnapshotModel, cls._id("snapshot", record.record_id))
         if snapshot is not None:
             rows = session.execute(
@@ -110,13 +128,22 @@ class StarSchemaWriter:
                 .join(FactWorkerFieldModel, FactWorkerFieldModel.field_id == DimFieldModel.field_id)
                 .where(FactWorkerFieldModel.snapshot_id == snapshot.snapshot_id)
             ).all()
-            if rows:
-                payload = {str(field_key): str(value or "") for field_key, value in rows}
-                # Master Roster uses Employee Number as its stable source key.
-                # Preserve that identifier even for batches projected before
-                # employee_number was added to the compact field allow-list.
-                if str(record.source_system) == "MASTER_ROSTER" and not payload.get("employee_number"):
-                    payload["employee_number"] = str(record.source_record_key or "")
+            payload = {}
+            previous = session.scalar(select(IngestionRecordModel).where(
+                IngestionRecordModel.source_system == record.source_system,
+                IngestionRecordModel.source_record_key == record.source_record_key,
+                IngestionRecordModel.record_id != record.record_id,
+                IngestionRecordModel.created_at_utc < record.created_at_utc,
+            ).order_by(IngestionRecordModel.created_at_utc.desc()))
+            if previous is not None:
+                payload.update(cls.payload_for_record(session, previous))
+            payload.update({str(field_key): str(value or "") for field_key, value in rows})
+            # Master Roster uses Employee Number as its stable source key.
+            # Preserve that identifier even for delta snapshots that did not
+            # need to repeat the key.
+            if str(record.source_system) == "MASTER_ROSTER" and not payload.get("employee_number"):
+                payload["employee_number"] = str(record.source_record_key or "")
+            if payload:
                 return payload
         raw = record.normalized_json or record.payload_json or "{}"
         return json.loads(raw)

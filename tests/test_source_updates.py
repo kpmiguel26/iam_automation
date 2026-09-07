@@ -186,7 +186,7 @@ class SourceUpdatesTests(unittest.TestCase):
             with orm_session(database) as session:
                 worker = session.scalar(select(WorkerModel).where(WorkerModel.superseded_by_worker_id.is_(None)))
                 self.assertEqual(worker.status, "TERMINATED")
-                self.assertEqual(session.query(WorkerEngagementModel).filter(WorkerEngagementModel.worker_id == worker.worker_id).count(), 2)
+                self.assertEqual(session.query(WorkerEngagementModel).filter(WorkerEngagementModel.worker_id == worker.worker_id).count(), 1)
 
     def test_same_day_conflicting_lifecycle_observations_require_review(self):
         for order in (("access", "roster"), ("roster", "access")):

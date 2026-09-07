@@ -54,9 +54,8 @@ No application was started and no runtime migration or reset was performed.
 
 ## Remaining migration work
 
-1. Extend the no-change decision to AccessNow, Roster Lock and RSR adapters;
-   Master Roster row deduplication now compares normalized non-empty values
-   with relational facts after JSON cleanup.
+1. Validate the no-change decision across AccessNow, Roster Lock, Master Roster
+   and RSR adapters with representative production-shaped files.
 2. Migrate the remaining employee, report, rehire, compact projection and
    history readers. `version_dict` currently returns an empty snapshot for new
    relational versions; writing history is not equivalent to displaying it.

@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import uuid
 
 from sqlalchemy import select
 
-from ..infrastructure.sqlite.orm import DimFieldModel, FactWorkerFieldModel, IngestionRecordModel
+from ..infrastructure.sqlite.orm import IngestionRecordModel
 
 
 def serialize_payload(payload: dict[str, object]) -> str:
@@ -47,24 +46,16 @@ def latest_payload_digests(session, source_system: str, source_keys: set[str]) -
         .order_by(IngestionRecordModel.created_at_utc.desc())
     ).all()
     latest: dict[str, str] = {}
-    latest_rows: dict[str, tuple[str, str]] = {}
+    latest_rows: dict[str, str] = {}
     for record_id, source_key, normalized_json, payload_json in rows:
         key = str(source_key)
         if key not in latest_rows:
-            latest_rows[key] = (str(record_id), str(normalized_json or payload_json or ""))
-    relational: dict[str, dict[str, str]] = {}
-    snapshot_ids = [str(uuid.uuid5(uuid.NAMESPACE_URL, f"iam-automation:snapshot:{record_id}")) for record_id, payload in latest_rows.values() if not payload]
-    if snapshot_ids:
-        for snapshot_id, field_key, value_text in session.execute(
-            select(FactWorkerFieldModel.snapshot_id, DimFieldModel.field_key, FactWorkerFieldModel.value_text)
-            .join(DimFieldModel, DimFieldModel.field_id == FactWorkerFieldModel.field_id)
-            .where(FactWorkerFieldModel.snapshot_id.in_(snapshot_ids))
-        ).all():
-            relational.setdefault(str(snapshot_id), {})[str(field_key)] = str(value_text or "")
-    for key, (record_id, normalized_json) in latest_rows.items():
-        if normalized_json:
-            latest[key] = payload_digest(normalized_json)
-            continue
-        snapshot_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"iam-automation:snapshot:{record_id}"))
-        latest[key] = payload_digest(serialize_payload(relational.get(snapshot_id, {})))
+            latest_rows[key] = str(record_id)
+    # Import lazily to avoid a module cycle. payload_for_record merges delta
+    # facts with the previous source observation before hashing the row.
+    from .star_schema_writer import StarSchemaWriter
+
+    for key, record_id in latest_rows.items():
+        record = session.get(IngestionRecordModel, record_id)
+        latest[key] = payload_digest(serialize_payload(StarSchemaWriter.payload_for_record(session, record)))
     return latest

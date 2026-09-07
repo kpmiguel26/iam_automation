@@ -22,7 +22,7 @@ from openpyxl import Workbook
 from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.roster_lock_ingestion_service import RosterLockIngestionService
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, WorkerEngagementModel, WorkerProfileVersionModel, orm_session
+from iam_automation.infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, WorkerEngagementModel, WorkerProfileVersionModel, WorkerSourceLineageModel, orm_session
 
 
 class EmployeeDomainTests(unittest.TestCase):
@@ -62,7 +62,7 @@ class EmployeeDomainTests(unittest.TestCase):
             self.assertEqual(engagement_total, 1)
             self.assertEqual([item.worker_id for item in engagement_workers], [worker_id])
 
-    def test_same_vendor_identifier_reuses_worker_and_adds_engagement(self):
+    def test_same_vendor_identifier_reuses_worker_and_updates_existing_engagement(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             database = initialize_runtime_database(root / "runtime.sqlite")
@@ -81,11 +81,15 @@ class EmployeeDomainTests(unittest.TestCase):
                 if index == 1:
                     first_worker = worker_id
             detail = service.get_worker(first_worker)
-            self.assertEqual(len(detail["engagements"]), 2)
+            self.assertEqual(len(detail["engagements"]), 1)
             roster_profile = next(item for item in detail["source_profiles"] if item["source_system"] == "ROSTER_LOCK")
             self.assertTrue(roster_profile["source_file"].endswith("roster-2.xlsx"))
             self.assertTrue(roster_profile["observed_at_utc"])
             self.assertTrue(roster_profile["engagements"][0]["source_file"])
+            self.assertEqual(roster_profile["engagements"][0]["project"], "Project B")
+            with orm_session(database) as session:
+                delta_fields = [item.field_name for item in session.query(WorkerSourceLineageModel).filter_by(worker_id=first_worker, source_system="ROSTER_LOCK", source_file=str((root / "roster-2.xlsx").resolve())).all()]
+                self.assertEqual(delta_fields, ["project"])
             self.assertEqual(len(service.list_workers()), 1)
 
             self.assertEqual(service.list_workers()[0].change_type, "UPDATED")

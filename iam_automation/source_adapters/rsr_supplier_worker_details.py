@@ -41,6 +41,7 @@ from ..application.ingestion_dedup import latest_payload_digests, payload_digest
 from ..application.star_schema_writer import StarSchemaWriter
 from ..application.worker_history_service import record_worker_version
 from ..application.source_reconciliation import ensure_source_identifiers, find_worker_matches
+from ..application.source_change_service import apply_engagement_changes, material_source_fields, record_changed_lineage
 
 
 SOURCE_SYSTEM = "RSR_SUPPLIER_WORKER_DETAILS"
@@ -251,7 +252,7 @@ class RsrSupplierWorkerDetailsAdapter:
         if not selected:
             raise ValueError("The RSR import request contains no records.")
         now = _utc_now()
-        applied = created = reused = failed = 0
+        applied = created = reused = changed = unchanged = failed = 0
         errors: list[dict[str, str]] = []
         with orm_session(self.database_path) as session:
             records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(selected), IngestionRecordModel.source_system == SOURCE_SYSTEM)).all()
@@ -308,15 +309,34 @@ class RsrSupplierWorkerDetailsAdapter:
                         created += 1
                     else:
                         reused += 1
-                    engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker_id, WorkerEngagementModel.source_system == SOURCE_SYSTEM, WorkerEngagementModel.work_order_id == payload.get("work_order_id", "")).limit(1))
-                    if engagement is None:
+                    source_initial = False
+                    engagement = session.scalar(select(WorkerEngagementModel).where(WorkerEngagementModel.worker_id == worker_id, WorkerEngagementModel.source_system == SOURCE_SYSTEM, WorkerEngagementModel.work_order_id == payload.get("work_order_id", "")).order_by(WorkerEngagementModel.updated_at_utc.desc()).limit(1))
+                    if was_created:
                         engagement = WorkerEngagementModel(engagement_id=str(uuid.uuid4()), worker_id=worker_id, source_system=SOURCE_SYSTEM, created_at_utc=now, updated_at_utc=now)
                         session.add(engagement)
-                    self._apply_engagement(engagement, payload, now)
+                        self._apply_engagement(engagement, payload, now)
+                        changed_fields = set(payload)
+                    else:
+                        changed_fields = material_source_fields(session, worker_id, SOURCE_SYSTEM, payload)
+                        if changed_fields - {"identifiers"}:
+                            if engagement is None:
+                                source_initial = True
+                                engagement = WorkerEngagementModel(engagement_id=str(uuid.uuid4()), worker_id=worker_id, source_system=SOURCE_SYSTEM, created_at_utc=now, updated_at_utc=now)
+                                session.add(engagement)
+                                self._apply_engagement(engagement, payload, now)
+                            else:
+                                apply_engagement_changes(session, engagement, payload, changed_fields, now)
                     self._add_identifiers(session, worker_id, payload, now)
-                    for field_name, value in payload.items():
-                        session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=engagement.engagement_id, batch_id=record.batch_id, source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
-                    record_worker_version(session, worker_id, actor=actor, change_type="RSR_INITIAL_PROFILE" if was_created else "RSR_SOURCE_ENRICHMENT", source_system=record.source_system, source_file=record.source_file, source_checksum=record.source_checksum, source_record_key=record.source_record_key, changed_fields=list(payload))
+                    if was_created or source_initial:
+                        for field_name, value in payload.items():
+                            session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=engagement.engagement_id, batch_id=record.batch_id, source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
+                    elif changed_fields - {"identifiers"}:
+                        record_changed_lineage(session, record, worker_id, now, changed_fields, engagement.engagement_id if engagement else None)
+                    if changed_fields:
+                        record_worker_version(session, worker_id, actor=actor, change_type="RSR_INITIAL_PROFILE" if was_created else "RSR_SOURCE_ENRICHMENT", source_system=record.source_system, source_file=record.source_file, source_checksum=record.source_checksum, source_record_key=record.source_record_key, changed_fields=sorted(changed_fields))
+                    if not was_created:
+                        changed += int(bool(changed_fields))
+                        unchanged += int(not changed_fields)
                     record.matched_worker_id = worker_id
                     record.match_status = "MATCHED"
                     if was_created:
@@ -333,7 +353,7 @@ class RsrSupplierWorkerDetailsAdapter:
                 if progress_callback:
                     progress_callback(handled, len(records), created, reused, failed)
             session.commit()
-        return {"processed": applied, "applied": applied, "created": created, "reused": reused, "failed": failed, "errors": errors, "actor": actor}
+        return {"processed": applied, "applied": applied, "created": created, "reused": reused, "changed": changed, "unchanged": unchanged, "failed": failed, "errors": errors, "actor": actor}
 
     @staticmethod
     def _read_rows(path: Path) -> list[tuple[int, dict[str, str]]]:

@@ -680,8 +680,20 @@ class EmployeeService:
         EmployeeFieldProjectionService.project_record_in_session(session, record, worker_id, now)
 
     @staticmethod
-    def _record_source_lineage_in_session(session, record: IngestionRecordModel, worker_id: str, now: str) -> None:
-        """Attach every field in an immutable source row to the employee once."""
+    def _record_source_lineage_in_session(
+        session,
+        record: IngestionRecordModel,
+        worker_id: str,
+        now: str,
+        field_names: set[str] | None = None,
+        engagement_id: str | None = None,
+    ) -> None:
+        """Attach selected source fields to the employee once.
+
+        Initial observations retain every populated field. Subsequent source
+        updates pass only their material fields so lineage remains a change
+        log instead of another complete copy of the employee row.
+        """
         payload = StarSchemaWriter.payload_for_record(session, record)
         existing = {
             (item.source_file, item.row_number, item.field_name)
@@ -693,10 +705,12 @@ class EmployeeService:
             )).all()
         }
         for field_name, value in payload.items():
+            if field_names is not None and field_name not in field_names:
+                continue
             if (record.source_file, record.row_number, field_name) in existing:
                 continue
             session.add(WorkerSourceLineageModel(
-                lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=None,
+                lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=engagement_id,
                 batch_id=record.batch_id, source_system=record.source_system,
                 source_file=record.source_file, source_checksum=record.source_checksum,
                 row_number=record.row_number, field_name=field_name,
@@ -803,6 +817,8 @@ class EmployeeService:
             result["processed"] = int(result["processed"]) + int(rsr_result["processed"])
             result["created"] = int(result["created"]) + int(rsr_result.get("created", 0))
             result["reused"] = int(result["reused"]) + int(rsr_result.get("reused", 0))
+            result["changed"] = int(result["changed"]) + int(rsr_result.get("changed", 0))
+            result["unchanged"] = int(result["unchanged"]) + int(rsr_result.get("unchanged", 0))
             result["failed"] = int(result["failed"]) + int(rsr_result["failed"])
             result["errors"] = list(result["errors"]) + list(rsr_result["errors"])
             progress_offset += len(rsr_ids)
@@ -815,6 +831,8 @@ class EmployeeService:
             result["processed"] = int(result["processed"]) + int(accessnow_result["processed"])
             result["created"] = int(result["created"]) + int(accessnow_result.get("created", 0))
             result["reused"] = int(result["reused"]) + int(accessnow_result.get("reused", 0))
+            result["changed"] = int(result["changed"]) + int(accessnow_result.get("changed", 0))
+            result["unchanged"] = int(result["unchanged"]) + int(accessnow_result.get("unchanged", 0))
             result["failed"] = int(result["failed"]) + int(accessnow_result["failed"])
             result["errors"] = list(result["errors"]) + list(accessnow_result["errors"])
             progress_offset += len(accessnow_ids)
@@ -1790,7 +1808,11 @@ class EmployeeService:
         ensure_source_identifiers(session, worker_id, record.source_system, payload, now)
 
         engagement_id = None
-        if created or any(field != "identifiers" for field in material_fields):
+        engagement = session.scalar(select(WorkerEngagementModel).where(
+            WorkerEngagementModel.worker_id == worker_id,
+            WorkerEngagementModel.source_system == record.source_system,
+        ).order_by(WorkerEngagementModel.updated_at_utc.desc(), WorkerEngagementModel.created_at_utc.desc()))
+        if created or (material_fields - {"identifiers"} and engagement is None):
             engagement_id = str(uuid.uuid4())
             session.add(
                 WorkerEngagementModel(
@@ -1837,8 +1859,27 @@ class EmployeeService:
                         observed_at_utc=now,
                     )
                 )
-        elif material_fields:
-            self._record_source_lineage_in_session(session, record, worker_id, now)
+        elif material_fields - {"identifiers"}:
+            engagement_id = engagement.engagement_id
+            field_map = {
+                "vendor_name": "vendor_name", "program": "program", "project": "project", "lob": "lob",
+                "supervisor_name": "supervisor_name", "job_title": "job_title", "country": "country",
+                "site_location": "site_location", "onboarding_date": "onboarding_date",
+                "production_start_date": "production_start_date", "status": "status", "npn": "npn",
+                "resident_license_state": "license_state", "resident_license_number": "license_number",
+                "taxonomy": "taxonomy_code", "taxonomy_code": "taxonomy_code", "key_billable_function": "key_billable_function",
+                "statement_of_work": "statement_of_work", "work_order_id": "work_order_id",
+                "worker_primary_contact": "primary_contact_name",
+            }
+            for source_field in material_fields - {"identifiers"}:
+                attribute = field_map.get(source_field)
+                incoming = str(payload.get(source_field) or "").strip()
+                if source_field == "taxonomy" and not incoming:
+                    incoming = str(payload.get("taxonomy_code") or "").strip()
+                if attribute and incoming:
+                    setattr(engagement, attribute, incoming)
+            engagement.updated_at_utc = now
+            self._record_source_lineage_in_session(session, record, worker_id, now, material_fields - {"identifiers"}, engagement_id)
         record.matched_worker_id = worker_id
         record.match_status = "MATCHED"
         record.status = "MATCHED"

@@ -88,6 +88,9 @@ class MasterRosterIngestionTests(unittest.TestCase):
             with orm_session(database) as session:
                 self.assertEqual(session.query(IngestionRecordModel).count(), 3)
                 self.assertEqual(session.get(ImportBatchModel, first.batch_id).valid_rows, 2)
+                snapshot = session.query(FactSourceSnapshotModel).filter_by(batch_id=second.batch_id, source_record_key="E-100").one()
+                delta_fields = [row[0] for row in session.query(DimFieldModel.field_key).join(FactWorkerFieldModel, FactWorkerFieldModel.field_id == DimFieldModel.field_id).filter(FactWorkerFieldModel.snapshot_id == snapshot.snapshot_id).all()]
+                self.assertEqual(delta_fields, ["program"])
 
     def test_manual_import_promotes_all_staged_rows_to_history_and_creates_workers(self):
         with tempfile.TemporaryDirectory() as tmp:

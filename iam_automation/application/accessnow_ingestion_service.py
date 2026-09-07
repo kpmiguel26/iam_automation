@@ -39,6 +39,7 @@ from ..infrastructure.sqlite.orm import (
 from .publication_state import mark_publication_pending
 from .source_reconciliation import _match_types, ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session, source_identifiers
 from .worker_history_service import record_worker_version
+from .source_change_service import apply_engagement_changes, latest_engagement, material_source_fields, record_changed_lineage
 from .stable_file_read import file_modified_at_utc, read_stable_bytes
 from .star_schema_writer import StarSchemaWriter
 from .status_catalog import normalize_accessnow_status, status_rank
@@ -298,7 +299,7 @@ class AccessNowIngestionService:
         if not selected:
             raise ValueError("The AccessNow import request contains no records.")
         now = datetime.now(timezone.utc).isoformat()
-        processed = created = reused = failed = 0
+        processed = created = reused = changed = unchanged = failed = 0
         errors: list[dict[str, str]] = []
         with orm_session(self.database_path) as session:
             records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(selected), IngestionRecordModel.source_system == SOURCE_SYSTEM)).all()
@@ -344,31 +345,53 @@ class AccessNowIngestionService:
                         reused += 1
                     worker = session.get(WorkerModel, worker_id)
                     old_status = worker.status
+                    changed_fields = set()
+                    source_initial = False
                     # AccessNow is an evidence source. It may populate a
                     # missing canonical value, but it must not replace a
                     # value already supplied by another source.
                     if not worker.first_name and payload.get("first_name"):
                         worker.first_name = payload["first_name"]
+                        changed_fields.add("first_name")
                     if not worker.last_name and payload.get("last_name"):
                         worker.last_name = payload["last_name"]
+                        changed_fields.add("last_name")
                     if not worker.canonical_email and payload.get("email"):
                         worker.canonical_email = payload["email"].lower()
+                        changed_fields.add("canonical_email")
                     worker.display_name = " ".join(part for part in (worker.first_name, worker.last_name) if part)
-                    # Keep one immutable AccessNow observation engagement per
-                    # applied batch instead of updating a prior observation.
-                    engagement = WorkerEngagementModel(engagement_id=str(uuid.uuid4()), worker_id=worker_id, source_system=SOURCE_SYSTEM, created_at_utc=now, updated_at_utc=now)
-                    session.add(engagement)
-                    self._apply_engagement(engagement, payload, now)
+                    if was_created:
+                        engagement = WorkerEngagementModel(engagement_id=str(uuid.uuid4()), worker_id=worker_id, source_system=SOURCE_SYSTEM, created_at_utc=now, updated_at_utc=now)
+                        session.add(engagement)
+                        self._apply_engagement(engagement, payload, now)
+                        changed_fields.update(payload)
+                    else:
+                        changed_fields |= material_source_fields(session, worker_id, SOURCE_SYSTEM, payload)
+                        engagement = latest_engagement(session, worker_id, SOURCE_SYSTEM)
+                        if changed_fields - {"identifiers"}:
+                            if engagement is None:
+                                source_initial = True
+                                engagement = WorkerEngagementModel(engagement_id=str(uuid.uuid4()), worker_id=worker_id, source_system=SOURCE_SYSTEM, created_at_utc=now, updated_at_utc=now)
+                                session.add(engagement)
+                                self._apply_engagement(engagement, payload, now)
+                            else:
+                                apply_engagement_changes(session, engagement, payload, changed_fields, now)
                     self._add_identifiers(session, worker_id, payload, now)
-                    for field_name, value in payload.items():
-                        session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=engagement.engagement_id, batch_id=record.batch_id, source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
+                    if was_created or source_initial:
+                        for field_name, value in payload.items():
+                            session.add(WorkerSourceLineageModel(lineage_id=str(uuid.uuid4()), worker_id=worker_id, engagement_id=engagement.engagement_id, batch_id=record.batch_id, source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, row_number=record.row_number, field_name=field_name, raw_value=str(value or ""), normalized_value=str(value or ""), observed_at_utc=now))
+                    elif changed_fields - {"identifiers"}:
+                        record_changed_lineage(session, record, worker_id, now, changed_fields, engagement.engagement_id if engagement else None)
                     record.matched_worker_id = worker_id
                     record.match_status = "MATCHED"
                     reconcile_worker_status_in_session(session, worker_id)
-                    changed = list(payload)
-                    if old_status != worker.status and "status" not in changed:
-                        changed.append("status")
-                    record_worker_version(session, worker_id, actor=actor, change_type="ACCESSNOW_INITIAL_PROFILE" if was_created else "ACCESSNOW_STATUS_UPDATE", source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, source_record_key=record.source_record_key, changed_fields=changed)
+                    if old_status != worker.status and "status" not in changed_fields:
+                        changed_fields.add("status")
+                    if was_created or changed_fields:
+                        record_worker_version(session, worker_id, actor=actor, change_type="ACCESSNOW_INITIAL_PROFILE" if was_created else "ACCESSNOW_STATUS_UPDATE", source_system=SOURCE_SYSTEM, source_file=record.source_file, source_checksum=record.source_checksum, source_record_key=record.source_record_key, changed_fields=sorted(changed_fields))
+                    if not was_created:
+                        changed += int(bool(changed_fields))
+                        unchanged += int(not changed_fields)
                     if was_created:
                         record.match_reason = "Canonical employee created during approval"
                     elif not record.match_reason:
@@ -387,7 +410,7 @@ class AccessNowIngestionService:
             session.commit()
         if processed:
             mark_publication_pending(self.database_path, actor=actor, reason="AccessNow source update applied locally")
-        return {"processed": processed, "applied": processed, "created": created, "reused": reused, "failed": failed, "errors": errors, "actor": actor}
+        return {"processed": processed, "applied": processed, "created": created, "reused": reused, "changed": changed, "unchanged": unchanged, "failed": failed, "errors": errors, "actor": actor}
 
     @staticmethod
     def _worker_status(payload: dict[str, str]) -> str:

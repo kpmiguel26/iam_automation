@@ -429,14 +429,15 @@
 
 ### No-Change Source Reimports — 2026-09-07
 
-- Created `fix/skip-unchanged-employee-updates` from the pushed workflow fix.
-- Master Roster deduplication now compares non-empty normalized values with
-  relational facts after legacy JSON cleanup; value types are canonicalized as
-  text so workbook numbers and SQLite text compare consistently.
-- Promotion now compares the latest same-source engagement and identifiers.
-  An unchanged matched row updates observation linkage only; it creates no
-  engagement, lineage rows or worker version. Real changes keep relational
-  history with changed fields and dates.
+- Published the no-change implementation on `fix/sqlite-relational-rule-evaluation`.
+- All four import paths now compare non-empty normalized values with relational
+  facts after legacy JSON cleanup; value types are canonicalized as text so
+  workbook numbers and SQLite text compare consistently.
+- An unchanged matched row updates observation linkage only. A real change
+  updates the existing same-source engagement and appends only changed lineage
+  fields and relational history values with their observation date.
+- Each source's first observation remains complete evidence; later snapshots
+  are stored as fact deltas and reconstructed when a full source row is needed.
 - Worker versions store a compact changed-field list and relational history
   values; full snapshot JSON remains empty. The compact projection does not
   advance its change timestamp when the value is unchanged.
