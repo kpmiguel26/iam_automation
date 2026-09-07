@@ -413,3 +413,16 @@
 - Recorded remaining consumers, deduplication, watcher tests and cleanup work
   in [the canonical transition review](../bugs/2026-09-sqlite-consumer-transition.md)
   and `BACKLOG.md`; the overall migration remains active.
+
+### Import Workflow Race and Close Scroll — 2026-09-07
+
+- Created `fix/import-workflow-refresh-scroll` from `5cd07c6`.
+- Protected preparation, progress and terminal results from automatic timeline
+  replacement, including refreshes already in flight before Import.
+- Disabled the submit button during preparation, guarded repeated submissions,
+  and fixed inline Close for already-imported messages.
+- Close retains the selected view and restores workflow focus/scroll after swap.
+- Validation: six JavaScript regressions and eleven webapp tests passed; one
+  webapp test skipped. A synthetic slow-import browser flow passed in Chromium.
+- Windows acceptance steps and scope are recorded in
+  [IW-001](../bugs/2026-09-import-workflow-refresh-scroll.md).

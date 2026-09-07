@@ -47,6 +47,7 @@ are linked.
 | DATA-001–DATA-003 | Active / pilot | Governed field catalog, compact employee values, resilient retryable imports | [Pilot architecture](./architecture/COMPACT_EMPLOYEE_DATA_PILOT.md) |
 | STAR-001–STAR-006 | Active / partial | Source facts and history writes exist; rules and update preview read facts; remaining consumers and retention pending | [September 7 review and tests](./bugs/2026-09-sqlite-consumer-transition.md) |
 | DB-002–DB-003 | Planned | Global polling and publication progress | [Refresh alert bug](./bugs/2026-09-refresh-alert.md) |
+| IW-001 | Implemented / Windows acceptance pending | Protect import progress from stale HTMX refreshes and stabilize Close scroll | [Import workflow verification](./bugs/2026-09-import-workflow-refresh-scroll.md) |
 | Master Roster read-only stories | Mixed | Staging/import completed; matching, comparison and conflict views pending | [Requirements](./work_tracking/2026-08-27_MASTER_ROSTER_REQUIREMENTS.md) |
 | Change-role submission stories | Deferred | Not part of current read-only release | [Scope decision](./work_tracking/DECISIONS.md) |
 
