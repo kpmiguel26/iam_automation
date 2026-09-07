@@ -151,6 +151,93 @@ unmapped columns remain in a governed `source_field_value` extension table
 linked to the source record. This avoids recreating one mixed JSON table while
 preserving new report columns.
 
+## Administrator field assignment
+
+The administrator should choose which source fields participate in employee
+identity, canonical projections, reports and rules. The administrator should
+not create physical columns or select arbitrary database tables from the UI.
+Physical schema changes remain versioned migrations; administrative choices are
+versioned metadata applied by the writer.
+
+Use one governed `dim_field` catalog and these metadata relations:
+
+```text
+dim_field
+  ├── source_field_mapping
+  ├── field_ownership
+  └── employee_identity_rule
+```
+
+### `dim_field`
+
+The catalog describes the business meaning of a field: `field_key`, label,
+data type, sensitivity, reportable flag, rule-enabled flag, target entity,
+target attribute and lifecycle status. It is the single catalog; the current
+duplicate `field_catalog` table should be consolidated into it during the ORM
+migration.
+
+### `source_field_mapping`
+
+This relation maps a source column to a governed field without changing the
+source fact table:
+
+| Field | Purpose |
+|---|---|
+| `source_id`, `source_field_key` | Source report and normalized column name. |
+| `field_id` | Governed semantic field in `dim_field`. |
+| `target_kind` | `IDENTIFIER`, `EMPLOYEE_ATTRIBUTE`, `STATUS_EVENT`, `ASSIGNMENT`, or `SOURCE_ONLY`. |
+| `transform_name` | Allowlisted normalization function; never arbitrary code. |
+| `effective_from`, `effective_to`, `mapping_version` | Historical mapping control. |
+| `active` | Whether new imports use the mapping. |
+
+The same source field may remain source-only while a later mapping promotes it
+to a canonical target. Existing observations are not silently rewritten.
+
+### `field_ownership`
+
+This relation enforces one writer for each canonical field. It stores the
+canonical `field_id`, `owner_source_id`, write policy (`CREATE`, `UPDATE`,
+`READ_ONLY`), effective dates and a locked flag. A field may have many source
+observations, but only one active owner. `status` is permanently locked to
+AccessNow in this policy; changing that owner requires a reviewed migration,
+not an ordinary field-assignment action.
+
+### `employee_identity_rule`
+
+This relation controls which mapped fields can link or create an employee:
+
+| Field | Purpose |
+|---|---|
+| `source_id`, `field_id` | Source and mapped identity field. |
+| `identifier_type` | Value stored in `bridge_employee_identifier`. |
+| `priority` | Order of exact matching across identifiers. |
+| `match_mode` | Initially `EXACT_NORMALIZED`; fuzzy matching remains review-only. |
+| `allow_employee_creation` | Strong identifiers only; names and email default to false. |
+| `unique_scope` | Source/system scope for uniqueness. |
+| `active`, effective dates | Versioned policy lifecycle. |
+
+The initial rules are AccessNow employee ID and NUID, Master Roster employee
+number/NUID/NPN, Roster Lock vendor plus employee ID, and RSR worker ID,
+supplier reference or buyer reference. Manager/sponsor NUID and work-order ID
+remain assignment references and cannot create an employee.
+
+## Recommended operating model
+
+Use a hybrid model:
+
+- Keep frequently joined, typed attributes in `dim_employee` and typed source
+  facts (`status`, dates, vendor, assignment and identity keys).
+- Store newly discovered or low-use fields in `fact_source_field_value` keyed by
+  `dim_field` until a migration promotes them to a typed column.
+- Let administrators map, activate, deactivate and report on fields through
+  metadata. Require review and audit for ownership or identity-rule changes.
+- Apply a mapping version only to new imports by default. Offer an explicit,
+  reviewable reprocess for historical batches.
+
+This gives the administrator control over what is linked to an employee while
+preserving star-schema joins, type safety for core facts, historical lineage
+and a single writer for each canonical field.
+
 ## Employee creation and linking
 
 ```text
