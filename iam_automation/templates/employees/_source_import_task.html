@@ -1,6 +1,6 @@
 <div id="import-task-{{ task.task_id }}" class="source-import-task" role="status" aria-live="polite"
   {% if task.status in ['QUEUED', 'RUNNING'] %}
-  hx-get="{{ url_for('employees.import_source_task_status', task_id=task.task_id) }}" hx-trigger="every 1s" hx-target="this" hx-swap="outerHTML"
+  hx-get="{{ url_for('employees.import_source_task_status', task_id=task.task_id) }}" hx-trigger="every 1s" hx-target="this" hx-swap="outerHTML show:none focus-scroll:false"
   {% endif %}>
   <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
     <div>
@@ -57,9 +57,10 @@
 
   {% if task.status in ['COMPLETED', 'COMPLETED_WITH_WARNINGS', 'FAILED'] %}
     <div class="d-flex gap-2 flex-wrap mt-4">
-      <button type="button" class="btn btn-primary"
-        hx-get="{{ url_for('employees.source_updates_watcher_status', view='ATTENTION') }}"
-        hx-target="#source-timeline" hx-swap="outerHTML">Close</button>
+      <button type="button" class="btn btn-primary" data-import-close
+        hx-get="{{ url_for('employees.source_updates_watcher_status', view=request.args.get('view', 'ATTENTION')) }}"
+        hx-target="#source-timeline" hx-swap="outerHTML show:none focus-scroll:false"
+        hx-sync="closest #source-timeline:drop" hx-disabled-elt="this">Close</button>
       <a class="btn btn-sm btn-outline-primary" href="{{ task.review_url or '#' }}">Review history</a>
     </div>
   {% endif %}

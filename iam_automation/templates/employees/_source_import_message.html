@@ -1,4 +1,7 @@
-<div class="alert alert-success mt-3 mb-0" role="status">
+<div class="source-import-task alert alert-success mt-3 mb-0" role="status">
   {{ message }}
-  <div class="mt-3"><button type="button" class="btn btn-sm btn-primary" data-bs-dismiss="modal">Close</button></div>
+  <div class="mt-3"><button type="button" class="btn btn-sm btn-primary" data-import-close
+    hx-get="{{ url_for('employees.source_updates_watcher_status', view=request.args.get('view', 'ATTENTION')) }}"
+    hx-target="#source-timeline" hx-swap="outerHTML show:none focus-scroll:false"
+    hx-sync="closest #source-timeline:drop" hx-disabled-elt="this">Close</button></div>
 </div>
