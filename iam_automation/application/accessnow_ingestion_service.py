@@ -40,10 +40,10 @@ from .publication_state import mark_publication_pending
 from .source_reconciliation import _match_types, ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session, source_identifiers
 from .worker_history_service import record_worker_version
 from .source_change_service import apply_engagement_changes, latest_engagement, material_source_fields, record_changed_lineage
-from .stable_file_read import file_modified_at_utc, read_stable_bytes
+from .ingestion.common import file_modified_at_utc, read_stable_bytes
 from .star_schema_writer import StarSchemaWriter
 from .status_catalog import normalize_accessnow_status, status_rank
-from .ingestion_dedup import latest_payload_digests, payload_digest, serialize_payload
+from .ingestion.dedup import latest_payload_digests, payload_digest, serialize_payload
 
 
 SOURCE_SYSTEM = "ACCESSNOW"

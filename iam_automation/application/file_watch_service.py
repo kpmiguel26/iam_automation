@@ -36,7 +36,8 @@ from .master_roster_ingestion_service import MasterRosterIngestionService
 from .accessnow_ingestion_service import AccessNowIngestionService
 from .shared_request_service import SharedRequestService
 from .workspace_refresh_service import WORKSPACE_IO_LOCK, local_runtime_checksum_path, record_local_runtime_checksum
-from .stable_file_read import read_stable_bytes
+from .ingestion.common import read_stable_bytes
+from .ingestion.contracts import quarantine_count
 from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 
 
@@ -327,7 +328,7 @@ class FileWatchService:
             "source_checksum": source_checksum,
             "total_rows": int(result.total_rows),
             "staged_rows": int(result.staged_rows),
-            "quarantine_rows": int(getattr(result, "quarantine_rows", getattr(result, "quarantined_rows", 0))),
+            "quarantine_rows": quarantine_count(result),
             "record_previews": EmployeeService(self.database_path).request_previews(record_ids),
         }
         actor = CurrentUser("workspace-watcher", computer_name(), (ROLE_REQUESTER,))

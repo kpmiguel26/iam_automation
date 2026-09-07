@@ -14,8 +14,8 @@ from pathlib import Path
 from sqlalchemy import select
 
 from ..infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, QuarantineRecordModel, orm_session
-from .ingestion_dedup import latest_payload_digests, payload_digest, serialize_payload
-from .stable_file_read import file_modified_at_utc, read_stable_bytes
+from .ingestion.common import file_modified_at_utc, read_stable_bytes
+from .ingestion.dedup import latest_payload_digests, payload_digest, serialize_payload
 from .star_schema_writer import StarSchemaWriter
 
 
