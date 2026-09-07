@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import uuid
-import warnings
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import select
@@ -17,6 +15,16 @@ from ..infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, 
 from .ingestion.common import file_modified_at_utc, read_stable_bytes
 from .ingestion.dedup import latest_payload_digests, payload_digest, serialize_payload
 from .star_schema_writer import StarSchemaWriter
+from ..source_adapters.master_roster import (
+    HEADER_SCAN_LIMIT,
+    REQUIRED_HEADERS,
+    header_index,
+    json_value,
+    normalize_row,
+    read_rows,
+    unique_headers,
+    validation_error,
+)
 
 
 @dataclass(frozen=True)
@@ -34,8 +42,8 @@ class MasterRosterIngestionService:
     """Read and stage Master Roster observations for read-only review."""
 
     SOURCE_SYSTEM = "MASTER_ROSTER"
-    HEADER_SCAN_LIMIT = 12
-    REQUIRED_HEADERS = {"employee number", "employee name"}
+    HEADER_SCAN_LIMIT = HEADER_SCAN_LIMIT
+    REQUIRED_HEADERS = REQUIRED_HEADERS
 
     def __init__(self, database_path: Path):
         self.database_path = database_path
@@ -91,77 +99,24 @@ class MasterRosterIngestionService:
 
     @classmethod
     def _read_rows(cls, content: bytes) -> list[tuple[int, dict[str, object]]]:
-        try:
-            from openpyxl import load_workbook
-        except ModuleNotFoundError as exc:
-            raise RuntimeError("Master Roster ingestion requires openpyxl.") from exc
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="Data Validation extension is not supported and will be removed", category=UserWarning)
-            workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        try:
-            values = list(workbook.active.values)
-            header_index = cls._header_index(values)
-            headers = cls._unique_headers(values[header_index])
-            return [
-                (row_number, dict(zip(headers, row)))
-                for row_number, row in enumerate(values[header_index + 1:], start=header_index + 2)
-                if any(value not in (None, "") for value in row)
-            ]
-        finally:
-            workbook.close()
+        return read_rows(content)
 
     @classmethod
     def _header_index(cls, values: list[tuple[object, ...]]) -> int:
-        for index, row in enumerate(values[: cls.HEADER_SCAN_LIMIT]):
-            normalized = {str(value or "").strip().casefold() for value in row}
-            if cls.REQUIRED_HEADERS.issubset(normalized):
-                return index
-        raise ValueError("Master Roster workbook must contain Employee Number and Employee Name headers.")
+        return header_index(values)
 
     @staticmethod
     def _unique_headers(row: tuple[object, ...]) -> list[str]:
-        counts: dict[str, int] = {}
-        headers: list[str] = []
-        for index, value in enumerate(row, start=1):
-            base = str(value or "").strip() or f"Source Column {index}"
-            counts[base] = counts.get(base, 0) + 1
-            headers.append(base if counts[base] == 1 else f"{base} [{counts[base]}]")
-        return headers
+        return unique_headers(row)
 
     @classmethod
     def _normalize(cls, payload: dict[str, object]) -> dict[str, object]:
-        normalized: dict[str, object] = {}
-        for key, value in payload.items():
-            canonical = "_".join("".join(character.lower() if character.isalnum() else " " for character in key).split())
-            normalized[canonical] = value
-        aliases = {
-            "source_column_1": "source_row_number",
-            "user_principal_name": "email",
-            "logonid": "nuid_login_id",
-            "logonid_2": "npn_login_id",
-        }
-        for source, target in aliases.items():
-            if source in normalized and target not in normalized:
-                normalized[target] = normalized[source]
-        employee_name = str(normalized.get("employee_name") or "").strip()
-        if employee_name and not normalized.get("first_name"):
-            parts = employee_name.split()
-            normalized["first_name"] = parts[0]
-            normalized["last_name"] = " ".join(parts[1:])
-        return normalized
+        return normalize_row(payload)
 
     @staticmethod
     def _validation_error(normalized: dict[str, object], source_key: str, seen_keys: set[str]) -> str | None:
-        if not source_key:
-            return "Required field Employee Number is missing."
-        if not str(normalized.get("employee_name") or "").strip():
-            return "Required field Employee Name is missing."
-        if source_key in seen_keys:
-            return f"Duplicate Master Roster Employee Number detected: {source_key}."
-        return None
+        return validation_error(normalized, source_key, seen_keys)
 
     @staticmethod
     def _json_value(value: object) -> object:
-        if isinstance(value, (datetime, date)):
-            return value.isoformat()
-        return value
+        return json_value(value)
