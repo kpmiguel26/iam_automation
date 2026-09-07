@@ -12,7 +12,7 @@ from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.file_watch_service import FileWatchService
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.application.notification_service import NotificationService
-from iam_automation.infrastructure.sqlite.orm import ChangeRequestModel, ImportBatchModel, IngestionRecordModel, orm_session
+from iam_automation.infrastructure.sqlite.orm import ChangeRequestModel, DimFieldModel, FactSourceSnapshotModel, FactWorkerFieldModel, ImportBatchModel, IngestionRecordModel, orm_session
 
 
 class MasterRosterIngestionTests(unittest.TestCase):
@@ -44,8 +44,11 @@ class MasterRosterIngestionTests(unittest.TestCase):
                 record = session.scalar(select(IngestionRecordModel).where(IngestionRecordModel.source_record_key == "E-100"))
                 self.assertEqual(batch.source_type, "MASTER_ROSTER")
                 self.assertEqual(record.row_number, 5)
-                self.assertIn("nuid_login_id", record.normalized_json)
-                self.assertIn("NPN-100", record.normalized_json)
+                self.assertEqual(record.normalized_json, "")
+                snapshot = session.query(FactSourceSnapshotModel).filter_by(batch_id=result.batch_id, source_record_key="E-100").one()
+                facts = dict(session.query(DimFieldModel.field_key, FactWorkerFieldModel.value_text).join(FactWorkerFieldModel, FactWorkerFieldModel.field_id == DimFieldModel.field_id).filter(FactWorkerFieldModel.snapshot_id == snapshot.snapshot_id).all())
+                self.assertEqual(facts["nuid_login_id"], "NUID-100")
+                self.assertEqual(facts["npn_login_id"], "NPN-100")
                 self.assertEqual(session.query(IngestionRecordModel).count(), 2)
 
     def test_same_file_is_idempotent(self):

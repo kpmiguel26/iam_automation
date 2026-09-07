@@ -115,7 +115,8 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             title = "Source file import completed" if severity == "INFO" else "Source file import completed with warnings"
             message = (
                 f"{source_file}: {processed} row(s) processed, {created} new employee(s), "
-                f"{reused} existing employee(s) updated, and {failed} error(s). "
+                f"{int(result.get('changed', 0) or 0)} employee change(s), "
+                f"{int(result.get('unchanged', 0) or 0)} unchanged row(s), and {failed} error(s). "
                 "Changes are local and require administrator publication to share them."
             )
         try:
@@ -165,6 +166,8 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 total=len(record_ids),
                 created=int(result.get("created", 0)),
                 reused=int(result.get("reused", 0)),
+                changed=int(result.get("changed", 0)),
+                unchanged=int(result.get("unchanged", 0)),
                 failed=failed,
                 errors=list(result.get("errors", [])),
                 completed_at=datetime.now(timezone.utc).isoformat(),
@@ -468,6 +471,8 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 "total": len(record_ids),
                 "created": 0,
                 "reused": 0,
+                "changed": 0,
+                "unchanged": 0,
                 "failed": 0,
                 "quarantined": quarantine_rows,
                 "errors": [],

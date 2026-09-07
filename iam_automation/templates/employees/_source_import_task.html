@@ -28,7 +28,9 @@
 
   <div class="import-result-grid mt-3">
     <div class="import-result-stat"><strong>{{ task.created|int }}</strong><span>New employees</span></div>
-    <div class="import-result-stat"><strong>{{ task.reused|int }}</strong><span>Existing employees updated</span></div>
+    <div class="import-result-stat"><strong>{{ task.reused|int }}</strong><span>Existing employees matched</span></div>
+    <div class="import-result-stat"><strong>{{ task.changed|int }}</strong><span>Employee changes</span></div>
+    <div class="import-result-stat"><strong>{{ task.unchanged|int }}</strong><span>No material changes</span></div>
     <div class="import-result-stat"><strong>{{ task.failed|int }}</strong><span>Errors</span></div>
     <div class="import-result-stat"><strong>{{ task.quarantined|int }}</strong><span>Quarantined rows</span></div>
   </div>

@@ -6,9 +6,9 @@ Evidence: [transition review](../bugs/2026-09-sqlite-consumer-transition.md).
 
 - [x] Read relational facts in business rules and source update preview.
 - [x] Verify rule idempotency, evidence and rollback independently of imports.
-- [ ] Fix row deduplication after JSON cleanup (Master Roster regression).
+- [x] Fix row deduplication after JSON cleanup (Master Roster regression).
 - [ ] Migrate remaining report, employee, rehire, compact projection and history readers.
-- [ ] Replace two outdated JSON assertions with relational content checks.
+- [x] Replace outdated JSON assertions with relational content checks.
 - [ ] Reconcile five existing watcher test failures with current behavior.
 - [ ] Identify the active runtime and validate migration on a disposable copy.
 - [ ] Finish atomic cleanup and controlled retention; legacy JSON removal is incomplete.

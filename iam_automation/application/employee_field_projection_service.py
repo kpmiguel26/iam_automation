@@ -49,10 +49,14 @@ class EmployeeFieldProjectionService:
             if current is None:
                 current = EmployeeFieldValueModel(value_id=str(uuid.uuid4()), worker_id=worker_id, source_system=record.source_system, field_key=field_key)
                 session.add(current)
+                changed = True
+            else:
+                changed = str(current.value_text or "").strip() != value
             current.value_text = value
             current.source_record_key = record.source_record_key
             current.source_record_id = record.record_id
             current.observed_at_utc = observed_at
-            current.updated_at_utc = observed_at
+            if changed:
+                current.updated_at_utc = observed_at
             count += 1
         return count

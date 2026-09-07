@@ -94,7 +94,9 @@ def record_worker_version(
         version_number=next_version,
         change_type=change_type,
         snapshot_json="",
-        changed_fields_json="",
+        # Keep only the compact list of fields that changed. The full worker
+        # snapshot is represented by relational history rows below.
+        changed_fields_json=json.dumps(sorted(set(changed_fields or []))),
         source_system=source_system,
         source_file=source_file,
         source_checksum=source_checksum,
@@ -116,14 +118,37 @@ def record_worker_version(
         prefix = f"engagement.{engagement.source_system or 'UNKNOWN'}"
         values.update({
             f"{prefix}.vendor_name": engagement.vendor_name,
+            f"{prefix}.program": engagement.program,
+            f"{prefix}.project": engagement.project,
+            f"{prefix}.lob": engagement.lob,
             f"{prefix}.job_title": engagement.job_title,
             f"{prefix}.supervisor_name": engagement.supervisor_name,
             f"{prefix}.country": engagement.country,
             f"{prefix}.site_location": engagement.site_location,
+            f"{prefix}.onboarding_date": engagement.onboarding_date,
+            f"{prefix}.production_start_date": engagement.production_start_date,
             f"{prefix}.work_order_id": engagement.work_order_id,
             f"{prefix}.npn": engagement.npn,
+            f"{prefix}.license_state": engagement.license_state,
+            f"{prefix}.license_number": engagement.license_number,
+            f"{prefix}.taxonomy_code": engagement.taxonomy_code,
+            f"{prefix}.key_billable_function": engagement.key_billable_function,
+            f"{prefix}.statement_of_work": engagement.statement_of_work,
+            f"{prefix}.primary_contact_name": engagement.primary_contact_name,
             f"{prefix}.status": engagement.status,
         })
+    requested_fields = set(changed_fields or [])
+    if requested_fields:
+        original_fields = set(requested_fields)
+        requested_fields.update({
+            {"resident_license_state": "license_state", "resident_license_number": "license_number", "taxonomy": "taxonomy_code", "worker_primary_contact": "primary_contact_name"}.get(field, field)
+            for field in original_fields
+        })
+        values = {
+            field_key: value
+            for field_key, value in values.items()
+            if field_key in requested_fields or field_key.rsplit(".", 1)[-1] in requested_fields
+        }
     for field_key, value in values.items():
         session.add(FactWorkerFieldHistoryModel(
             history_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"iam-automation:history:{item.version_id}:{field_key}")),

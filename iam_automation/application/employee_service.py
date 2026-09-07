@@ -38,7 +38,7 @@ from ..infrastructure.sqlite.orm import (
 from .worker_history_service import record_worker_version, version_dict
 from .employee_field_projection_service import EmployeeFieldProjectionService
 from .publication_state import mark_publication_pending
-from .source_reconciliation import ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session
+from .source_reconciliation import ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session, source_identifiers
 from .rehire_alert_service import RehireAlertService
 from .star_schema_writer import StarSchemaWriter
 
@@ -767,7 +767,7 @@ class EmployeeService:
             record_ids = self.resolve_import_record_ids(request_payload)
         with orm_session(self.database_path) as session:
             source_systems = set(session.scalars(select(IngestionRecordModel.source_system).where(IngestionRecordModel.record_id.in_(record_ids))).all())
-        result: dict[str, object] = {"processed": 0, "created": 0, "reused": 0, "failed": 0, "errors": []}
+        result: dict[str, object] = {"processed": 0, "created": 0, "reused": 0, "changed": 0, "unchanged": 0, "failed": 0, "errors": []}
         roster_ids = []
         rsr_ids = []
         accessnow_ids = []
@@ -826,6 +826,8 @@ class EmployeeService:
             result["processed"] = int(result["processed"]) + int(roster_result["processed"])
             result["created"] = int(result["created"]) + int(roster_result["created"])
             result["reused"] = int(result["reused"]) + int(roster_result["reused"])
+            result["changed"] = int(result["changed"]) + int(roster_result.get("changed", 0))
+            result["unchanged"] = int(result["unchanged"]) + int(roster_result.get("unchanged", 0))
             result["failed"] = int(result["failed"]) + int(roster_result["failed"])
             result["errors"] = list(result["errors"]) + list(roster_result["errors"])
             progress_offset += len(roster_ids)
@@ -1626,7 +1628,7 @@ class EmployeeService:
                 record = session.get(IngestionRecordModel, str(latest["record_id"]))
                 if record is None:
                     raise ValueError("The newest source observation was not found.")
-                worker_id, _ = self._promote_record_in_session(session, record, now, actor)
+                worker_id, _, _ = self._promote_record_in_session(session, record, now, actor)
                 session.commit()
         else:
             result = self.apply_approved_import_records([str(latest["record_id"])], actor)
@@ -1699,7 +1701,51 @@ class EmployeeService:
             "latest_created_at": latest.get("created_at_utc", ""),
         }
 
-    def _promote_record_in_session(self, session, record: IngestionRecordModel, now: str, actor: str = "system") -> tuple[str, bool]:
+    @staticmethod
+    def _comparison_text(value: object) -> str:
+        return " ".join(str(value or "").strip().casefold().split())
+
+    @classmethod
+    def _material_source_fields(cls, session, worker_id: str, source_system: str, payload: dict[str, object]) -> set[str]:
+        """Return source fields that differ from the latest same-source engagement.
+
+        Blank incoming cells are treated as missing evidence and never erase a
+        current value. Identifiers are tracked separately because adding a new
+        source identifier is a material change even when engagement values are
+        unchanged.
+        """
+        field_map = {
+            "vendor_name": "vendor_name", "program": "program", "project": "project",
+            "lob": "lob", "supervisor_name": "supervisor_name", "job_title": "job_title",
+            "country": "country", "site_location": "site_location", "onboarding_date": "onboarding_date",
+            "production_start_date": "production_start_date", "status": "status", "npn": "npn",
+            "resident_license_state": "license_state", "resident_license_number": "license_number",
+            "taxonomy": "taxonomy_code", "taxonomy_code": "taxonomy_code", "key_billable_function": "key_billable_function",
+            "statement_of_work": "statement_of_work", "work_order_id": "work_order_id",
+            "worker_primary_contact": "primary_contact_name",
+        }
+        latest = session.scalar(select(WorkerEngagementModel).where(
+            WorkerEngagementModel.worker_id == worker_id,
+            WorkerEngagementModel.source_system == source_system,
+        ).order_by(WorkerEngagementModel.updated_at_utc.desc(), WorkerEngagementModel.created_at_utc.desc()))
+        changes = set()
+        for source_field, attribute in field_map.items():
+            incoming = cls._comparison_text(payload.get(source_field))
+            if incoming and (latest is None or incoming != cls._comparison_text(getattr(latest, attribute, ""))):
+                changes.add(source_field)
+        known_identifiers = {
+            (str(item.identifier_type), cls._comparison_text(item.normalized_value))
+            for item in session.scalars(select(WorkerIdentifierModel).where(
+                WorkerIdentifierModel.worker_id == worker_id,
+                WorkerIdentifierModel.source_system == source_system,
+                WorkerIdentifierModel.active.is_(True),
+            )).all()
+        }
+        if any((identifier_type, cls._comparison_text(value)) not in known_identifiers for identifier_type, value in source_identifiers(source_system, payload)):
+            changes.add("identifiers")
+        return changes
+
+    def _promote_record_in_session(self, session, record: IngestionRecordModel, now: str, actor: str = "system") -> tuple[str, bool, bool]:
         """Promote one record while the caller owns the transaction."""
         payload = StarSchemaWriter.payload_for_record(session, record)
         identifier_value = str(payload.get("vendor_employee_id") or payload.get("employee_number") or payload.get("nuid_login_id") or payload.get("npn_login_id") or "").strip()
@@ -1740,54 +1786,59 @@ class EmployeeService:
         else:
             worker_id = worker.worker_id
         old_status = str(worker.status or "")
+        material_fields = set() if created else self._material_source_fields(session, worker_id, record.source_system, payload)
         ensure_source_identifiers(session, worker_id, record.source_system, payload, now)
 
-        engagement_id = str(uuid.uuid4())
-        session.add(
-            WorkerEngagementModel(
-                engagement_id=engagement_id,
-                worker_id=worker_id,
-                vendor_name=str(payload.get("vendor_name") or ""),
-                program=str(payload.get("program") or ""),
-                project=str(payload.get("project") or ""),
-                lob=str(payload.get("lob") or ""),
-                supervisor_name=str(payload.get("supervisor_name") or ""),
-                job_title=str(payload.get("job_title") or ""),
-                country=str(payload.get("country") or ""),
-                site_location=str(payload.get("site_location") or ""),
-                onboarding_date=str(payload.get("onboarding_date") or ""),
-                production_start_date=str(payload.get("production_start_date") or ""),
-                status=str(payload.get("status") or "PENDING"),
-                npn=str(payload.get("npn") or ""),
-                license_state=str(payload.get("resident_license_state") or ""),
-                license_number=str(payload.get("resident_license_number") or ""),
-                taxonomy_code=str(payload.get("taxonomy_code") or ""),
-                key_billable_function=str(payload.get("key_billable_function") or ""),
-                statement_of_work=str(payload.get("statement_of_work") or ""),
-                work_order_id=str(payload.get("work_order_id") or ""),
-                primary_contact_name=str(payload.get("worker_primary_contact") or ""),
-                source_system=record.source_system,
-                created_at_utc=now,
-                updated_at_utc=now,
-            )
-        )
-        for field_name, value in payload.items():
+        engagement_id = None
+        if created or any(field != "identifiers" for field in material_fields):
+            engagement_id = str(uuid.uuid4())
             session.add(
-                WorkerSourceLineageModel(
-                    lineage_id=str(uuid.uuid4()),
-                    worker_id=worker_id,
+                WorkerEngagementModel(
                     engagement_id=engagement_id,
-                    batch_id=record.batch_id,
+                    worker_id=worker_id,
+                    vendor_name=str(payload.get("vendor_name") or ""),
+                    program=str(payload.get("program") or ""),
+                    project=str(payload.get("project") or ""),
+                    lob=str(payload.get("lob") or ""),
+                    supervisor_name=str(payload.get("supervisor_name") or ""),
+                    job_title=str(payload.get("job_title") or ""),
+                    country=str(payload.get("country") or ""),
+                    site_location=str(payload.get("site_location") or ""),
+                    onboarding_date=str(payload.get("onboarding_date") or ""),
+                    production_start_date=str(payload.get("production_start_date") or ""),
+                    status=str(payload.get("status") or "PENDING"),
+                    npn=str(payload.get("npn") or ""),
+                    license_state=str(payload.get("resident_license_state") or ""),
+                    license_number=str(payload.get("resident_license_number") or ""),
+                    taxonomy_code=str(payload.get("taxonomy_code") or payload.get("taxonomy") or ""),
+                    key_billable_function=str(payload.get("key_billable_function") or ""),
+                    statement_of_work=str(payload.get("statement_of_work") or ""),
+                    work_order_id=str(payload.get("work_order_id") or ""),
+                    primary_contact_name=str(payload.get("worker_primary_contact") or ""),
                     source_system=record.source_system,
-                    source_file=record.source_file,
-                    source_checksum=record.source_checksum,
-                    row_number=record.row_number,
-                    field_name=field_name,
-                    raw_value=str(value or ""),
-                    normalized_value=str(value or ""),
-                    observed_at_utc=now,
+                    created_at_utc=now,
+                    updated_at_utc=now,
                 )
             )
+            for field_name, value in payload.items():
+                session.add(
+                    WorkerSourceLineageModel(
+                        lineage_id=str(uuid.uuid4()),
+                        worker_id=worker_id,
+                        engagement_id=engagement_id,
+                        batch_id=record.batch_id,
+                        source_system=record.source_system,
+                        source_file=record.source_file,
+                        source_checksum=record.source_checksum,
+                        row_number=record.row_number,
+                        field_name=field_name,
+                        raw_value=str(value or ""),
+                        normalized_value=str(value or ""),
+                        observed_at_utc=now,
+                    )
+                )
+        elif material_fields:
+            self._record_source_lineage_in_session(session, record, worker_id, now)
         record.matched_worker_id = worker_id
         record.match_status = "MATCHED"
         record.status = "MATCHED"
@@ -1797,21 +1848,22 @@ class EmployeeService:
         record.last_seen_at_utc = now
         self._upsert_source_profile(session, record, worker_id, now)
         reconcile_worker_status_in_session(session, worker_id)
-        changed_fields = list(payload)
+        changed_fields = sorted(material_fields)
         if old_status != worker.status and "status" not in changed_fields:
             changed_fields.append("status")
-        record_worker_version(
-            session,
-            worker_id,
-            actor=actor,
-            change_type=f"{record.source_system}_INITIAL_PROFILE" if created else f"{record.source_system}_ENRICHMENT",
-            source_system=record.source_system,
-            source_file=record.source_file,
-            source_checksum=record.source_checksum,
-            source_record_key=record.source_record_key,
-            changed_fields=changed_fields,
-        )
-        return worker_id, created
+        if created or changed_fields:
+            record_worker_version(
+                session,
+                worker_id,
+                actor=actor,
+                change_type=f"{record.source_system}_INITIAL_PROFILE" if created else f"{record.source_system}_ENRICHMENT",
+                source_system=record.source_system,
+                source_file=record.source_file,
+                source_checksum=record.source_checksum,
+                source_record_key=record.source_record_key,
+                changed_fields=changed_fields,
+            )
+        return worker_id, created, bool(created or changed_fields)
 
     def promote_all_staged_records(self, actor: str) -> dict[str, object]:
         """Promote all pending staged records in one transaction.
@@ -1822,7 +1874,7 @@ class EmployeeService:
         """
         now = datetime.now(timezone.utc).isoformat()
         errors: list[dict[str, str]] = []
-        processed = created = reused = 0
+        processed = created = reused = changed = unchanged = 0
         with orm_session(self.database_path) as session:
             records = session.scalars(
                 select(IngestionRecordModel)
@@ -1831,16 +1883,18 @@ class EmployeeService:
             ).all()
             for record in records:
                 try:
-                    _, was_created = self._promote_record_in_session(session, record, now, actor)
+                    _, was_created, was_changed = self._promote_record_in_session(session, record, now, actor)
                     processed += 1
                     if was_created:
                         created += 1
                     else:
                         reused += 1
+                        changed += int(was_changed)
+                        unchanged += int(not was_changed)
                 except (ValueError, json.JSONDecodeError) as exc:
                     errors.append({"record_id": record.record_id, "source_record_key": record.source_record_key, "error": str(exc)})
             session.commit()
-        return {"processed": processed, "created": created, "reused": reused, "failed": len(errors), "errors": errors}
+        return {"processed": processed, "created": created, "reused": reused, "changed": changed, "unchanged": unchanged, "failed": len(errors), "errors": errors}
 
     def promote_staged_records(
         self,
@@ -1854,7 +1908,7 @@ class EmployeeService:
         if not selected_ids:
             raise ValueError("The import request contains no staged records.")
         now = datetime.now(timezone.utc).isoformat()
-        processed = created = reused = 0
+        processed = created = reused = changed = unchanged = 0
         errors: list[dict[str, str]] = []
         with orm_session(self.database_path) as session:
             records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.record_id.in_(selected_ids))).all()
@@ -1867,17 +1921,19 @@ class EmployeeService:
                         progress_callback(handled, len(records), created, reused, len(errors))
                     continue
                 try:
-                    _, was_created = self._promote_record_in_session(session, record, now, actor)
+                    _, was_created, was_changed = self._promote_record_in_session(session, record, now, actor)
                     processed += 1
                     created += int(was_created)
                     reused += int(not was_created)
+                    changed += int(was_changed)
+                    unchanged += int(not was_created and not was_changed)
                 except (ValueError, json.JSONDecodeError) as exc:
                     errors.append({"record_id": record.record_id, "error": str(exc)})
                 handled += 1
                 if progress_callback:
                     progress_callback(handled, len(records), created, reused, len(errors))
             session.commit()
-        return {"processed": processed, "created": created, "reused": reused, "failed": len(errors), "errors": errors}
+        return {"processed": processed, "created": created, "reused": reused, "changed": changed, "unchanged": unchanged, "failed": len(errors), "errors": errors}
 
     def promote_ingestion_record(self, record_id: str, actor: str) -> str:
         """Create a pending worker and engagement from one staged record.
@@ -1892,7 +1948,7 @@ class EmployeeService:
                 raise ValueError("Ingestion record was not found.")
             if record.status not in {"STAGED", "MATCHED"}:
                 raise ValueError(f"Ingestion record cannot be promoted from status {record.status}.")
-            worker_id, _ = self._promote_record_in_session(session, record, now, actor)
+            worker_id, _, _ = self._promote_record_in_session(session, record, now, actor)
             return worker_id
 
     def merge_workers(self, survivor_worker_id: str, duplicate_worker_id: str, reason: str, actor: str) -> dict[str, object]:

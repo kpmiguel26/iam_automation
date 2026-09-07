@@ -1,6 +1,6 @@
 # SQLite consumer transition — September 7, 2026
 
-Status: Active. Branch: `fix/sqlite-relational-rule-evaluation`.
+Status: Active. Branch: `fix/skip-unchanged-employee-updates`.
 
 ## Confirmed state
 
@@ -29,6 +29,15 @@ No application was started and no runtime migration or reset was performed.
   `json.loads("")` after a fresh import.
 - A simulated evaluation failure rolls back findings, preserves the committed
   import and facts, and allows a successful retry.
+- Master Roster reimports now compare canonical non-empty values against the
+  latest relational source facts, so an unchanged matched row records only its
+  observation and creates no duplicate engagement, lineage rows or worker
+  version. Real changes write relational history with a compact changed-field
+  list and timestamp.
+- The import result and review card distinguish matched rows, material employee
+  changes and rows with no material changes. Valid source rows keep their
+  relational facts while legacy payload JSON remains empty; quarantine payloads
+  are retained for review.
 
 ## Verification
 
@@ -38,20 +47,20 @@ No application was started and no runtime migration or reset was performed.
 - Initial full suite: 176 passed, 9 failed, 1 skipped. All nine failures were
   reproduced with the baseline rule implementation in the four failing test
   modules (24 passed, 9 failed); no workspace source replacement was needed.
-- Final full suite after the preview correction: **177 passed, 8 failed,
-  1 skipped** (8.09 seconds). The eight remaining failures existed on the
-  baseline. `git diff --check` passed. Remaining failures and reader work are
+- Final full suite after the no-change transition: **181 passed, 5 failed,
+  1 skipped** (8.01 seconds). The five remaining watcher failures existed on
+  the baseline. `git diff --check` passed. Remaining failures and reader work are
   tracked in `../work_tracking/BACKLOG.md`.
 
 ## Remaining migration work
 
-1. Fix `ingestion_dedup.latest_payload_digests`: it compares incoming payloads
-   with cleared JSON, so unchanged Master Roster rows are staged again.
-   Comparisons must account for empty fields omitted by relational storage.
+1. Extend the no-change decision to AccessNow, Roster Lock and RSR adapters;
+   Master Roster row deduplication now compares normalized non-empty values
+   with relational facts after JSON cleanup.
 2. Migrate the remaining employee, report, rehire, compact projection and
    history readers. `version_dict` currently returns an empty snapshot for new
    relational versions; writing history is not equivalent to displaying it.
-3. Update tests that explicitly require source/version JSON, preserving their
+3. Update remaining tests that explicitly require source/version JSON, keeping
    checks for actual identifiers and historical values in relational tables.
 4. Reconcile five watcher test failures with current notification and manual
    ingestion behavior; those failures also occur on the baseline.

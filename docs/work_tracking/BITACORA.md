@@ -407,7 +407,7 @@
   source precedence, evidence, idempotency and transactional rollback/retry.
 - Rules and employee-domain checks: 11 passed. The full-suite baseline had
   nine failures, independently reproduced before the preview correction.
-- Final full suite: 177 passed, 8 existing failures, 1 skipped; whitespace check passed.
+- Final full suite before this increment: 177 passed, 8 existing failures, 1 skipped; whitespace check passed.
 - Read-only inspection found the repository-root runtime still at revision
   `0007_source_observations`; no runtime migration or reset was performed.
 - Recorded remaining consumers, deduplication, watcher tests and cleanup work
@@ -426,3 +426,19 @@
   webapp test skipped. A synthetic slow-import browser flow passed in Chromium.
 - Windows acceptance steps and scope are recorded in
   [IW-001](../bugs/2026-09-import-workflow-refresh-scroll.md).
+
+### No-Change Source Reimports — 2026-09-07
+
+- Created `fix/skip-unchanged-employee-updates` from the pushed workflow fix.
+- Master Roster deduplication now compares non-empty normalized values with
+  relational facts after legacy JSON cleanup; value types are canonicalized as
+  text so workbook numbers and SQLite text compare consistently.
+- Promotion now compares the latest same-source engagement and identifiers.
+  An unchanged matched row updates observation linkage only; it creates no
+  engagement, lineage rows or worker version. Real changes keep relational
+  history with changed fields and dates.
+- Worker versions store a compact changed-field list and relational history
+  values; full snapshot JSON remains empty. The compact projection does not
+  advance its change timestamp when the value is unchanged.
+- Import results expose matched, changed and unchanged counts. Added regression
+  coverage for identical reimports and relational history assertions.

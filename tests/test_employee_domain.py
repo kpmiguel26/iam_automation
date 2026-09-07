@@ -22,7 +22,7 @@ from openpyxl import Workbook
 from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.roster_lock_ingestion_service import RosterLockIngestionService
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, orm_session
+from iam_automation.infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, WorkerEngagementModel, WorkerProfileVersionModel, orm_session
 
 
 class EmployeeDomainTests(unittest.TestCase):
@@ -89,6 +89,38 @@ class EmployeeDomainTests(unittest.TestCase):
             self.assertEqual(len(service.list_workers()), 1)
 
             self.assertEqual(service.list_workers()[0].change_type, "UPDATED")
+
+    def test_reimport_without_material_changes_does_not_create_engagement_or_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            database = initialize_runtime_database(root / "runtime.sqlite")
+            source = root / "roster.xlsx"
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.append(["Vendor Name", "Vendor employee ID", "Employee first name", "Employee last name", "Job Title", "Program"])
+            sheet.append(["TTEC", "E100", "Ada", "Lovelace", "Analyst", "IAM"])
+            workbook.save(source)
+            ingestion = RosterLockIngestionService(database)
+            ingestion.ingest_file(source)
+            service = EmployeeService(database)
+            with orm_session(database) as session:
+                first = session.query(IngestionRecordModel).one()
+                worker_id = service.promote_ingestion_record(first.record_id, "admin")
+                before_engagements = session.query(WorkerEngagementModel).filter_by(worker_id=worker_id).count()
+                before_versions = session.query(WorkerProfileVersionModel).filter_by(worker_id=worker_id).count()
+                session.add(ImportBatchModel(batch_id="reimport-batch", filename="roster-copy.xlsx", source_type="ROSTER_LOCK", status="COMPLETED", total_rows=1, valid_rows=1, created_by="admin"))
+                session.add(IngestionRecordModel(record_id="reimport-record", batch_id="reimport-batch", source_system="ROSTER_LOCK", source_file="/source/roster-copy.xlsx", source_checksum="copy-checksum", row_number=2, source_record_key="E100", normalized_json='{"job_title":"Analyst","program":"IAM","vendor_employee_id":"E100","first_name":"Ada","last_name":"Lovelace","vendor_name":"TTEC"}', payload_json="", status="STAGED", created_at_utc="2026-09-07T12:00:00+00:00"))
+
+            result = service.promote_staged_records(["reimport-record"], "admin")
+
+            self.assertEqual(result["processed"], 1)
+            self.assertEqual(result["created"], 0)
+            self.assertEqual(result["reused"], 1)
+            self.assertEqual(result["changed"], 0)
+            self.assertEqual(result["unchanged"], 1)
+            with orm_session(database) as session:
+                self.assertEqual(session.query(WorkerEngagementModel).filter_by(worker_id=worker_id).count(), before_engagements)
+                self.assertEqual(session.query(WorkerProfileVersionModel).filter_by(worker_id=worker_id).count(), before_versions)
 
     def test_directory_change_badge_classifies_termination_and_missing_history(self):
         self.assertEqual(EmployeeService._directory_change_type("ACTIVE", "Terminated", "ROSTER_LOCK_ENRICHMENT"), "TERMINATION")

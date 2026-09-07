@@ -21,7 +21,7 @@ from pathlib import Path
 from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.worker_history_service import backfill_missing_worker_versions, record_worker_version
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.infrastructure.sqlite.orm import WorkerDiscrepancyModel, WorkerMergeEventModel, WorkerModel, WorkerProfileVersionModel, orm_session
+from iam_automation.infrastructure.sqlite.orm import FactWorkerFieldHistoryModel, WorkerDiscrepancyModel, WorkerMergeEventModel, WorkerModel, WorkerProfileVersionModel, orm_session
 
 
 class WorkerHistoryTests(unittest.TestCase):
@@ -55,8 +55,12 @@ class WorkerHistoryTests(unittest.TestCase):
 
                 versions = session.query(WorkerProfileVersionModel).filter_by(worker_id=worker_id).order_by(WorkerProfileVersionModel.version_number).all()
                 self.assertEqual([item.version_number for item in versions], [1, 2])
-                self.assertIn('"first_name": "Ada"', versions[0].snapshot_json)
-                self.assertIn('"first_name": "Grace"', versions[1].snapshot_json)
+                self.assertEqual(versions[0].snapshot_json, "")
+                self.assertEqual(versions[1].snapshot_json, "")
+                history = session.query(FactWorkerFieldHistoryModel).filter_by(worker_id=worker_id).all()
+                values = {(item.version_number, item.field_key): item.value_text for item in history}
+                self.assertEqual(values[(1, "first_name")], "Ada")
+                self.assertEqual(values[(2, "first_name")], "Grace")
                 self.assertEqual(worker.record_version, 2)
 
     def test_merge_preserves_duplicate_as_superseded_history(self):
