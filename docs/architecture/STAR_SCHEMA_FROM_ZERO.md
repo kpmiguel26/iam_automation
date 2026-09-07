@@ -123,6 +123,12 @@ owned by `infrastructure/sqlite/star_schema_writer.py`. The migration is still
 in progress because several consumers read legacy JSON directly and cleanup is
 performed in a second transaction.
 
+The proposed source-separated write model, employee identity keys and
+AccessNow-owned status policy are documented in
+[Write model architecture](./WRITE_MODEL_ARCHITECTURE.md). That design must
+be implemented and validated on a disposable SQLite runtime before any legacy
+table or JSON cleanup.
+
 ### Lossless source facts
 
 New imports now write every non-empty normalized workbook column to

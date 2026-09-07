@@ -6,6 +6,11 @@ This document describes the Python ingestion structure currently implemented
 on `fix/sqlite-relational-rule-evaluation`. It is the working reference while
 the remaining consumers move from source JSON to relational facts.
 
+The next write-model design is documented in
+[Write model architecture](./WRITE_MODEL_ARCHITECTURE.md). It defines the
+canonical `employee` entity, source-specific write tables, identity links and
+AccessNow status ownership.
+
 ## Package layout
 
 ```text

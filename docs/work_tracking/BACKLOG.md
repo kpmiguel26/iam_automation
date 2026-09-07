@@ -10,6 +10,9 @@ The ingestion adapter structure is documented in
 - [x] Split common ingestion helpers and result compatibility contracts.
 - [x] Split Master Roster, Roster Lock, RSR and AccessNow format components.
 - [x] Centralize source adapter dispatch and move star-fact persistence to SQLite infrastructure.
+- [x] Define source-separated write model, employee identity keys and AccessNow status ownership.
+- [ ] Add source-specific employee write tables and migrations.
+- [ ] Add current-year AccessNow termination filter and status-only writer.
 
 - [x] Read relational facts in business rules and source update preview.
 - [x] Verify rule idempotency, evidence and rollback independently of imports.
