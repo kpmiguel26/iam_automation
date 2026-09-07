@@ -7,6 +7,35 @@ The next step separates the write model so a report cannot accidentally own
 another report's fields. Source rows remain evidence; `employee` is the
 canonical identity created from stable identifiers.
 
+## Star-schema alignment
+
+The logical source-owned entities below are implemented as star-schema facts
+and bridges, not as another mixed employee table:
+
+| Logical responsibility | Star-schema object |
+|---|---|
+| Canonical employee | `dim_employee` (the current `workers` dimension during migration) |
+| AccessNow source row | `fact_accessnow_employee` |
+| Master Roster source row | `fact_master_roster_employee` |
+| Roster Lock source row | `fact_roster_lock_assignment` |
+| RSR source row | `fact_rsr_assignment` |
+| AccessNow status event | `fact_employee_status_event` with `source_system = 'ACCESSNOW'` |
+| Source identity links | `bridge_employee_identifier` |
+| Unmapped governed fields | `fact_source_field_value` keyed by `dim_field` |
+
+Every source fact carries `employee_key` when linked, `source_key`, `batch_id`,
+`source_id`, `observed_date_key` and source-row lineage. `dim_source`,
+`dim_date`, `dim_vendor`, `dim_field` and an optional `dim_status` remain shared
+dimensions. The current generic `fact_source_snapshot` and
+`fact_worker_field` tables are transitional compatibility facts; new writes
+should move to typed source facts while preserving their lineage.
+
+The internal UUID used today as `worker_id` can serve as the initial textual
+`dim_employee.employee_key` to avoid breaking existing foreign keys. Source
+identifiers remain attributes in `bridge_employee_identifier`; they are never
+used as the dimension primary key. A later migration may add an integer
+warehouse key without changing source identifiers or the application UUID.
+
 ## Core entities
 
 ```text
@@ -24,7 +53,7 @@ primary key. It is assigned once and never replaced when a worker changes
 vendor, assignment or source identifier. Source identifiers are unique within
 their source and are stored as values, not as the primary key of `employee`.
 
-### `employee`
+### `dim_employee` (logical `employee`)
 
 This table contains fields that describe the canonical person and do not belong
 to one report:
@@ -38,30 +67,30 @@ to one report:
 | `record_version` | Optimistic concurrency value. |
 | `superseded_by_employee_id` | Duplicate-merge link; source rows are never deleted. |
 
-`status` is intentionally not written by the other report tables. The
-read-model view `employee_current` exposes `employee_status.status` beside the
+`status` is intentionally not written by the other report facts. The read-model
+view `employee_current` exposes the latest AccessNow status event beside the
 employee columns for existing screens.
 
-### `employee_status`
+### `fact_employee_status_event`
 
-This one-to-one table is the authoritative status relation:
+This temporal fact is the authoritative status relation:
 
 | Field | Rule |
 |---|---|
-| `employee_id` | Primary key and foreign key to `employee`. |
+| `employee_key` | Foreign key to `dim_employee`; multiple events are retained. |
 | `status` | AccessNow's normalized value (`ACTIVE`, `DEACTIVATED`, `TERMINATED`, or a reviewed unknown). |
-| `source_record_id` | Foreign key to the AccessNow observation that supplied it. |
+| `source_record_id` | Foreign key to the AccessNow fact that supplied it. |
 | `effective_date` | Business termination/deactivation date when supplied. |
 | `observed_at_utc` | Time the source was imported. |
-| `owner_source_system` | `CHECK (owner_source_system = 'ACCESSNOW')`. |
+| `owner_source_system` | `CHECK (owner_source_system = 'ACCESSNOW')`; this fact has no other writer. |
 | `updated_at_utc` | Technical audit timestamp. |
 
-Only `AccessNowStatusWriter` may upsert this relation. Master Roster, Roster
+Only `AccessNowStatusWriter` may append or supersede this fact. Master Roster, Roster
 Lock and RSR write their own tables and may never update or infer
-`employee_status`. A compatibility migration can keep `workers.status` as a
+the status fact. A compatibility migration can keep `workers.status` as a
 read-only projection until all consumers use `employee_current`.
 
-### `employee_identifier`
+### `bridge_employee_identifier` (logical `employee_identifier`)
 
 This table gives identity resolution one consistent link point:
 
@@ -78,14 +107,14 @@ The uniqueness constraint is `(source_system, identifier_type,
 normalized_value)`. Manager NUID, sponsor NUID and work-order IDs are
 assignment references; they are not employee identity keys.
 
-## Source-specific write tables
+## Source-specific write facts
 
 Each table has its own source record UUID, `batch_id`, `source_record_key`,
 `source_file`, `source_checksum`, `row_number`, `observed_at_utc` and nullable
-`employee_id`. The nullable link allows a row to be staged and reviewed before
+`employee_key`. The nullable link allows a row to be staged and reviewed before
 identity resolution.
 
-### `employee_accessnow`
+### `fact_accessnow_employee` (logical `employee_accessnow`)
 
 Owns `accessnow_employee_id`, `accessnow_nuid`, AccessNow names/email,
 vendor/job fields, manager and sponsor references, `accessnow_status` and
@@ -98,19 +127,19 @@ Identity keys, in order of strength, are:
 2. `accessnow_nuid`;
 3. canonical email as a reviewed fallback.
 
-### `employee_master_roster`
+### `fact_master_roster_employee` (logical `employee_master_roster`)
 
 Owns `employee_number`, `nuid_login_id`, `npn_login_id`, names, assignment
 metadata and source dates. Its identity keys are `employee_number`, `nuid_login_id`
 and `npn_login_id`. It never writes status.
 
-### `employee_roster_lock`
+### `fact_roster_lock_assignment` (logical `employee_roster_lock`)
 
 Owns the vendor Roster Lock row, including `vendor_name`,
 `vendor_employee_id`, names, email, assignment and lifecycle dates. Its stable
 identity key is `(vendor_name, vendor_employee_id)`. It never writes status.
 
-### `employee_rsr`
+### `fact_rsr_assignment` (logical `employee_rsr`)
 
 Owns Fieldglass/RSR values such as `worker_id`, `supplier_reference`,
 `buyer_reference`, `work_order_id`, supplier, worker, role, status and dates.
