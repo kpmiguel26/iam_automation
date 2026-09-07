@@ -13,12 +13,9 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 
 from __future__ import annotations
 
-import csv
 import hashlib
-import io
 import json
 import uuid
-import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,8 +39,8 @@ from .worker_history_service import record_worker_version
 from .source_change_service import apply_engagement_changes, latest_engagement, material_source_fields, record_changed_lineage
 from .ingestion.common import file_modified_at_utc, read_stable_bytes
 from .star_schema_writer import StarSchemaWriter
-from .status_catalog import normalize_accessnow_status, status_rank
 from .ingestion.dedup import latest_payload_digests, payload_digest, serialize_payload
+from ..source_adapters.accessnow import key, merge_rows, normalize_row, normalize_status, read_rows, validation_error, value as source_value
 
 
 SOURCE_SYSTEM = "ACCESSNOW"
@@ -84,29 +81,11 @@ class AccessNowIngestionService:
                 batch = session.get(ImportBatchModel, existing.batch_id)
                 return AccessNowIngestionResult(existing.batch_id, source_file, source_checksum, batch.total_rows if batch else 0, batch.valid_rows if batch else 0, batch.quarantine_rows if batch else 0, True)
 
-        merged: dict[str, tuple[Path, int, dict[str, str]]] = {}
-        total_rows = 0
-        for path in paths:
-            for row_number, raw in self._read_rows(path, contents[path]):
-                total_rows += 1
-                payload = self._normalize(raw)
-                key = payload.get("accessnow_employee_id", "")
-                if not key:
-                    key = f"ROW:{path.name}:{row_number}"
-                current = merged.get(key)
-                if current is None:
-                    merged[key] = (path, row_number, payload)
-                else:
-                    # Merge the two reports field by field. The termination
-                    # status wins, but an otherwise sparse termination row
-                    # must not discard email, dates, manager, or sponsor data
-                    # supplied by the active report.
-                    current_payload = current[2]
-                    current_rank = status_rank(current_payload.get("accessnow_status", ""))
-                    incoming_rank = status_rank(payload.get("accessnow_status", ""))
-                    for field_name, incoming_value in payload.items():
-                        if not current_payload.get(field_name) or (incoming_rank > current_rank and field_name in {"accessnow_status", "terminated_date"}):
-                            current_payload[field_name] = incoming_value
+        merged, total_rows = merge_rows(
+            (path, row_number, self._normalize(raw))
+            for path in paths
+            for row_number, raw in self._read_rows(path, contents[path])
+        )
 
         batch_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
@@ -227,66 +206,33 @@ class AccessNowIngestionService:
 
     @staticmethod
     def _read_rows(path: Path, content: bytes) -> list[tuple[int, dict[str, object]]]:
-        if path.suffix.lower() == ".csv":
-            text = content.decode("utf-8-sig", errors="replace")
-            return [(number, dict(row)) for number, row in enumerate(csv.DictReader(io.StringIO(text)), start=2)]
-        try:
-            from openpyxl import load_workbook
-        except ModuleNotFoundError as exc:
-            raise RuntimeError("AccessNow XLSX ingestion requires openpyxl.") from exc
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning)
-            workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        try:
-            values = list(workbook.active.values)
-            if not values:
-                return []
-            headers = [str(value or "").strip() for value in values[0]]
-            return [(number, dict(zip(headers, row))) for number, row in enumerate(values[1:], start=2) if any(value not in (None, "") for value in row)]
-        finally:
-            workbook.close()
+        return read_rows(path, content)
 
     @classmethod
     def _normalize(cls, raw: dict[str, object]) -> dict[str, str]:
-        values = {cls._key(key): cls._value(value) for key, value in raw.items() if key}
-        aliases = {
-            "employee_id": "accessnow_employee_id", "nuid": "accessnow_nuid", "first_name": "first_name", "last_name": "last_name",
-            "kp_email": "email", "employee_status": "accessnow_status", "company_name": "vendor_name", "workforce_class": "job_title",
-            "kp_start_date": "onboarding_date", "kp_sunset_date": "production_start_date", "terminated_date": "terminated_date",
-            "manager_nuid": "manager_nuid", "manager_name": "supervisor_name", "sponsor_nuid": "sponsor_nuid", "sponsor_name": "sponsor_name",
-            "kp_create_date": "created_date",
-        }
-        normalized = {aliases.get(key, key): value.strip() for key, value in values.items() if value.strip()}
-        normalized["accessnow_status"] = cls._normalize_status(normalized.get("accessnow_status", ""))
-        return normalized
+        return normalize_row(raw)
 
     @staticmethod
     def _key(value: object) -> str:
-        return "_".join("".join(char.lower() if char.isalnum() else " " for char in str(value)).split())
+        return key(value)
 
     @staticmethod
     def _value(value: object) -> str:
-        return str(value or "").strip()
+        return source_value(value)
 
     @staticmethod
     def _normalize_status(value: object) -> str:
-        return normalize_accessnow_status(value)
+        return normalize_status(value)
 
     @classmethod
     def _status_rank(cls, status: str) -> int:
+        from .status_catalog import status_rank
+
         return status_rank(status)
 
     @staticmethod
     def _validation_error(payload: dict[str, str], source_key: str, seen: set[str]) -> str:
-        if not payload.get("accessnow_employee_id"):
-            return "Missing Employee ID."
-        if source_key in seen:
-            return "Duplicate Employee ID after active/termination merge."
-        if not payload.get("first_name") and not payload.get("last_name"):
-            return "Missing employee name."
-        if not payload.get("accessnow_status"):
-            return "Missing Employee status."
-        return ""
+        return validation_error(payload, source_key, seen)
 
     def apply_approved_records(
         self,
