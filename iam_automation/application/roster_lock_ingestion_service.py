@@ -14,10 +14,8 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import uuid
-import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +26,7 @@ from ..infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, 
 from .ingestion.dedup import latest_payload_digests, payload_digest, serialize_payload
 from .star_schema_writer import StarSchemaWriter
 from .ingestion.common import file_modified_at_utc, read_stable_bytes
+from ..source_adapters.roster_lock import json_value, normalize_row, read_rows, validation_error
 
 
 @dataclass(frozen=True)
@@ -99,56 +98,17 @@ class RosterLockIngestionService:
 
     @staticmethod
     def _read_rows(content: bytes) -> list[dict[str, object]]:
-        try:
-            from openpyxl import load_workbook
-        except ModuleNotFoundError as exc:
-            raise RuntimeError("Roster Lock ingestion requires openpyxl.") from exc
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message="Data Validation extension is not supported and will be removed",
-                category=UserWarning,
-            )
-            workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        try:
-            sheet = workbook.active
-            values = list(sheet.values)
-            if not values:
-                return []
-            headers = [str(value or "").strip() for value in values[0]]
-            return [dict(zip(headers, row)) for row in values[1:] if any(value not in (None, "") for value in row)]
-        finally:
-            workbook.close()
+        return read_rows(content)
 
     @classmethod
     def _normalize(cls, payload: dict[str, object]) -> dict[str, object]:
-        normalized: dict[str, object] = {}
-        for key, value in payload.items():
-            canonical = "_".join("".join(character.lower() if character.isalnum() else " " for character in key).split())
-            normalized[canonical] = value
-        aliases = {
-            "employee_first_name": "first_name",
-            "employee_last_name": "last_name",
-            "vendor_email_address": "email",
-        }
-        for source, target in aliases.items():
-            if source in normalized and target not in normalized:
-                normalized[target] = normalized[source]
-        return normalized
+        return normalize_row(payload)
 
     @staticmethod
     def _validation_error(normalized: dict[str, object], source_key: str, seen_keys: set[str]) -> str | None:
-        if not str(normalized.get("vendor_employee_id") or "").strip():
-            return "Required field Vendor employee ID is missing."
-        if not str(normalized.get("vendor_name") or "").strip():
-            return "Required field Vendor Name is missing."
-        if source_key in seen_keys:
-            return f"Duplicate Roster Lock source key detected: {source_key}."
-        return None
+        return validation_error(normalized, source_key, seen_keys)
 
     @staticmethod
     def _json_value(value: object) -> object:
-        if isinstance(value, datetime):
-            return value.isoformat()
-        return value
+        return json_value(value)
 #endfile
