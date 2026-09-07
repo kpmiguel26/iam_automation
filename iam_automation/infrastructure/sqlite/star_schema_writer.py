@@ -237,6 +237,46 @@ class StarSchemaWriter:
             session.add(FactEmployeeStatusEventModel(status_event_id=event_id, employee_key=employee_key, accessnow_fact_id=fact.accessnow_fact_id, source_id=source.source_id, source_record_id=record.record_id, status_code=status, effective_date=cls._text(payload.get("termination_date") or payload.get("terminated_date") or payload.get("deactivated_date")), owner_source_system="ACCESSNOW", observed_at_utc=now, created_at_utc=now))
 
     @classmethod
+    def link_source_fact_employee(cls, session, record: IngestionRecordModel, employee_key: str, now: str) -> None:
+        """Attach an approved source fact to an employee without changing evidence."""
+        batch = session.get(ImportBatchModel, record.batch_id)
+        if batch is None:
+            return
+        source = session.scalar(select(DimSourceModel).where(DimSourceModel.source_system == str(record.source_system).upper()))
+        if source is None:
+            return
+        fact_models = {
+            "ACCESSNOW": FactAccessNowEmployeeModel,
+            "MASTER_ROSTER": FactMasterRosterEmployeeModel,
+            "ROSTER_LOCK": FactRosterLockAssignmentModel,
+            "RSR_SUPPLIER_WORKER_DETAILS": FactRsrAssignmentModel,
+        }
+        model = fact_models.get(str(record.source_system).upper())
+        fact = session.get(model, cls._id("source-fact", record.record_id)) if model is not None else None
+        if fact is None:
+            return
+        payload = cls.payload_for_record(session, record)
+        employee = cls.ensure_target_employee(session, employee_key, payload, now)
+        # The target fact references the dimension; flush the dimension first
+        # because these models intentionally avoid ORM relationships.
+        session.flush()
+        fact.employee_key = employee.employee_key
+        identity_fields = {
+            "ACCESSNOW": (("ACCESSNOW_EMPLOYEE_ID", "accessnow_employee_id"), ("ACCESSNOW_NUID", "accessnow_nuid"), ("EMAIL", "email")),
+            "MASTER_ROSTER": (("MASTER_EMPLOYEE_NUMBER", "employee_number"), ("MASTER_NUID", "nuid_login_id"), ("MASTER_NPN", "npn_login_id")),
+            "ROSTER_LOCK": (("VENDOR_EMPLOYEE_ID", "vendor_employee_id"),),
+            "RSR_SUPPLIER_WORKER_DETAILS": (("RSR_WORKER_ID", "worker_id"), ("SUPPLIER_REFERENCE", "supplier_reference"), ("BUYER_REFERENCE", "buyer_reference")),
+        }.get(str(record.source_system).upper(), ())
+        for identifier_type, field_key in identity_fields:
+            value = cls._text(payload.get(field_key))
+            if not value:
+                continue
+            normalized = value.casefold()
+            exists = session.scalar(select(BridgeEmployeeIdentifierModel).where(BridgeEmployeeIdentifierModel.source_system == source.source_system, BridgeEmployeeIdentifierModel.identifier_type == identifier_type, BridgeEmployeeIdentifierModel.normalized_value == normalized))
+            if exists is None:
+                session.add(BridgeEmployeeIdentifierModel(employee_identifier_key=cls._id("employee-identifier", f"{source.source_system}:{identifier_type}:{normalized}"), employee_key=employee.employee_key, source_id=source.source_id, source_system=source.source_system, identifier_type=identifier_type, identifier_value=value, normalized_value=normalized, source_record_id=record.record_id, created_at_utc=now))
+
+    @classmethod
     def append_employee_field_history(cls, session, employee: DimEmployeeModel, source: DimSourceModel, record_id: str, now: str) -> None:
         """Append changed canonical values and retain only the newest three."""
         fields = {
