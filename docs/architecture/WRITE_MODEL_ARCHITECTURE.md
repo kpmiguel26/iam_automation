@@ -1,6 +1,6 @@
 # Write model architecture
 
-**Status:** Base design for the next implementation phase.
+**Status:** Target write model implemented in the ORM and SQLite migration `0015_source_separated_write_model`; source writers are the next implementation phase.
 
 The ingestion refactor separates file formats from application orchestration.
 The next step separates the write model so a report cannot accidentally own
@@ -14,7 +14,7 @@ and bridges, not as another mixed employee table:
 
 | Logical responsibility | Star-schema object |
 |---|---|
-| Canonical employee | `dim_employee` (the current `workers` dimension during migration) |
+| Canonical employee | `dim_employee` |
 | AccessNow source row | `fact_accessnow_employee` |
 | Master Roster source row | `fact_master_roster_employee` |
 | Roster Lock source row | `fact_roster_lock_assignment` |
@@ -27,11 +27,10 @@ Every source fact carries `employee_key` when linked, `source_key`, `batch_id`,
 `source_id`, `observed_date_key` and source-row lineage. `dim_source`,
 `dim_date`, `dim_vendor`, `dim_field` and an optional `dim_status` remain shared
 dimensions. The current generic `fact_source_snapshot` and
-`fact_worker_field` tables are transitional compatibility facts; new writes
-should move to typed source facts while preserving their lineage.
+`fact_worker_field` tables remain migration scaffolding only; new writes use
+the typed source facts defined here.
 
-The internal UUID used today as `worker_id` can serve as the initial textual
-`dim_employee.employee_key` to avoid breaking existing foreign keys. Source
+The initial `dim_employee.employee_key` is a generated application UUID. Source
 identifiers remain attributes in `bridge_employee_identifier`; they are never
 used as the dimension primary key. A later migration may add an integer
 warehouse key without changing source identifiers or the application UUID.
@@ -67,7 +66,7 @@ employee
   └── employee_rsr                 (RSR / Fieldglass projection)
 ```
 
-`employee.employee_id` is an internal UUID and is the only canonical employee
+`dim_employee.employee_key` is an internal UUID and is the only canonical employee
 primary key. It is assigned once and never replaced when a worker changes
 vendor, assignment or source identifier. Source identifiers are unique within
 their source and are stored as values, not as the primary key of `employee`.
@@ -106,8 +105,8 @@ This temporal fact is the authoritative status relation:
 
 Only `AccessNowStatusWriter` may append or supersede this fact. Master Roster, Roster
 Lock and RSR write their own tables and may never update or infer
-the status fact. A compatibility migration can keep `workers.status` as a
-read-only projection until all consumers use `employee_current`.
+the status fact. The old `workers.status` column is outside the target model and
+will be removed after consumers move to `employee_current`.
 
 ### `bridge_employee_identifier` (logical `employee_identifier`)
 
@@ -313,8 +312,8 @@ AccessNow import cannot leave `employee` and its status relation inconsistent.
 
 ## Implementation order
 
-1. Add source-specific ORM models and migrations while retaining compatibility
-   reads from the current tables.
+1. **Completed:** add source-specific ORM models and migration
+   `0015_source_separated_write_model`.
 2. Add an `EmployeeIdentityService` that implements the strong-ID order and
    writes `employee_identifier` links.
 3. Add `AccessNowStatusWriter` with the current-year termination policy and

@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, event, select
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, event, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
@@ -141,6 +141,8 @@ class ImportBatchModel(Base):
     total_rows: Mapped[int] = mapped_column(Integer, default=0)
     valid_rows: Mapped[int] = mapped_column(Integer, default=0)
     quarantine_rows: Mapped[int] = mapped_column(Integer, default=0)
+    filtered_rows: Mapped[int] = mapped_column(Integer, default=0)
+    termination_window_start: Mapped[str | None] = mapped_column(String, nullable=True)
     created_by: Mapped[str] = mapped_column(String)
     created_at_utc: Mapped[str] = mapped_column(String, default="")
     source_modified_at_utc: Mapped[str] = mapped_column(String, default="")
@@ -352,6 +354,116 @@ class DimVendorModel(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class DimEmployeeModel(Base):
+    """Canonical employee dimension. Status is deliberately excluded here."""
+
+    __tablename__ = "dim_employee"
+
+    employee_key: Mapped[str] = mapped_column(String, primary_key=True)
+    first_name: Mapped[str] = mapped_column(String, default="")
+    last_name: Mapped[str] = mapped_column(String, default="")
+    display_name: Mapped[str] = mapped_column(String, default="")
+    canonical_email: Mapped[str] = mapped_column(String, default="")
+    record_version: Mapped[int] = mapped_column(Integer, default=1)
+    superseded_by_employee_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class BridgeEmployeeIdentifierModel(Base):
+    """Maps source identifiers to the canonical employee dimension."""
+
+    __tablename__ = "bridge_employee_identifier"
+    __table_args__ = (
+        UniqueConstraint("source_system", "identifier_type", "normalized_value", name="uq_employee_identifier"),
+    )
+
+    employee_identifier_key: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_key: Mapped[str] = mapped_column(ForeignKey("dim_employee.employee_key"))
+    source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    source_system: Mapped[str] = mapped_column(String)
+    identifier_type: Mapped[str] = mapped_column(String)
+    identifier_value: Mapped[str] = mapped_column(String)
+    normalized_value: Mapped[str] = mapped_column(String)
+    source_record_id: Mapped[str] = mapped_column(String, default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    confidence: Mapped[str] = mapped_column(String, default="HIGH")
+    valid_from_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    valid_to_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class SourceFieldMappingModel(Base):
+    """Administrator-managed mapping from a source column to a governed field."""
+
+    __tablename__ = "source_field_mapping"
+    __table_args__ = (
+        UniqueConstraint("source_id", "source_field_key", "mapping_version", name="uq_source_field_mapping"),
+        CheckConstraint("target_kind IN ('DIMENSION', 'FACT', 'IDENTIFIER', 'STATUS', 'IGNORE')", name="ck_mapping_target_kind"),
+    )
+
+    mapping_id: Mapped[str] = mapped_column(String, primary_key=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    source_field_key: Mapped[str] = mapped_column(String)
+    field_id: Mapped[str | None] = mapped_column(ForeignKey("dim_field.field_id"), nullable=True)
+    target_kind: Mapped[str] = mapped_column(String, default="FACT")
+    transform_name: Mapped[str] = mapped_column(String, default="identity")
+    mapping_version: Mapped[int] = mapped_column(Integer, default=1)
+    effective_from_utc: Mapped[str] = mapped_column(String, default="")
+    effective_to_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String, default="system")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class FieldOwnershipModel(Base):
+    """Declares which source is allowed to write a governed field."""
+
+    __tablename__ = "field_ownership"
+    __table_args__ = (
+        UniqueConstraint("field_id", "effective_from_utc", name="uq_field_ownership_period"),
+        CheckConstraint("write_policy IN ('APPEND_ONLY', 'STATUS_OWNER', 'READ_ONLY')", name="ck_field_write_policy"),
+    )
+
+    ownership_id: Mapped[str] = mapped_column(String, primary_key=True)
+    field_id: Mapped[str] = mapped_column(ForeignKey("dim_field.field_id"))
+    owner_source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    write_policy: Mapped[str] = mapped_column(String, default="APPEND_ONLY")
+    effective_from_utc: Mapped[str] = mapped_column(String, default="")
+    effective_to_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    locked: Mapped[bool] = mapped_column(Boolean, default=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String, default="system")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class EmployeeIdentityRuleModel(Base):
+    """Ordered, administrator-managed identity matching rules."""
+
+    __tablename__ = "employee_identity_rule"
+    __table_args__ = (
+        UniqueConstraint("source_id", "identifier_type", "priority", name="uq_employee_identity_rule"),
+        CheckConstraint("match_mode IN ('EXACT', 'NORMALIZED_EXACT')", name="ck_identity_match_mode"),
+    )
+
+    rule_id: Mapped[str] = mapped_column(String, primary_key=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    field_id: Mapped[str] = mapped_column(ForeignKey("dim_field.field_id"))
+    identifier_type: Mapped[str] = mapped_column(String)
+    priority: Mapped[int] = mapped_column(Integer, default=1)
+    match_mode: Mapped[str] = mapped_column(String, default="NORMALIZED_EXACT")
+    allow_employee_creation: Mapped[bool] = mapped_column(Boolean, default=True)
+    unique_scope: Mapped[str] = mapped_column(String, default="SOURCE")
+    effective_from_utc: Mapped[str] = mapped_column(String, default="")
+    effective_to_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String, default="system")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
 class FactSourceSnapshotModel(Base):
     __tablename__ = "fact_source_snapshot"
     __table_args__ = (UniqueConstraint("batch_id", "source_id", "source_record_key", name="uq_star_snapshot"),)
@@ -409,6 +521,205 @@ class FactWorkerFieldHistoryModel(Base):
     version_number: Mapped[int] = mapped_column(Integer, default=1)
     observed_at_utc: Mapped[str] = mapped_column(String, default="")
     source_file: Mapped[str] = mapped_column(String, default="")
+
+
+class FactAccessNowEmployeeModel(Base):
+    """Append-only typed facts from the AccessNow employee report."""
+
+    __tablename__ = "fact_accessnow_employee"
+    __table_args__ = (UniqueConstraint("batch_id", "source_id", "source_record_key", name="uq_accessnow_fact"),)
+
+    accessnow_fact_id: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_key: Mapped[str | None] = mapped_column(ForeignKey("dim_employee.employee_key"), nullable=True)
+    batch_id: Mapped[str] = mapped_column(ForeignKey("import_batches.batch_id"))
+    source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    source_record_key: Mapped[str] = mapped_column(String)
+    source_file: Mapped[str] = mapped_column(String, default="")
+    source_checksum: Mapped[str] = mapped_column(String, default="")
+    row_number: Mapped[int] = mapped_column(Integer, default=0)
+    observed_date_key: Mapped[int | None] = mapped_column(ForeignKey("dim_date.date_key"), nullable=True)
+    observed_at_utc: Mapped[str] = mapped_column(String, default="")
+    accessnow_employee_id: Mapped[str] = mapped_column(String, default="")
+    accessnow_nuid: Mapped[str] = mapped_column(String, default="")
+    first_name: Mapped[str] = mapped_column(String, default="")
+    last_name: Mapped[str] = mapped_column(String, default="")
+    email: Mapped[str] = mapped_column(String, default="")
+    vendor_name: Mapped[str] = mapped_column(String, default="")
+    job_title: Mapped[str] = mapped_column(String, default="")
+    manager_nuid: Mapped[str] = mapped_column(String, default="")
+    supervisor_name: Mapped[str] = mapped_column(String, default="")
+    sponsor_nuid: Mapped[str] = mapped_column(String, default="")
+    sponsor_name: Mapped[str] = mapped_column(String, default="")
+    accessnow_status: Mapped[str] = mapped_column(String, default="")
+    termination_date: Mapped[str] = mapped_column(String, default="")
+    onboarding_date: Mapped[str] = mapped_column(String, default="")
+    production_start_date: Mapped[str] = mapped_column(String, default="")
+
+
+class FactMasterRosterEmployeeModel(Base):
+    """Append-only typed facts from the master roster report."""
+
+    __tablename__ = "fact_master_roster_employee"
+    __table_args__ = (UniqueConstraint("batch_id", "source_id", "source_record_key", name="uq_master_roster_fact"),)
+
+    master_roster_fact_id: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_key: Mapped[str | None] = mapped_column(ForeignKey("dim_employee.employee_key"), nullable=True)
+    batch_id: Mapped[str] = mapped_column(ForeignKey("import_batches.batch_id"))
+    source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    source_record_key: Mapped[str] = mapped_column(String)
+    source_file: Mapped[str] = mapped_column(String, default="")
+    source_checksum: Mapped[str] = mapped_column(String, default="")
+    row_number: Mapped[int] = mapped_column(Integer, default=0)
+    observed_date_key: Mapped[int | None] = mapped_column(ForeignKey("dim_date.date_key"), nullable=True)
+    observed_at_utc: Mapped[str] = mapped_column(String, default="")
+    employee_number: Mapped[str] = mapped_column(String, default="")
+    nuid_login_id: Mapped[str] = mapped_column(String, default="")
+    npn_login_id: Mapped[str] = mapped_column(String, default="")
+    first_name: Mapped[str] = mapped_column(String, default="")
+    last_name: Mapped[str] = mapped_column(String, default="")
+    email: Mapped[str] = mapped_column(String, default="")
+    parent_client: Mapped[str] = mapped_column(String, default="")
+    client: Mapped[str] = mapped_column(String, default="")
+    program: Mapped[str] = mapped_column(String, default="")
+    project: Mapped[str] = mapped_column(String, default="")
+    site_hr_location: Mapped[str] = mapped_column(String, default="")
+    supervisor_employee_number: Mapped[str] = mapped_column(String, default="")
+    supervisor_name: Mapped[str] = mapped_column(String, default="")
+    job_code: Mapped[str] = mapped_column(String, default="")
+    job_title: Mapped[str] = mapped_column(String, default="")
+    hire_date: Mapped[str] = mapped_column(String, default="")
+    project_start_date: Mapped[str] = mapped_column(String, default="")
+    production_start_date: Mapped[str] = mapped_column(String, default="")
+    actual_termination_date: Mapped[str] = mapped_column(String, default="")
+    term_reason: Mapped[str] = mapped_column(String, default="")
+    assignment_status: Mapped[str] = mapped_column(String, default="")
+    user_principal_name: Mapped[str] = mapped_column(String, default="")
+
+
+class FactRosterLockAssignmentModel(Base):
+    """Append-only typed facts from the roster lock assignment report."""
+
+    __tablename__ = "fact_roster_lock_assignment"
+    __table_args__ = (UniqueConstraint("batch_id", "source_id", "source_record_key", name="uq_roster_lock_fact"),)
+
+    roster_lock_fact_id: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_key: Mapped[str | None] = mapped_column(ForeignKey("dim_employee.employee_key"), nullable=True)
+    batch_id: Mapped[str] = mapped_column(ForeignKey("import_batches.batch_id"))
+    source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    source_record_key: Mapped[str] = mapped_column(String)
+    source_file: Mapped[str] = mapped_column(String, default="")
+    source_checksum: Mapped[str] = mapped_column(String, default="")
+    row_number: Mapped[int] = mapped_column(Integer, default=0)
+    observed_date_key: Mapped[int | None] = mapped_column(ForeignKey("dim_date.date_key"), nullable=True)
+    observed_at_utc: Mapped[str] = mapped_column(String, default="")
+    vendor_name: Mapped[str] = mapped_column(String, default="")
+    vendor_employee_id: Mapped[str] = mapped_column(String, default="")
+    first_name: Mapped[str] = mapped_column(String, default="")
+    last_name: Mapped[str] = mapped_column(String, default="")
+    email: Mapped[str] = mapped_column(String, default="")
+    job_title: Mapped[str] = mapped_column(String, default="")
+    supervisor_name: Mapped[str] = mapped_column(String, default="")
+    onboarding_date: Mapped[str] = mapped_column(String, default="")
+    production_start_date: Mapped[str] = mapped_column(String, default="")
+    assignment_status: Mapped[str] = mapped_column(String, default="")
+    work_order_id: Mapped[str] = mapped_column(String, default="")
+
+
+class FactRsrAssignmentModel(Base):
+    """Append-only typed facts from the RSR supplier report."""
+
+    __tablename__ = "fact_rsr_assignment"
+    __table_args__ = (UniqueConstraint("batch_id", "source_id", "source_record_key", name="uq_rsr_fact"),)
+
+    rsr_fact_id: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_key: Mapped[str | None] = mapped_column(ForeignKey("dim_employee.employee_key"), nullable=True)
+    batch_id: Mapped[str] = mapped_column(ForeignKey("import_batches.batch_id"))
+    source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    source_record_key: Mapped[str] = mapped_column(String)
+    source_file: Mapped[str] = mapped_column(String, default="")
+    source_checksum: Mapped[str] = mapped_column(String, default="")
+    row_number: Mapped[int] = mapped_column(Integer, default=0)
+    observed_date_key: Mapped[int | None] = mapped_column(ForeignKey("dim_date.date_key"), nullable=True)
+    observed_at_utc: Mapped[str] = mapped_column(String, default="")
+    supplier_reference: Mapped[str] = mapped_column(String, default="")
+    worker_id: Mapped[str] = mapped_column(String, default="")
+    buyer_reference: Mapped[str] = mapped_column(String, default="")
+    work_order_id: Mapped[str] = mapped_column(String, default="")
+    worker: Mapped[str] = mapped_column(String, default="")
+    first_name: Mapped[str] = mapped_column(String, default="")
+    last_name: Mapped[str] = mapped_column(String, default="")
+    email: Mapped[str] = mapped_column(String, default="")
+    vendor_name: Mapped[str] = mapped_column(String, default="")
+    worker_status: Mapped[str] = mapped_column(String, default="")
+    worker_start_date: Mapped[str] = mapped_column(String, default="")
+    worker_end_date: Mapped[str] = mapped_column(String, default="")
+    job_title: Mapped[str] = mapped_column(String, default="")
+    supervisor_name: Mapped[str] = mapped_column(String, default="")
+    statement_of_work: Mapped[str] = mapped_column(String, default="")
+    supplier_name: Mapped[str] = mapped_column(String, default="")
+
+
+class FactEmployeeStatusEventModel(Base):
+    """AccessNow-owned employee status events."""
+
+    __tablename__ = "fact_employee_status_event"
+    __table_args__ = (
+        UniqueConstraint("employee_key", "source_record_id", "status_code", name="uq_employee_status_event"),
+        CheckConstraint("owner_source_system = 'ACCESSNOW'", name="ck_status_owner_accessnow"),
+    )
+
+    status_event_id: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_key: Mapped[str] = mapped_column(ForeignKey("dim_employee.employee_key"))
+    accessnow_fact_id: Mapped[str] = mapped_column(ForeignKey("fact_accessnow_employee.accessnow_fact_id"))
+    source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    source_record_id: Mapped[str] = mapped_column(String)
+    status_code: Mapped[str] = mapped_column(String)
+    effective_date_key: Mapped[int | None] = mapped_column(ForeignKey("dim_date.date_key"), nullable=True)
+    effective_date: Mapped[str] = mapped_column(String, default="")
+    owner_source_system: Mapped[str] = mapped_column(String, default="ACCESSNOW")
+    observed_at_utc: Mapped[str] = mapped_column(String, default="")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class FactSourceFieldValueModel(Base):
+    """Governed overflow for source fields not yet promoted to typed columns."""
+
+    __tablename__ = "fact_source_field_value"
+    __table_args__ = (
+        UniqueConstraint("source_system", "source_record_id", "field_id", name="uq_source_field_value"),
+    )
+
+    source_value_id: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_key: Mapped[str | None] = mapped_column(ForeignKey("dim_employee.employee_key"), nullable=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    source_system: Mapped[str] = mapped_column(String)
+    source_record_id: Mapped[str] = mapped_column(String)
+    source_record_key: Mapped[str] = mapped_column(String, default="")
+    batch_id: Mapped[str] = mapped_column(ForeignKey("import_batches.batch_id"))
+    field_id: Mapped[str] = mapped_column(ForeignKey("dim_field.field_id"))
+    value_text: Mapped[str] = mapped_column(Text, default="")
+    observed_date_key: Mapped[int | None] = mapped_column(ForeignKey("dim_date.date_key"), nullable=True)
+    observed_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class FactEmployeeFieldHistoryModel(Base):
+    """Append-only employee field history; retention service keeps three versions."""
+
+    __tablename__ = "fact_employee_field_history"
+    __table_args__ = (
+        UniqueConstraint("employee_key", "field_id", "version_number", name="uq_employee_field_history"),
+    )
+
+    history_id: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_key: Mapped[str] = mapped_column(ForeignKey("dim_employee.employee_key"))
+    field_id: Mapped[str] = mapped_column(ForeignKey("dim_field.field_id"))
+    owner_source_id: Mapped[str] = mapped_column(ForeignKey("dim_source.source_id"))
+    source_record_id: Mapped[str] = mapped_column(String, default="")
+    value_text: Mapped[str] = mapped_column(Text, default="")
+    version_number: Mapped[int] = mapped_column(Integer, default=1)
+    observed_date_key: Mapped[int | None] = mapped_column(ForeignKey("dim_date.date_key"), nullable=True)
+    observed_at_utc: Mapped[str] = mapped_column(String, default="")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
 
 
 class WorkerDiscrepancyModel(Base):

@@ -36,6 +36,7 @@ _REVISION_TO_LEGACY_VERSION = {
     "0012_compact_employee_fields": "v012_compact_employee_fields",
     "0013_star_schema": "v013_star_schema",
     "0014_worker_field_history": "v014_worker_field_history",
+    "0015_source_separated_write_model": "v015_source_separated_write_model",
 }
 _LEGACY_TO_REVISION = {value: key for key, value in _REVISION_TO_LEGACY_VERSION.items()}
 
@@ -98,6 +99,8 @@ def _legacy_version_for_revision(revision: str | None) -> tuple[str, ...]:
         return (*_legacy_version_for_revision("0012_compact_employee_fields"), "v013_star_schema")
     if revision == "0014_worker_field_history":
         return (*_legacy_version_for_revision("0013_star_schema"), "v014_worker_field_history")
+    if revision == "0015_source_separated_write_model":
+        return (*_legacy_version_for_revision("0014_worker_field_history"), "v015_source_separated_write_model")
     if revision == "0001_baseline":
         return ("v001_initial_schema",)
     return ()
