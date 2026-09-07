@@ -63,9 +63,15 @@ The database keeps the latest three completed batches for each
 5. the administrator confirms the cleanup in Administration.
 
 The cleanup deletes old snapshot facts and import metadata only. It does not
-delete `dim_worker`, rule findings, audit evidence or the original SharePoint
+delete `dim_employee`, rule findings, audit evidence or the original SharePoint
 file. A later policy decision can retain termination events longer than three
 source snapshots if compliance requires it.
+
+Source-batch retention and employee-history retention are separate controls.
+The write model keeps the newest three accepted employee versions per employee
+in `fact_employee_field_history`; source facts remain immutable evidence and
+follow the batch/source retention policy. Removing an older employee version
+must never remove the source fact or lineage needed to explain it.
 
 ## Import flow
 

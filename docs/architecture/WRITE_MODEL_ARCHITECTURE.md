@@ -36,6 +36,25 @@ identifiers remain attributes in `bridge_employee_identifier`; they are never
 used as the dimension primary key. A later migration may add an integer
 warehouse key without changing source identifiers or the application UUID.
 
+## Change-to-write mapping
+
+This matrix is the implementation contract for the next writing phase:
+
+| Requirement | Star-schema object | Operation | Owner | History and retention |
+|---|---|---|---|---|
+| Separate each report | `fact_accessnow_employee`, `fact_master_roster_employee`, `fact_roster_lock_assignment`, `fact_rsr_assignment` | Insert one immutable fact per source row and batch | The matching source writer | Facts are never updated; source batch retention is applied independently. |
+| Link a report row to an employee | `bridge_employee_identifier` plus `employee_key` on each fact | Resolve strong IDs, then link; create only with a strong ID | `EmployeeIdentityService` | Every link keeps `source_record_id`, batch and validity dates. Ambiguous rows remain unlinked and reviewable. |
+| Add source values without overwriting evidence | `fact_source_field_value` and typed source facts | Append a new observation; do not update a prior fact | Source-specific writer | Old observations remain immutable. The latest value is a derived read projection. |
+| Maintain employee history | `fact_employee_field_history` and `employee_current` view | Append a new employee version when a governed field changes | Field owner writer; AccessNow for status | Keep the newest three employee versions per employee. Cleanup runs only after the new version and audit evidence commit. |
+| Own employee status | `fact_employee_status_event` and `employee_current.status` | Append/supersede only from valid AccessNow events | `AccessNowStatusWriter` | Other sources may record their own status fields as evidence but cannot write the canonical status event. |
+| Limit AccessNow terminations | AccessNow import policy plus `import_batch.filtered_rows` | Insert active rows and only eligible inactive events | `AccessNowIngestionService` | Normal window starts January 1 of the current year; January uses a rolling three-month window ending on import date. |
+| Add a new report safely | `dim_source`, `dim_field`, `source_field_mapping`, one new `fact_*` adapter | Register metadata and add an isolated reader/normalizer/validator/writer | New source owner | Existing facts and mappings remain unchanged; historical reprocessing is explicit. |
+
+“Append only” applies to source facts and employee history. The
+`employee_current` view (or a materialized projection maintained in one
+transaction) may change because it is derived from the newest accepted facts;
+that does not mutate historical evidence.
+
 ## Core entities
 
 ```text
@@ -262,14 +281,18 @@ status relation. If a current-year AccessNow event is ambiguous or has no
 usable effective date, the row is quarantined/reviewed and the last accepted
 status is preserved.
 
-For the current implementation year, the filter is the UTC calendar year at
+For the current implementation year, the filter uses the UTC calendar year at
 ingestion time (2026 in the current workspace). It must be configurable for
-backfills and tests:
+backfills and tests. The January exception is deliberate: a rolling three-month
+window retains recent prior-year terminations long enough to evaluate the
+30-day rehire policy.
 
 - Import all valid AccessNow active rows.
 - Import `TERMINATED` and `DEACTIVATED` rows only when their parsed effective
-  date is in the configured current year.
-- Exclude prior-year inactive rows from source write tables and status updates.
+  date is in the active window: current calendar year outside January, or the
+  previous three months during January.
+- Exclude inactive rows outside that window from source write facts and status
+  updates, while counting them as filtered rows on the batch.
 - Quarantine inactive rows with a missing or unparseable effective date rather
   than changing status without evidence.
 - Record the filtered count on the import batch so the operator can distinguish
@@ -296,8 +319,9 @@ AccessNow import cannot leave `employee` and its status relation inconsistent.
    writes `employee_identifier` links.
 3. Add `AccessNowStatusWriter` with the current-year termination policy and
    tests for active, current-year, prior-year and undated events.
-4. Migrate AccessNow writes first, then Master Roster, Roster Lock and RSR.
-5. Update readers to use `employee_current` and source-specific tables.
-6. Backfill/validate counts and lineage on a disposable SQLite copy.
-7. Retire mixed `ingestion_records`/profile writes only after all consumers and
+4. Add append-only employee history with a transactional three-version cleanup.
+5. Migrate AccessNow writes first, then Master Roster, Roster Lock and RSR.
+6. Update readers to use `employee_current` and source-specific facts.
+7. Backfill/validate counts and lineage on a disposable SQLite copy.
+8. Retire mixed `ingestion_records`/profile writes only after all consumers and
    exports use the new tables.
