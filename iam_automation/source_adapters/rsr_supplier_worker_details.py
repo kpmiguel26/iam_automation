@@ -16,13 +16,11 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from openpyxl import load_workbook
 from sqlalchemy import func, select
 
 from ..infrastructure.sqlite.orm import (
@@ -42,26 +40,25 @@ from ..application.star_schema_writer import StarSchemaWriter
 from ..application.worker_history_service import record_worker_version
 from ..application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 from ..application.source_change_service import apply_engagement_changes, material_source_fields, record_changed_lineage
+from .rsr_supplier import (
+    HEADER_ALIASES as SOURCE_HEADER_ALIASES,
+    REQUIRED_HEADERS as SOURCE_REQUIRED_HEADERS,
+    header_key,
+    is_report_footer,
+    normalize_payload,
+    read_rows,
+    value as source_value,
+)
 
 
 SOURCE_SYSTEM = "RSR_SUPPLIER_WORKER_DETAILS"
-REQUIRED_HEADERS = {"supplier_reference", "worker_id", "worker"}
+REQUIRED_HEADERS = SOURCE_REQUIRED_HEADERS
 
 # Fieldglass exports use different labels for the same worker-level concepts
 # depending on the report/filter set. Keep one internal vocabulary so both the
 # classic RSR Supplier Worker Details report and the Headcount report follow
 # the same approval and reconciliation path.
-HEADER_ALIASES = {
-    "contractor_id": "worker_id",
-    "contractor": "worker",
-    "contractor_status": "worker_status",
-    "contractor_start_date": "worker_start_date",
-    "contractor_end_date": "worker_end_date",
-    "statement_of_work_id": "work_order_id",
-    "external_reference_id": "statement_of_work",
-    "contractor_owner": "worker_primary_contact",
-    "supplier": "supplier_name",
-}
+HEADER_ALIASES = SOURCE_HEADER_ALIASES
 
 
 @dataclass(frozen=True)
@@ -79,15 +76,11 @@ def _utc_now() -> str:
 
 
 def _header_key(value: object) -> str:
-    return "_".join(str(value or "").strip().casefold().replace("/", " ").replace("-", " ").split())
+    return header_key(value)
 
 
 def _value(value: object) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, datetime):
-        return value.isoformat()
-    return str(value).strip()
+    return source_value(value)
 
 
 class RsrSupplierWorkerDetailsAdapter:
@@ -357,62 +350,15 @@ class RsrSupplierWorkerDetailsAdapter:
 
     @staticmethod
     def _read_rows(path: Path) -> list[tuple[int, dict[str, str]]]:
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message="Data Validation extension is not supported and will be removed",
-                category=UserWarning,
-            )
-            workbook = load_workbook(path, read_only=True, data_only=True)
-        try:
-            sheet = workbook.active
-            header_row = None
-            headers: list[str] = []
-            for row_number, row in enumerate(sheet.iter_rows(values_only=True), start=1):
-                normalized = [HEADER_ALIASES.get(_header_key(value), _header_key(value)) for value in row]
-                if REQUIRED_HEADERS.issubset(set(normalized)):
-                    header_row, headers = row_number, normalized
-                    break
-            if header_row is None:
-                raise ValueError("RSR workbook does not contain the expected Worker Details header row.")
-            result = []
-            for row_number, row in enumerate(sheet.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1):
-                if not any(value not in (None, "") for value in row):
-                    continue
-                payload = {headers[index]: _value(row[index] if index < len(row) else None) for index in range(len(headers)) if headers[index]}
-                payload = RsrSupplierWorkerDetailsAdapter._normalize_payload(payload)
-                if RsrSupplierWorkerDetailsAdapter._is_report_footer(payload):
-                    continue
-                result.append((row_number, payload))
-            return result
-        finally:
-            workbook.close()
+        return read_rows(path)
 
     @staticmethod
     def _normalize_payload(payload: dict[str, str]) -> dict[str, str]:
-        worker = payload.get("worker", "")
-        if "," in worker:
-            last, first = (part.strip() for part in worker.split(",", 1))
-            payload.setdefault("first_name", first)
-            payload.setdefault("last_name", last)
-        else:
-            parts = worker.split()
-            payload.setdefault("first_name", parts[0] if parts else "")
-            payload.setdefault("last_name", " ".join(parts[1:]))
-        payload["supplier_reference"] = payload.get("supplier_reference", "").strip()
-        payload["worker_id"] = payload.get("worker_id", "").strip()
-        return payload
+        return normalize_payload(payload)
 
     @staticmethod
     def _is_report_footer(payload: dict[str, str]) -> bool:
-        """Ignore Fieldglass report metadata rows after the worker data."""
-        if any(str(payload.get(field) or "").strip() for field in REQUIRED_HEADERS):
-            return False
-        report_text = " ".join(str(value or "").strip().casefold() for value in payload.values())
-        return (
-            "the data contained in this report is as of" in report_text
-            or "date:" in report_text and "us/central" in report_text
-        )
+        return is_report_footer(payload, REQUIRED_HEADERS)
 
     @staticmethod
     def _derive_vendor_name(payload: dict[str, str]) -> str:
