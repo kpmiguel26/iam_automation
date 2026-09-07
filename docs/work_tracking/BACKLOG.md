@@ -4,6 +4,13 @@
 
 Evidence: [transition review](../bugs/2026-09-sqlite-consumer-transition.md).
 
+The ingestion adapter structure is documented in
+[`../architecture/INGESTION_ARCHITECTURE.md`](../architecture/INGESTION_ARCHITECTURE.md).
+
+- [x] Split common ingestion helpers and result compatibility contracts.
+- [x] Split Master Roster, Roster Lock, RSR and AccessNow format components.
+- [x] Centralize source adapter dispatch and move star-fact persistence to SQLite infrastructure.
+
 - [x] Read relational facts in business rules and source update preview.
 - [x] Verify rule idempotency, evidence and rollback independently of imports.
 - [x] Fix row deduplication after JSON cleanup (Master Roster regression).

@@ -115,6 +115,14 @@ malformed row can still be inspected. This intentionally exposes remaining
 legacy readers in reports, matching, promotion and rule screens for the next
 refactor phase.
 
+The implemented Python boundary is documented in
+[Ingestion architecture](./INGESTION_ARCHITECTURE.md). Format parsing is now
+split into source adapters, adapter selection is centralized in
+`application/ingestion/orchestrator.py`, and relational fact persistence is
+owned by `infrastructure/sqlite/star_schema_writer.py`. The migration is still
+in progress because several consumers read legacy JSON directly and cleanup is
+performed in a second transaction.
+
 ### Lossless source facts
 
 New imports now write every non-empty normalized workbook column to

@@ -55,6 +55,14 @@ The package follows a pragmatic Screaming Architecture layout:
 
 The original flat modules remain as compatibility facades during migration so existing scripts and tests do not break. New application code should import from the business-oriented packages above.
 
+Source ingestion now has an explicit incremental boundary. Shared ingestion
+contracts, stable reads, deduplication and adapter dispatch live under
+`application/ingestion/`; format-specific readers and normalizers live under
+`source_adapters/`; relational source-fact persistence lives under
+`infrastructure/sqlite/star_schema_writer.py`. See
+[`docs/architecture/INGESTION_ARCHITECTURE.md`](docs/architecture/INGESTION_ARCHITECTURE.md)
+for the implemented flow and remaining migration sequence.
+
 ## Current-Phase Non-Negotiable Boundary
 
 Client applications must not:

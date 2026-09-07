@@ -54,6 +54,12 @@ No application was started and no runtime migration or reset was performed.
 
 ## Remaining migration work
 
+The ingestion format refactor is complete for this increment. The implemented
+folder structure, compatibility facades and adapter boundaries are recorded in
+[Ingestion architecture](../architecture/INGESTION_ARCHITECTURE.md). The next
+analysis should proceed in the numbered order in that document, beginning with
+the watcher early return and then the remaining relational consumers.
+
 1. Validate the no-change decision across AccessNow, Roster Lock, Master Roster
    and RSR adapters with representative production-shaped files.
 2. Migrate the remaining employee, report, rehire, compact projection and
