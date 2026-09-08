@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Quarantine{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 admin-page">
+  <a class="back-link" href="{{ url_for('admin.home') }}">Control Center</a>
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mt-3 mb-4">
+    <div>
+      <p class="eyebrow mb-1">Operations</p>
+      <h1>Quarantine</h1>
+      <p class="text-secondary mb-0">Review rule violations and invalid source rows before they are accepted into the operational workflow.</p>
+    </div>
+    <div class="text-end"><span class="badge text-bg-warning">{{ findings|length }} finding(s)</span><span class="badge text-bg-secondary ms-1">{{ quarantine|length }} invalid row(s)</span></div>
+  </div>
+  {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+  {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+  <section class="surface p-3 mb-4">
+    <form class="row g-3 align-items-end" method="get">
+      <div class="col-md-4">
+        <label class="form-label" for="quarantine-status">Status</label>
+        <select class="form-select" id="quarantine-status" name="status">
+          {% for option, label in [('OPEN', 'Open'), ('ACKNOWLEDGED', 'Acknowledged'), ('RESOLVED', 'Resolved'), ('SUPPRESSED', 'Suppressed'), ('ALL', 'All')] %}
+            <option value="{{ option }}"{% if status == option %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="quarantine-severity">Severity</label>
+        <select class="form-select" id="quarantine-severity" name="severity">
+          <option value="ALL">All severities</option>
+          {% for option in severities %}<option value="{{ option }}"{% if severity == option %} selected{% endif %}>{{ option }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4"><button class="btn btn-primary w-100">Apply filters</button></div>
+    </form>
+  </section>
+
+  <section class="surface table-responsive mb-4">
+    <div class="p-3 border-bottom d-flex justify-content-between align-items-center"><div><p class="eyebrow mb-1">Business rules</p><h2 class="h5 mb-0">Rule violations</h2></div><a class="small" href="{{ url_for('admin.business_rules') }}">Manage rules →</a></div>
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Rule violated</th><th>Employee</th><th>Affected field</th><th>Severity / source</th><th>Status</th><th class="text-end">Action</th></tr></thead>
+      <tbody id="quarantine-findings-list">
+        {% for item in findings %}{% include "admin/_quarantine_finding_row.html" %}{% else %}<tr><td colspan="6" class="empty-state">No rule findings match the selected filters.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="surface overflow-hidden">
+    <div class="p-3 border-bottom"><p class="eyebrow mb-1">Ingestion validation</p><h2 class="h5 mb-0">Invalid source rows</h2></div>
+    {% for item in quarantine %}
+      <div class="p-3 border-bottom">
+        <div class="d-flex justify-content-between"><strong>Row {{ item.row_number }}</strong><span class="badge text-bg-warning">{{ item.status }}</span></div>
+        <p class="small mb-2">{{ item.reason }}</p>
+        <code class="small d-block mb-2">{{ item.payload }}</code>
+        <form method="post" action="{{ url_for('admin.resolve_quarantine', quarantine_id=item.quarantine_id) }}"><button class="btn btn-sm btn-outline-success">Resolve after correction</button></form>
+      </div>
+    {% else %}<p class="p-3 text-secondary mb-0">No invalid source rows are open.</p>{% endfor %}
+  </section>
+</div>
+{% endblock %}

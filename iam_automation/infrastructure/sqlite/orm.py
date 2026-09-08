@@ -523,6 +523,39 @@ class FactWorkerFieldHistoryModel(Base):
     source_file: Mapped[str] = mapped_column(String, default="")
 
 
+class FactQuarantineModel(Base):
+    """Master fact for rule violations observed during source ingestion."""
+
+    __tablename__ = "fact_quarantine"
+    __table_args__ = (UniqueConstraint("finding_id", name="uq_fact_quarantine_finding"),)
+
+    quarantine_fact_id: Mapped[str] = mapped_column(String, primary_key=True)
+    finding_id: Mapped[str] = mapped_column(String)
+    employee_key: Mapped[str | None] = mapped_column(ForeignKey("dim_employee.employee_key"), nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(ForeignKey("workers.worker_id"), nullable=True)
+    batch_id: Mapped[str] = mapped_column(ForeignKey("import_batches.batch_id"))
+    record_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_id: Mapped[str | None] = mapped_column(ForeignKey("dim_source.source_id"), nullable=True)
+    field_id: Mapped[str | None] = mapped_column(ForeignKey("dim_field.field_id"), nullable=True)
+    source_system: Mapped[str] = mapped_column(String, default="")
+    source_record_key: Mapped[str] = mapped_column(String, default="")
+    rule_id: Mapped[str] = mapped_column(String)
+    rule_version_id: Mapped[str] = mapped_column(String)
+    field_key: Mapped[str] = mapped_column(String, default="")
+    operator: Mapped[str] = mapped_column(String, default="")
+    expected_value: Mapped[str] = mapped_column(Text, default="")
+    observed_value: Mapped[str] = mapped_column(Text, default="")
+    severity: Mapped[str] = mapped_column(String, default="WARNING")
+    status: Mapped[str] = mapped_column(String, default="OPEN")
+    rule_name: Mapped[str] = mapped_column(String, default="")
+    reason: Mapped[str] = mapped_column(Text, default="")
+    evidence_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+    resolved_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolved_at_utc: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class FactAccessNowEmployeeModel(Base):
     """Append-only typed facts from the AccessNow employee report."""
 
@@ -827,6 +860,7 @@ class BusinessRuleVersionModel(Base):
     rule_version_id: Mapped[str] = mapped_column(String, primary_key=True)
     rule_id: Mapped[str] = mapped_column(ForeignKey("business_rules.rule_id"))
     version: Mapped[int] = mapped_column(Integer)
+    phase: Mapped[str] = mapped_column(String, default="AFTER", server_default="AFTER")
     scope_json: Mapped[str] = mapped_column(Text, default="{}")
     condition_json: Mapped[str] = mapped_column(Text, default="{}")
     severity: Mapped[str] = mapped_column(String, default="WARNING")

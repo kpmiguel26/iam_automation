@@ -38,6 +38,8 @@ _REVISION_TO_LEGACY_VERSION = {
     "0014_worker_field_history": "v014_worker_field_history",
     "0015_source_separated_write_model": "v015_source_separated_write_model",
     "0016_allow_fact_linking": "v016_allow_fact_linking",
+    "0017_rule_execution_phase": "v017_rule_execution_phase",
+    "0018_fact_quarantine": "v018_fact_quarantine",
 }
 _LEGACY_TO_REVISION = {value: key for key, value in _REVISION_TO_LEGACY_VERSION.items()}
 
@@ -104,6 +106,10 @@ def _legacy_version_for_revision(revision: str | None) -> tuple[str, ...]:
         return (*_legacy_version_for_revision("0014_worker_field_history"), "v015_source_separated_write_model")
     if revision == "0016_allow_fact_linking":
         return (*_legacy_version_for_revision("0015_source_separated_write_model"), "v016_allow_fact_linking")
+    if revision == "0017_rule_execution_phase":
+        return (*_legacy_version_for_revision("0016_allow_fact_linking"), "v017_rule_execution_phase")
+    if revision == "0018_fact_quarantine":
+        return (*_legacy_version_for_revision("0017_rule_execution_phase"), "v018_fact_quarantine")
     if revision == "0001_baseline":
         return ("v001_initial_schema",)
     return ()

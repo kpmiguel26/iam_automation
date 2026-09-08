@@ -27,20 +27,14 @@ from sqlalchemy import select
 
 from ..infrastructure.sqlite.orm import AppUserModel, FileObservationModel, UserRoleModel, orm_session
 from ..change_request import load_request_file
-from ..identity import CurrentUser, ROLE_REQUESTER, computer_name
 from .employee_service import EmployeeService
 from .notification_service import NotificationService
-from .business_rule_service import BusinessRuleService
-from .shared_request_service import SharedRequestService
 from .workspace_refresh_service import WORKSPACE_IO_LOCK, local_runtime_checksum_path, record_local_runtime_checksum
 from .ingestion.common import read_stable_bytes
-from .ingestion.contracts import quarantine_count
-from .ingestion.orchestrator import IngestionOrchestrator
-from ..source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
 
 
 LOGGER = logging.getLogger(__name__)
-EXPECTED_INGESTION_ERRORS = (OSError, PermissionError, ValueError, RuntimeError)
+EXPECTED_WATCHER_ERRORS = (OSError, PermissionError, ValueError, RuntimeError)
 
 
 @dataclass(frozen=True)
@@ -118,7 +112,6 @@ class FileWatchService:
         # File and ingestion notifications belong to this workstation. The
         # only global notification is emitted explicitly by database publish.
         self.notifications = NotificationService(database_path)
-        self.ingestion = IngestionOrchestrator(database_path)
 
     def start(self, interval_seconds: float = 120.0) -> "FileWatcher":
         watcher = FileWatcher(self, interval_seconds)
@@ -169,7 +162,6 @@ class FileWatchService:
         with WORKSPACE_IO_LOCK:
             observations = self._discover_files()
             save_watcher_manifest(self.database_path, observations)
-            return len(observations)
             if not observations:  # pragma: no cover - retained for old traces
                 return 0
             # The watcher itself writes observations to the local runtime and
@@ -180,48 +172,25 @@ class FileWatchService:
             now = datetime.now(timezone.utc).isoformat()
             changed = self._changed_observations(observations)
             changed.sort(key=self._observation_priority)
-            successful_ingestions: set[str] = set()
-            imported_batch_ids: set[str] = set()
+            successful_observations: set[str] = set()
             review_requests: set[str] = set()
-            accessnow_processed = False
             for observation in changed:
-                if observation.file_kind not in {"ROSTER_LOCK", "MASTER_ROSTER", "RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW", "APPROVED_IMPORT"}:
-                    successful_ingestions.add(observation.path)
-                    continue
                 try:
-                    if observation.file_kind == "ROSTER_LOCK":
-                        result = self.ingestion.ingest_file(observation.file_kind, Path(observation.path))
-                        imported_batch_ids.add(str(result.batch_id))
-                        self._ensure_import_review_request(observation, result)
-                        review_requests.add(observation.path)
-                    elif observation.file_kind == "MASTER_ROSTER":
-                        result = self.ingestion.ingest_file(observation.file_kind, Path(observation.path))
-                        imported_batch_ids.add(str(result.batch_id))
-                    elif observation.file_kind == "RSR_SUPPLIER_WORKER_DETAILS":
-                        result = self.ingestion.ingest_file(observation.file_kind, Path(observation.path))
-                        imported_batch_ids.add(str(result.batch_id))
-                        self._ensure_import_review_request(observation, result)
-                        review_requests.add(observation.path)
-                    elif observation.file_kind == "ACCESSNOW":
-                        if accessnow_processed:
-                            successful_ingestions.add(observation.path)
-                            continue
-                        result = self.ingestion.ingest_accessnow(self.sharepoint_root / "acessnow")
-                        imported_batch_ids.add(str(result.batch_id))
-                        self._ensure_import_review_request(observation, result)
-                        accessnow_processed = True
-                        review_requests.update(item.path for item in changed if item.file_kind == "ACCESSNOW")
-                    else:
+                    if observation.file_kind == "APPROVED_IMPORT":
                         self._sync_approved_import(Path(observation.path))
                         # The approval JSON is only a shared signal. It must not
                         # create a generic file alert or imply that canonical
                         # employees were already updated.
                         review_requests.add(observation.path)
-                    successful_ingestions.add(observation.path)
-                except EXPECTED_INGESTION_ERRORS as exc:
-                    # These are normal operational failures (partial sync,
-                    # invalid input, or an unavailable optional dependency).
-                    # Leave the observation uncommitted so the next scan retries it.
+                    else:
+                        # Source files are discovery-only here. The explicit
+                        # Source Updates import action owns parsing, staging,
+                        # rules and SQLite writes.
+                        LOGGER.info("Source file discovered; waiting for explicit import: %s", observation.path)
+                    successful_observations.add(observation.path)
+                except EXPECTED_WATCHER_ERRORS as exc:
+                    # Approval signals may be temporarily unavailable. Source
+                    # report discovery itself never writes source data.
                     LOGGER.warning("File processing will be retried for %s: %s", observation.path, exc)
                     self._record_ingestion_failure(observation, exc, unexpected=False)
                 except Exception as exc:
@@ -237,7 +206,7 @@ class FileWatchService:
             pending_notifications: list[tuple[str, FileObservation]] = []
             with orm_session(self.database_path) as session:
                 for observation in changed:
-                    if observation.path not in successful_ingestions:
+                    if observation.path not in successful_observations:
                         continue
                     previous = session.get(FileObservationModel, observation.path)
                     stored_kind = "APPROVED_IMPORT_SYNCED" if observation.file_kind == "APPROVED_IMPORT" else observation.file_kind
@@ -266,82 +235,13 @@ class FileWatchService:
                     entity_id=notification["entity_id"],
                     notification_id=notification["notification_id"],
                 )
-            # Evaluate only after the ingestion service has committed SQLite.
-            # Findings are advisory in phase one and never alter import status.
-            rule_service = BusinessRuleService(self.database_path)
-            for batch_id in imported_batch_ids:
-                try:
-                    rule_service.evaluate_batch(batch_id)
-                except Exception:
-                    LOGGER.exception("Post-import business rule evaluation failed for batch %s", batch_id)
-            # Roster Lock can reveal a rehire hold as soon as the source file
-            # is staged. The deterministic notification is safe to repeat.
+            # The explicit Source Updates import action owns ingestion and the
+            # BEFORE/AFTER rule boundary. The watcher only coordinates
+            # discovery notifications here.
             self.notifications.notify_rehire_alerts(EmployeeService(self.database_path).rehire_alerts())
             if watcher_started_clean:
                 record_local_runtime_checksum(self.database_path)
-            return len(successful_ingestions)
-
-    def _ensure_import_review_request(self, observation: FileObservation, result) -> None:
-        """Create the shared approval request for a newly staged workbook.
-
-        Staging is safe to repeat, so this method also runs when an observation
-        is retried after a temporary SQLite or OneDrive failure.  Batch ID and
-        content checksum make the shared request idempotent across workstations.
-        """
-        batch_id = str(result.batch_id)
-        source_path = Path(observation.path)
-        source_checksum = str(getattr(result, "source_checksum", "")) or hashlib.sha256(read_stable_bytes(source_path)).hexdigest()
-        source_filename = str(getattr(result, "filename", source_path.name))
-        shared = SharedRequestService(self.sharepoint_root)
-        existing = shared.find_import_request(batch_id=batch_id, source_checksum=source_checksum)
-        if existing is not None:
-            # A reset or a second workstation may already have the shared JSON.
-            # Re-publish the idempotent notification so the local admin still
-            # sees the review work without creating another request.
-            self.notifications.notify_request_reviewers(
-                existing.request_id,
-                existing.operation_type,
-                existing.created_by,
-                record_count=int((existing.payload or {}).get("record_count", 0)),
-            )
-            return
-
-        source_system = observation.file_kind
-        staged = [
-            item for item in EmployeeService(self.database_path).list_staged_records()
-            if str(item.get("batch_id", "")) == batch_id
-            and str(item.get("source_system", "")) == source_system
-        ]
-        record_ids = [str(item["record_id"]) for item in staged]
-        operation_type = (
-            "IMPORT_RSR_SUPPLIER_DETAILS"
-            if source_system == "RSR_SUPPLIER_WORKER_DETAILS"
-            else "IMPORT_ACCESSNOW" if source_system == "ACCESSNOW" else "IMPORT_ROSTER_LOCK"
-        )
-        payload = {
-            "batch_ids": [batch_id],
-            "record_ids": record_ids,
-            "record_count": len(record_ids),
-            "source_system": source_system,
-            "source_file": source_filename,
-            "source_checksum": source_checksum,
-            "total_rows": int(result.total_rows),
-            "staged_rows": int(result.staged_rows),
-            "quarantine_rows": quarantine_count(result),
-            "record_previews": EmployeeService(self.database_path).request_previews(record_ids),
-        }
-        actor = CurrentUser("workspace-watcher", computer_name(), (ROLE_REQUESTER,))
-        reason = (
-            f"Review newly discovered {source_system.replace('_', ' ').title()} file "
-            f"before applying {len(record_ids)} staged record(s) to canonical employees."
-        )
-        request = shared.create(actor, operation_type, batch_id, payload, reason)
-        self.notifications.notify_request_reviewers(
-            request.request_id,
-            operation_type,
-            actor.username,
-            record_count=len(record_ids),
-        )
+            return len(successful_observations)
 
     def _changed_observations(self, observations: list[FileObservation]) -> list[FileObservation]:
         with orm_session(self.database_path) as session:
@@ -482,10 +382,10 @@ class FileWatchService:
             "CONFIGURATION": ("Configuration file detected", "A configuration file changed and is ready for review."),
             "IDENTITY_DISCOVERY": ("Identity discovery updated", "A workstation identity record is available for administrative review."),
             "PUBLISHED_RUNTIME": ("New database snapshot published", "A new runtime SQLite snapshot is available. Refresh this workstation when you are not editing a form."),
-            "ROSTER_LOCK": ("Roster Lock ingested", "A vendor Roster Lock workbook was staged for validation and reconciliation."),
-            "MASTER_ROSTER": ("Master Roster ingested", "A Master Roster workbook was staged and is ready for sequential historical import."),
-            "RSR_SUPPLIER_WORKER_DETAILS": ("RSR worker details ingested", "Supplier worker details were staged for matching against canonical employees."),
-            "ACCESSNOW": ("AccessNow reports ingested", "Active and termination reports were merged and staged for employee status review."),
+            "ROSTER_LOCK": ("Roster Lock discovered", "A vendor Roster Lock workbook was found and is ready for explicit import."),
+            "MASTER_ROSTER": ("Master Roster discovered", "A Master Roster workbook was found and is ready for explicit import."),
+            "RSR_SUPPLIER_WORKER_DETAILS": ("RSR worker details discovered", "Supplier worker details were found and are ready for explicit import."),
+            "ACCESSNOW": ("AccessNow reports discovered", "Active and termination reports were found and are ready for explicit import."),
             "APPROVED_IMPORT": ("Employee updates ready", "Approved source records are ready for individual matching and review. No employee was created automatically."),
         }
         title, message = labels[observation.file_kind]

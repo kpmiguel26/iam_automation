@@ -1,0 +1,7 @@
+<section class="p-4">
+  <div class="d-flex align-items-start gap-3">
+    <span class="governance-card-icon governance-card-icon-primary">◇</span>
+    <div><p class="eyebrow mb-1">Guided builder</p><h2 class="h5 mb-1">Create a rule</h2><p class="text-secondary small mb-0">We will guide you through phase, report, identity, condition and severity.</p></div>
+  </div>
+  <button class="btn btn-primary w-100 mt-4" type="button" hx-get="{{ url_for('admin.business_rule_wizard_phase') }}" hx-target="#rule-wizard" hx-swap="outerHTML">Create rule <span aria-hidden="true">→</span></button>
+</section>

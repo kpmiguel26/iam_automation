@@ -126,7 +126,7 @@ class MasterRosterIngestionTests(unittest.TestCase):
             self.assertEqual(result.staged_rows, 1)
             self.assertEqual(result.quarantine_rows, 1)
 
-    def test_watcher_stages_master_roster_without_creating_approval_request(self):
+    def test_watcher_discovers_master_roster_without_staging_or_creating_approval_request(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             database = initialize_runtime_database(root / "runtime.sqlite")
@@ -138,7 +138,7 @@ class MasterRosterIngestionTests(unittest.TestCase):
 
             self.assertEqual(processed, 1)
             with orm_session(database) as session:
-                self.assertEqual(session.query(IngestionRecordModel).filter_by(source_system="MASTER_ROSTER").count(), 2)
+                self.assertEqual(session.query(IngestionRecordModel).filter_by(source_system="MASTER_ROSTER").count(), 0)
                 self.assertEqual(session.query(ChangeRequestModel).count(), 0)
 
     def test_watcher_creates_master_roster_notification_without_cycle_error(self):
@@ -153,7 +153,7 @@ class MasterRosterIngestionTests(unittest.TestCase):
 
             self.assertEqual(service.scan_once(), 1)
             notification = next(item for item in NotificationService(database).list_for_user("admin") if item.notification_type == "FILE_DETECTED")
-            self.assertEqual(notification.title, "Master Roster ingested")
+            self.assertEqual(notification.title, "Master Roster discovered")
 
 
 if __name__ == "__main__":

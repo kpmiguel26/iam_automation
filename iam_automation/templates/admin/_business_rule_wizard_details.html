@@ -1,0 +1,10 @@
+<section class="surface p-4">
+  <div class="d-flex justify-content-between align-items-start gap-3 mb-3"><div><p class="eyebrow mb-1">Step 3 of 5 - {{ phase }}</p><h2 class="h5 mb-1">Name the rule</h2><p class="small text-secondary mb-0">Give reviewers a clear name and explain the alert.</p></div><span class="badge text-bg-primary">3 / 5</span></div>
+  {% if error %}<div class="alert alert-danger py-2" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="{{ url_for('admin.business_rule_wizard_condition') }}" hx-post="{{ url_for('admin.business_rule_wizard_condition') }}" hx-target="#rule-wizard" hx-swap="innerHTML" class="vstack gap-3">
+    <input type="hidden" name="phase" value="{{ phase }}"><input type="hidden" name="source_system" value="{{ source_system }}">
+    <div><label class="form-label" for="rule-name">Rule name</label><input id="rule-name" class="form-control" name="name" value="{{ name|default('') }}" required autofocus></div>
+    <div><label class="form-label" for="rule-description">Alert message / description</label><textarea id="rule-description" class="form-control" name="description" rows="3" placeholder="Explain why a reviewer should pay attention.">{{ description|default('') }}</textarea></div>
+    <div class="d-flex justify-content-between gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" hx-get="{{ url_for('admin.business_rule_wizard_source') }}?phase={{ phase }}&source_system={{ source_system }}" hx-target="#rule-wizard" hx-swap="innerHTML">Back</button><button class="btn btn-primary" type="submit">Continue</button></div>
+  </form>
+</section>

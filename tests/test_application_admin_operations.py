@@ -267,6 +267,22 @@ class ApplicationAdminOperationsTests(unittest.TestCase):
             self.assertEqual(notification.title, "New database snapshot published")
             self.assertEqual(notification.target_route, "/dashboard")
 
+    def test_file_watcher_discovers_accessnow_without_importing_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            database = initialize_runtime_database(base / "runtime.sqlite")
+            accessnow = base / "acessnow"
+            accessnow.mkdir(parents=True)
+            (accessnow / "active.csv").write_text("employee_id,email\nA-100,ada@example.com\n", encoding="utf-8")
+
+            watcher = FileWatchService(database, base)
+            self.assertEqual(watcher.scan_once(), 1)
+
+            from iam_automation.infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, orm_session
+            with orm_session(database) as session:
+                self.assertEqual(session.query(ImportBatchModel).count(), 0)
+                self.assertEqual(session.query(IngestionRecordModel).count(), 0)
+
     def test_roster_lock_ingestion_stages_rows_and_quarantines_invalid_rows(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)

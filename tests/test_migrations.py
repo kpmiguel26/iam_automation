@@ -29,7 +29,7 @@ class MigrationTests(unittest.TestCase):
             first = applied_migrations(database)
             second = apply_pending_migrations(database, actor="test")
 
-            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps", "v009_local_notification_store", "v010_accessnow_match_indexes", "v011_business_rules", "v012_compact_employee_fields", "v013_star_schema", "v014_worker_field_history", "v015_source_separated_write_model", "v016_allow_fact_linking"))
+            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps", "v009_local_notification_store", "v010_accessnow_match_indexes", "v011_business_rules", "v012_compact_employee_fields", "v013_star_schema", "v014_worker_field_history", "v015_source_separated_write_model", "v016_allow_fact_linking", "v017_rule_execution_phase", "v018_fact_quarantine"))
             self.assertEqual(second, ())
             connection = sqlite3.connect(database)
             try:
@@ -77,8 +77,9 @@ class MigrationTests(unittest.TestCase):
             self.assertIn("idx_worker_identifiers_match", worker_identifier_indexes)
             self.assertIn("idx_workers_canonical_email", worker_indexes)
             self.assertIn("idx_workers_canonical_name", worker_indexes)
-            self.assertEqual(alembic_revision, "0016_allow_fact_linking")
-            self.assertEqual(current_database_revision(database), "0016_allow_fact_linking")
+            self.assertIn("fact_quarantine", table_names)
+            self.assertEqual(alembic_revision, "0018_fact_quarantine")
+            self.assertEqual(current_database_revision(database), "0018_fact_quarantine")
 
 
 if __name__ == "__main__":

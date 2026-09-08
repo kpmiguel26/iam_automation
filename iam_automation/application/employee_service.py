@@ -678,6 +678,7 @@ class EmployeeService:
         profile.last_seen_at_utc = now
         StarSchemaWriter.link_record_in_session(session, record, worker_id)
         StarSchemaWriter.link_source_fact_employee(session, record, worker_id, now)
+        StarSchemaWriter.link_quarantine_facts(session, record, worker_id, now)
         EmployeeFieldProjectionService.project_record_in_session(session, record, worker_id, now)
 
     @staticmethod

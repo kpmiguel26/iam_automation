@@ -44,6 +44,11 @@ class EmployeeResetTests(unittest.TestCase):
                 INSERT INTO worker_discrepancies(discrepancy_id, worker_id, source_system, source_record_key, field_name) VALUES ('discrepancy-1', 'worker-1', 'ROSTER_LOCK', '123', 'last_name');
                 INSERT INTO import_batches(batch_id, filename, source_type, created_by) VALUES ('batch-1', 'input.xlsx', 'ROSTER_LOCK', 'admin');
                 INSERT INTO ingestion_records(record_id, batch_id, source_system, source_file, source_checksum, row_number, source_record_key, normalized_json, payload_json) VALUES ('record-1', 'batch-1', 'ROSTER_LOCK', 'input.xlsx', 'checksum', 1, '123', '{}', '{}');
+                INSERT INTO dim_source(source_id, source_system, label) VALUES ('source-roster', 'ROSTER_LOCK', 'Roster Lock');
+                INSERT INTO fact_master_roster_employee(master_roster_fact_id, batch_id, source_id, source_record_key) VALUES ('source-fact-1', 'batch-1', 'source-roster', '123');
+                INSERT INTO fact_quarantine(quarantine_fact_id, finding_id, worker_id, batch_id, source_system, source_record_key, rule_id, rule_version_id) VALUES ('quarantine-fact-1', 'finding-1', 'worker-1', 'batch-1', 'ROSTER_LOCK', '123', 'rule-1', 'rule-1:1');
+                INSERT INTO business_rules(rule_id, name, description, status, current_version, created_by, created_at_utc, updated_at_utc) VALUES ('rule-1', 'Missing email', '', 'ACTIVE', 1, 'admin', 'now', 'now');
+                INSERT INTO business_rule_versions(rule_version_id, rule_id, version, phase, scope_json, condition_json, severity, status, created_by, created_at_utc) VALUES ('rule-1:1', 'rule-1', 1, 'BEFORE', '{}', '{}', 'WARNING', 'ACTIVE', 'admin', 'now');
                 INSERT INTO quarantine_records(quarantine_id, batch_id, row_number, reason, payload_json) VALUES ('quarantine-1', 'batch-1', 2, 'missing', '{}');
                 INSERT INTO file_observations(path, file_kind, signature) VALUES ('input.xlsx', 'ROSTER_LOCK', 'checksum');
                 INSERT INTO change_requests(request_id, created_at_utc, created_by, computer_name, application_version, operation_type, entity_type, entity_id, payload_json, reason) VALUES ('request-1', 'now', 'admin', 'test', 'local', 'IMPORT_ROSTER_LOCK', 'import_batch', 'batch-1', '{}', 'test');
@@ -61,12 +66,23 @@ class EmployeeResetTests(unittest.TestCase):
             connection = sqlite3.connect(database)
             for table in EmployeeResetService.EMPLOYEE_TABLES:
                 self.assertEqual(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], 0, table)
+            trigger_names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")}
+            self.assertIn("trg_fact_master_roster_employee_immutable_delete", trigger_names)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM app_users").fetchone()[0], 1)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM user_roles").fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM business_rules").fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM business_rule_versions").fetchone()[0], 1)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM change_requests").fetchone()[0], 0)
             connection.close()
             audit_lines = list((root / "audit").glob("audit_*.jsonl"))[0].read_text(encoding="utf-8").splitlines()
             self.assertEqual(json.loads(audit_lines[-1])["action"], "EMPLOYEE_TEST_DATA_RESET")
+
+            result = EmployeeResetService(database, audit_path=root / "audit").reset("admin", clear_business_rules=True)
+            self.assertTrue(result["clear_business_rules"])
+            connection = sqlite3.connect(database)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM business_rule_versions").fetchone()[0], 0)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM business_rules").fetchone()[0], 0)
+            connection.close()
 
 
 if __name__ == "__main__":

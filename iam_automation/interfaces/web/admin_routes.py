@@ -189,8 +189,25 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     def business_rule_findings():
         status = request.args.get("status", "OPEN").upper()
         severity = request.args.get("severity", "ALL").upper()
-        return render_template("admin/business_rule_findings.html", findings=rules.list_findings(status=status, severity=severity), status=status, severity=severity, severities=BusinessRuleService.ALLOWED_SEVERITIES, message=request.args.get("notice"), error=None)
+        return redirect(url_for("admin.quarantine", status=status, severity=severity, notice=request.args.get("notice")))
 
+    @blueprint.get("/quarantine")
+    @admin_required
+    def quarantine():
+        status = request.args.get("status", "OPEN").upper()
+        severity = request.args.get("severity", "ALL").upper()
+        return render_template(
+            "admin/quarantine.html",
+            findings=rules.list_quarantine_findings(status=status, severity=severity),
+            quarantine=imports.list_quarantine(open_only=True),
+            status=status,
+            severity=severity,
+            severities=BusinessRuleService.ALLOWED_SEVERITIES,
+            message=request.args.get("notice"),
+            error=None,
+        )
+
+    @blueprint.post("/quarantine/findings/<finding_id>/status")
     @blueprint.post("/business-rule-findings/<finding_id>/status")
     @admin_required
     def business_rule_finding_status(finding_id: str):
@@ -200,10 +217,11 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             rules.update_finding(finding_id, status=status, actor=str(session["iam_user"]), note=note)
             record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_FINDING_STATUS_CHANGED", "rule_finding", finding_id, new_values={"status": status, "note": note})
             if request.headers.get("HX-Request") == "true":
-                return render_template("admin/_business_finding_row.html", finding=next((item for item in rules.list_findings(status="ALL") if item.finding_id == finding_id), None))
-            return redirect(url_for("admin.business_rule_findings", notice="Finding updated."))
+                item = next((item for item in rules.list_quarantine_findings(status="ALL") if item["finding"].finding_id == finding_id), None)
+                return render_template("admin/_quarantine_finding_row.html", item=item) if item is not None else ""
+            return redirect(url_for("admin.quarantine", notice="Finding updated."))
         except ValueError as exc:
-            return redirect(url_for("admin.business_rule_findings", notice=str(exc)))
+            return redirect(url_for("admin.quarantine", notice=str(exc)))
 
     @blueprint.route("/business-rules", methods=["GET", "POST"])
     @admin_required
@@ -212,15 +230,81 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         message = None
         if request.method == "POST":
             try:
-                rule_id = rules.create_rule(name=request.form.get("name", ""), description=request.form.get("description", ""), field=request.form.get("field", ""), operator=request.form.get("operator", ""), value=request.form.get("value", ""), severity=request.form.get("severity", "WARNING"), actor=str(session["iam_user"]))
+                rule_id = rules.create_rule(name=request.form.get("name", ""), description=request.form.get("description", ""), field=request.form.get("field", ""), operator=request.form.get("operator", ""), value=request.form.get("value", ""), severity=request.form.get("severity", "WARNING"), phase=request.form.get("phase", "AFTER"), source_system=request.form.get("source_system", "ALL"), actor=str(session["iam_user"]))
                 mark_publication_pending(database_path, actor=str(session["iam_user"]), reason="Business rule created")
-                record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_CREATED", "business_rule", rule_id, new_values={"name": request.form.get("name", ""), "field": request.form.get("field", ""), "operator": request.form.get("operator", ""), "severity": request.form.get("severity", "WARNING")})
+                record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_CREATED", "business_rule", rule_id, new_values={"name": request.form.get("name", ""), "source_system": request.form.get("source_system", "ALL"), "field": request.form.get("field", ""), "operator": request.form.get("operator", ""), "severity": request.form.get("severity", "WARNING"), "phase": request.form.get("phase", "AFTER")})
                 message = "Rule created as DRAFT. Activate it after reviewing the condition."
             except ValueError as exc:
                 error = str(exc)
         if request.headers.get("HX-Request") == "true":
-            return render_template("admin/_business_rule_results.html", rules=rules.list_rules(), message=message, error=error)
-        return render_template("admin/business_rules.html", rules=rules.list_rules(), operators=BusinessRuleService.ALLOWED_OPERATORS, severities=BusinessRuleService.ALLOWED_SEVERITIES, message=message or request.args.get("notice"), error=error)
+            if error:
+                return render_template("admin/_business_rule_results.html", rules=rules.list_rules(), message=message, error=error), 400
+            return render_template("admin/_business_rule_create_response.html", rules=rules.list_rules(), message=message, error=error)
+        return render_template("admin/business_rules.html", rules=rules.list_rules(), operators=BusinessRuleService.ALLOWED_OPERATORS, severities=BusinessRuleService.ALLOWED_SEVERITIES, phases=BusinessRuleService.ALLOWED_PHASES, fields=rules.available_fields(), message=message or request.args.get("notice"), error=error)
+
+    @blueprint.get("/business-rules/wizard/phase")
+    @admin_required
+    def business_rule_wizard_phase():
+        return render_template("admin/_business_rule_wizard_state.html", step=1, phases=BusinessRuleService.ALLOWED_PHASES, phase=request.args.get("phase", "").upper())
+
+    @blueprint.get("/business-rules/wizard/start")
+    @admin_required
+    def business_rule_wizard_start():
+        return render_template("admin/_business_rule_wizard.html")
+
+    @blueprint.route("/business-rules/wizard/source", methods=["GET", "POST"])
+    @admin_required
+    def business_rule_wizard_source():
+        values = request.form if request.method == "POST" else request.args
+        phase = values.get("phase", "").upper()
+        if phase not in BusinessRuleService.ALLOWED_PHASES:
+            return render_template("admin/_business_rule_wizard_state.html", step=1, phases=BusinessRuleService.ALLOWED_PHASES, phase="", error="Choose when the rule should run."), 400
+        return render_template("admin/_business_rule_wizard_state.html", step=2, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system="", source_label="", sources=rules.available_sources())
+
+    @blueprint.route("/business-rules/wizard/details", methods=["GET", "POST"])
+    @admin_required
+    def business_rule_wizard_details():
+        values = request.form if request.method == "POST" else request.args
+        phase = values.get("phase", "").upper()
+        source_system = values.get("source_system", "").upper()
+        valid_sources = {source["key"] for source in rules.available_sources()}
+        if phase not in BusinessRuleService.ALLOWED_PHASES:
+            return render_template("admin/_business_rule_wizard_state.html", step=1, phases=BusinessRuleService.ALLOWED_PHASES, phase="", error="Choose when the rule should run."), 400
+        if source_system not in valid_sources:
+            return render_template("admin/_business_rule_wizard_state.html", step=2, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system="", source_label="", sources=rules.available_sources(), error="Choose the report that owns this rule."), 400
+        source_label = next((source["label"] for source in rules.available_sources() if source["key"] == source_system), source_system)
+        return render_template("admin/_business_rule_wizard_state.html", step=3, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), name=values.get("name", ""), description=values.get("description", ""))
+
+    @blueprint.route("/business-rules/wizard/condition", methods=["GET", "POST"])
+    @admin_required
+    def business_rule_wizard_condition():
+        values = request.form if request.method == "POST" else request.args
+        phase = values.get("phase", "").upper()
+        source_system = values.get("source_system", "").upper()
+        name = values.get("name", "").strip()
+        valid_sources = {source["key"] for source in rules.available_sources()}
+        if phase not in BusinessRuleService.ALLOWED_PHASES or not name:
+            source_label = next((source["label"] for source in rules.available_sources() if source["key"] == source_system), source_system)
+            return render_template("admin/_business_rule_wizard_state.html", step=3, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), name=name, description=values.get("description", ""), error="Enter a rule name before continuing."), 400
+        if source_system not in valid_sources:
+            return render_template("admin/_business_rule_wizard_state.html", step=2, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system="", source_label="", sources=rules.available_sources(), error="Choose the report that owns this rule."), 400
+        source_label = next((source["label"] for source in rules.available_sources() if source["key"] == source_system), source_system)
+        return render_template("admin/_business_rule_wizard_state.html", step=4, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), name=name, description=values.get("description", ""), field=values.get("field", ""), operator=values.get("operator", ""), value=values.get("value", ""), fields=rules.available_fields(source_system), operators=BusinessRuleService.ALLOWED_OPERATORS)
+
+    @blueprint.post("/business-rules/wizard/review")
+    @admin_required
+    def business_rule_wizard_review():
+        phase = request.form.get("phase", "").upper()
+        source_system = request.form.get("source_system", "").upper()
+        operator = request.form.get("operator", "").strip()
+        field = request.form.get("field", "").strip()
+        value = request.form.get("value", "").strip()
+        valid_sources = {source["key"] for source in rules.available_sources()}
+        if phase not in BusinessRuleService.ALLOWED_PHASES or source_system not in valid_sources or operator not in BusinessRuleService.ALLOWED_OPERATORS or not field or (operator in {"equals", "not_equals", "contains", "in"} and not value):
+            source_label = next((source["label"] for source in rules.available_sources() if source["key"] == source_system), source_system)
+            return render_template("admin/_business_rule_wizard_state.html", step=4, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), name=request.form.get("name", ""), description=request.form.get("description", ""), field=field, operator=operator, value=value, fields=rules.available_fields(source_system), operators=BusinessRuleService.ALLOWED_OPERATORS, error="Complete the report, field, operator and required value."), 400
+        source_label = next((source["label"] for source in rules.available_sources() if source["key"] == source_system), source_system)
+        return render_template("admin/_business_rule_wizard_state.html", step=5, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), name=request.form.get("name", ""), description=request.form.get("description", ""), field=field, operator=operator, value=value, severities=BusinessRuleService.ALLOWED_SEVERITIES, severity=request.form.get("severity", "WARNING"))
 
     @blueprint.post("/business-rules/<rule_id>/status")
     @admin_required
@@ -237,6 +321,33 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             return redirect(url_for("admin.business_rules", notice=notice))
         except ValueError as exc:
             return render_template("admin/business_rules.html", rules=rules.list_rules(), operators=BusinessRuleService.ALLOWED_OPERATORS, severities=BusinessRuleService.ALLOWED_SEVERITIES, message=None, error=str(exc)), 400
+
+    @blueprint.post("/business-rules/<rule_id>/delete")
+    @admin_required
+    def business_rule_delete(rule_id: str):
+        try:
+            deleted = rules.delete_rule(rule_id)
+            mark_publication_pending(database_path, actor=str(session["iam_user"]), reason="Business rule deleted")
+            record_audit(
+                audit_path,
+                str(session["iam_user"]),
+                "BUSINESS_RULE_DELETED",
+                "business_rule",
+                rule_id,
+                new_values=deleted,
+            )
+            notice = (
+                f"Rule deleted. Removed {deleted['versions']} version(s), "
+                f"{deleted['findings']} finding(s) and "
+                f"{deleted['quarantine_facts']} quarantine detection(s)."
+            )
+            if request.headers.get("HX-Request") == "true":
+                return render_template("admin/_business_rule_results.html", rules=rules.list_rules(), message=notice, error=None)
+            return redirect(url_for("admin.business_rules", notice=notice))
+        except ValueError as exc:
+            if request.headers.get("HX-Request") == "true":
+                return render_template("admin/_business_rule_results.html", rules=rules.list_rules(), message=None, error=str(exc)), 400
+            return redirect(url_for("admin.business_rules", notice=str(exc)))
 
     @blueprint.post("/notifications/<notification_id>/read")
     @admin_required
@@ -472,9 +583,9 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         if request.form.get("confirmation", "").strip() != "REBUILD STAR TESTING RUNTIME":
             return render_governance(error="Type REBUILD STAR TESTING RUNTIME exactly to confirm this testing reset."), 400
         try:
-            result = employee_reset.reset(str(session["iam_user"]), clear_workflow_records=True)
+            result = employee_reset.reset(str(session["iam_user"]), clear_workflow_records=True, clear_business_rules=True)
             return render_governance(
-                message="Testing runtime rebuilt for the star schema. Users, roles, settings and audit evidence were preserved; employee/import data was cleared locally.",
+                message="Testing runtime rebuilt for the star schema. Rules, detections and employee/import data were cleared locally; users, roles, settings and audit evidence were preserved.",
                 reset_result=result,
             )
         except (OSError, sqlite3.Error, ValueError) as exc:

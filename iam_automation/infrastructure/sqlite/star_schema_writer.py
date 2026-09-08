@@ -18,6 +18,7 @@ from .orm import (
     FactAssignmentModel,
     FactEmployeeFieldHistoryModel,
     FactEmployeeStatusEventModel,
+    FactQuarantineModel,
     FactMasterRosterEmployeeModel,
     FactRosterLockAssignmentModel,
     FactRsrAssignmentModel,
@@ -27,6 +28,7 @@ from .orm import (
     FactWorkerFieldModel,
     ImportBatchModel,
     IngestionRecordModel,
+    SourceFieldMappingModel,
     WorkerModel,
     orm_session,
 )
@@ -93,6 +95,50 @@ class StarSchemaWriter:
             else:
                 snapshot.worker_id = record.matched_worker_id
                 snapshot.status = "QUARANTINED" if record.status == "QUARANTINED" else "CURRENT"
+
+            # Keep a source-specific catalog of every normalized header seen
+            # in the report, including headers whose cells are all empty.
+            # ``fact_worker_field`` intentionally stores only populated values,
+            # so it cannot by itself tell us that an empty column was present.
+            for raw_field_key in payload:
+                field_key = str(raw_field_key).strip().lower()
+                if not field_key:
+                    continue
+                field = session.scalar(select(DimFieldModel).where(DimFieldModel.field_key == field_key))
+                if field is None:
+                    field = DimFieldModel(
+                        field_id=cls._id("field", field_key),
+                        field_key=field_key,
+                        label=field_key.replace("_", " ").title(),
+                    )
+                    session.add(field)
+                    session.flush()
+                mapping = session.scalar(
+                    select(SourceFieldMappingModel).where(
+                        SourceFieldMappingModel.source_id == source.source_id,
+                        SourceFieldMappingModel.source_field_key == field_key,
+                        SourceFieldMappingModel.mapping_version == 1,
+                    )
+                )
+                if mapping is None:
+                    session.add(SourceFieldMappingModel(
+                        mapping_id=cls._id("source-field-mapping", f"{source_system}:{field_key}"),
+                        source_id=source.source_id,
+                        source_field_key=field_key,
+                        field_id=field.field_id,
+                        target_kind="FACT",
+                        transform_name="identity",
+                        mapping_version=1,
+                        effective_from_utc=observed_at,
+                        active=True,
+                        created_by="ingestion",
+                        created_at_utc=observed_at,
+                        updated_at_utc=observed_at,
+                    ))
+                else:
+                    mapping.field_id = field.field_id
+                    mapping.active = True
+                    mapping.updated_at_utc = observed_at
             for field_key, raw_value in fact_payload.items():
                 field_key = str(field_key).strip().lower()
                 # Empty cells do not carry source information and would add
@@ -275,6 +321,16 @@ class StarSchemaWriter:
             exists = session.scalar(select(BridgeEmployeeIdentifierModel).where(BridgeEmployeeIdentifierModel.source_system == source.source_system, BridgeEmployeeIdentifierModel.identifier_type == identifier_type, BridgeEmployeeIdentifierModel.normalized_value == normalized))
             if exists is None:
                 session.add(BridgeEmployeeIdentifierModel(employee_identifier_key=cls._id("employee-identifier", f"{source.source_system}:{identifier_type}:{normalized}"), employee_key=employee.employee_key, source_id=source.source_id, source_system=source.source_system, identifier_type=identifier_type, identifier_value=value, normalized_value=normalized, source_record_id=record.record_id, created_at_utc=now))
+
+    @classmethod
+    def link_quarantine_facts(cls, session, record: IngestionRecordModel, employee_key: str, now: str) -> None:
+        """Attach rule violations for a source record to its canonical employee."""
+        session.query(FactQuarantineModel).filter(
+            FactQuarantineModel.record_id == record.record_id
+        ).update(
+            {"employee_key": employee_key, "updated_at_utc": now},
+            synchronize_session=False,
+        )
 
     @classmethod
     def append_employee_field_history(cls, session, employee: DimEmployeeModel, source: DimSourceModel, record_id: str, now: str) -> None:

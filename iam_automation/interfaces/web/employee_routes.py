@@ -26,12 +26,10 @@ from flask import Blueprint, redirect, render_template, request, session, url_fo
 from sqlalchemy import select
 
 from ...application.audit_service import record_audit
+from ...application.business_rule_service import BusinessRuleService
 from ...application.employee_service import EmployeeService
 from ...application.file_watch_service import load_watcher_health, load_watcher_manifest
-from ...application.roster_lock_ingestion_service import RosterLockIngestionService
-from ...application.master_roster_ingestion_service import MasterRosterIngestionService
-from ...application.accessnow_ingestion_service import AccessNowIngestionService
-from ...source_adapters.rsr_supplier_worker_details import RsrSupplierWorkerDetailsAdapter
+from ...application.ingestion.orchestrator import IngestionOrchestrator
 from ...application.notification_service import NotificationService
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.shared_request_service import SharedRequestService
@@ -45,6 +43,7 @@ import_logger = logging.getLogger("iam.import")
 def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | None = None, audit_path: Path | None = None) -> Blueprint:
     blueprint = Blueprint("employees", __name__, url_prefix="/employees")
     service = EmployeeService(database_path)
+    business_rules = BusinessRuleService(database_path)
     requests = SharedRequestService(sharepoint_root) if sharepoint_root else RequestService(database_path)
     source_order = ("ROSTER_LOCK", "MASTER_ROSTER", "RSR_SUPPLIER_WORKER_DETAILS", "ACCESSNOW")
     import_tasks: dict[str, dict[str, object]] = {}
@@ -172,6 +171,19 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 errors=list(result.get("errors", [])),
                 completed_at=datetime.now(timezone.utc).isoformat(),
                 message="Import completed with warnings." if failed else "Import completed successfully.",
+            )
+            task_after_import = task_snapshot(task_id) or {}
+            rule_findings = business_rules.count_findings_for_records(record_ids)
+            quarantined = int(task_after_import.get("quarantined", 0) or 0)
+            update_task(
+                task_id,
+                rule_findings=rule_findings,
+                total_quarantine=quarantined + rule_findings,
+                message=(
+                    f"Import completed with {rule_findings} rule finding(s) to review."
+                    if rule_findings
+                    else ("Import completed with warnings." if failed else "Import completed successfully.")
+                ),
             )
             notification_id = notify_import_result(task_snapshot(task_id) or {}, actor, status=status, result=result)
             if notification_id:
@@ -429,14 +441,15 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             if not candidate or not Path(str(candidate.get("path", ""))).is_file():
                 return "Source file was not found in discovery manifest.", 404
             source_path = Path(str(candidate["path"]))
-            if source_system == "ROSTER_LOCK":
-                RosterLockIngestionService(database_path).ingest_file(source_path)
-            elif source_system == "MASTER_ROSTER":
-                MasterRosterIngestionService(database_path).ingest_file(source_path)
-            elif source_system == "RSR_SUPPLIER_WORKER_DETAILS":
-                RsrSupplierWorkerDetailsAdapter(database_path).ingest_file(source_path)
-            elif source_system == "ACCESSNOW":
-                AccessNowIngestionService(database_path).ingest_folder(source_path.parent)
+            orchestrator = IngestionOrchestrator(database_path)
+            if source_system == "ACCESSNOW":
+                # AccessNow is a two-report source view; the orchestrator
+                # evaluates rules around the same merged folder import.
+                orchestrator.ingest_accessnow(source_path.parent, actor=str(session["iam_user"]))
+            else:
+                # Manual source imports must use the same BEFORE/AFTER rule
+                # lifecycle as every other explicit ingestion entry point.
+                orchestrator.ingest_file(source_system, source_path, actor=str(session["iam_user"]))
             summary = service.get_source_file_summary(source_system, source_file)
         if summary is None:
             return "Source file could not be staged for import.", 422
@@ -475,6 +488,8 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                 "unchanged": 0,
                 "failed": 0,
                 "quarantined": quarantine_rows,
+                "rule_findings": 0,
+                "total_quarantine": quarantine_rows,
                 "errors": [],
                 "message": "Queued for import…",
             }

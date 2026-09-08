@@ -42,6 +42,50 @@ class AdminControlTests(unittest.TestCase):
             self.assertEqual(client.get("/admin").status_code, 200)
             self.assertEqual(client.get("/admin/users").status_code, 200)
 
+    def test_quarantine_page_replaces_rule_findings_page(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            client = self.client_for_admin(database)
+            response = client.get("/admin/quarantine")
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Quarantine", response.data)
+            legacy = client.get("/admin/business-rule-findings")
+            self.assertEqual(legacy.status_code, 302)
+            self.assertIn(b"/admin/quarantine", legacy.headers["Location"].encode())
+
+    def test_business_rule_wizard_filters_master_roster_fields_and_contains_operator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            client = self.client_for_admin(database)
+            client.get("/admin/business-rules/wizard/phase")
+            with client.session_transaction() as session:
+                csrf_token = session["iam_csrf_token"]
+            headers = {"X-CSRF-Token": csrf_token}
+            source = client.post("/admin/business-rules/wizard/source", data={"phase": "AFTER"}, headers=headers)
+            self.assertEqual(source.status_code, 200)
+            self.assertIn(b"Master Roster", source.data)
+            self.assertIn(b"rule-accordion", source.data)
+            self.assertIn(b"Execution phase", source.data)
+            condition = client.post(
+                "/admin/business-rules/wizard/condition",
+                data={"phase": "AFTER", "source_system": "MASTER_ROSTER", "name": "Composite NPN", "description": "Review composite values."},
+                headers=headers,
+            )
+            self.assertEqual(condition.status_code, 200)
+            self.assertIn(b"npn_login_id", condition.data)
+            review = client.post(
+                "/admin/business-rules/wizard/review",
+                data={"phase": "AFTER", "source_system": "MASTER_ROSTER", "name": "Composite NPN", "description": "Review composite values.", "field": "npn_login_id", "operator": "contains", "value": "|RECORD|"},
+                headers=headers,
+            )
+            self.assertEqual(review.status_code, 200)
+            self.assertIn(b"contains", review.data)
+            self.assertIn(b"Review and create", review.data)
+            self.assertIn(b"rule-accordion-item", review.data)
+            start = client.get("/admin/business-rules/wizard/start")
+            self.assertEqual(start.status_code, 200)
+            self.assertIn(b"Create a rule", start.data)
+
     def test_requester_cannot_open_control_center(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")

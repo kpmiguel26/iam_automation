@@ -14,6 +14,9 @@ def normalize_row(payload: dict[str, object]) -> dict[str, object]:
         "employee_first_name": "first_name",
         "employee_last_name": "last_name",
         "vendor_email_address": "email",
+        # Keep the source header available while exposing the governed name
+        # used by the rule catalog and typed assignment fact.
+        "status": "assignment_status",
     }
     for source, target in aliases.items():
         if source in normalized and target not in normalized:

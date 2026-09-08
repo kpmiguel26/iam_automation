@@ -33,12 +33,15 @@
     <div class="import-result-stat"><strong>{{ task.unchanged|int }}</strong><span>No material changes</span></div>
     <div class="import-result-stat"><strong>{{ task.failed|int }}</strong><span>Errors</span></div>
     <div class="import-result-stat"><strong>{{ task.quarantined|int }}</strong><span>Quarantined rows</span></div>
+    <div class="import-result-stat"><strong>{{ task.rule_findings|int }}</strong><span>Rule findings</span></div>
+    <div class="import-result-stat"><strong>{{ task.total_quarantine|int }}</strong><span>Items in quarantine</span></div>
   </div>
 
   {% if task.status in ['COMPLETED', 'COMPLETED_WITH_WARNINGS'] %}
     <div class="alert {% if task.status == 'COMPLETED_WITH_WARNINGS' %}alert-warning{% else %}alert-success{% endif %} mt-3 mb-0">
       <strong>Source history saved locally.</strong>
       <div class="small mt-1">The import does not publish the database. An administrator must publish the runtime for other workstations to receive these records.</div>
+      {% if task.total_quarantine|int > 0 %}<div class="small mt-1"><strong>{{ task.total_quarantine|int }} item(s) require review.</strong> Open <a href="{{ url_for('admin.quarantine') }}">Quarantine</a> to review the rule findings and invalid rows.</div>{% endif %}
       {% if task.notification_id %}<div class="small mt-1">A notification was sent to your notification center.</div>{% endif %}
     </div>
   {% elif task.status == 'FAILED' %}
