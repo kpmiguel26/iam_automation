@@ -502,7 +502,7 @@ class BusinessRuleService:
                 )
             ) or 0)
 
-    def list_quarantine_findings(self, *, status: str = "OPEN", severity: str = "ALL") -> list[dict]:
+    def list_quarantine_findings(self, *, status: str = "OPEN", severity: str = "ALL", rule_id: str = "ALL") -> list[dict]:
         """Return findings enriched for the operational quarantine table.
 
         ``fact_quarantine`` is the master read model. The original
@@ -514,6 +514,8 @@ class BusinessRuleService:
                 query = query.where(FactQuarantineModel.status == status)
             if severity != "ALL":
                 query = query.where(FactQuarantineModel.severity == severity)
+            if rule_id != "ALL":
+                query = query.where(FactQuarantineModel.rule_id == rule_id)
 
             items = []
             for fact in session.scalars(query).all():

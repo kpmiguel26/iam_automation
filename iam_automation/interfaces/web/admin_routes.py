@@ -196,16 +196,21 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     def quarantine():
         status = request.args.get("status", "OPEN").upper()
         severity = request.args.get("severity", "ALL").upper()
-        return render_template(
-            "admin/quarantine.html",
-            findings=rules.list_quarantine_findings(status=status, severity=severity),
-            quarantine=imports.list_quarantine(open_only=True),
-            status=status,
-            severity=severity,
-            severities=BusinessRuleService.ALLOWED_SEVERITIES,
-            message=request.args.get("notice"),
-            error=None,
-        )
+        rule_id = request.args.get("rule_id", "ALL").strip() or "ALL"
+        context = {
+            "findings": rules.list_quarantine_findings(status=status, severity=severity, rule_id=rule_id),
+            "quarantine": imports.list_quarantine(open_only=True),
+            "rules": rules.list_rules(),
+            "status": status,
+            "severity": severity,
+            "rule_id": rule_id,
+            "severities": BusinessRuleService.ALLOWED_SEVERITIES,
+            "message": request.args.get("notice"),
+            "error": None,
+        }
+        if request.headers.get("HX-Request") == "true":
+            return render_template("admin/_quarantine_findings_panel.html", **context)
+        return render_template("admin/quarantine.html", **context)
 
     @blueprint.post("/quarantine/findings/<finding_id>/status")
     @blueprint.post("/business-rule-findings/<finding_id>/status")

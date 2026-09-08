@@ -268,7 +268,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
         document.body.appendChild(overlay);
       }
       window.showLoading = showLoading;
-      function showConfirmation(message, onConfirm) {
+      function showConfirmation(message, onConfirm, titleText, confirmText) {
         var overlay = document.createElement('div');
         overlay.className = 'iam-confirmation';
         overlay.setAttribute('role', 'dialog');
@@ -281,7 +281,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
         icon.textContent = '!';
         var title = document.createElement('h2');
         title.id = 'iamConfirmationTitle';
-        title.textContent = 'Confirm bulk creation';
+        title.textContent = titleText || 'Confirm action';
         var body = document.createElement('p');
         body.textContent = message;
         var actions = document.createElement('div');
@@ -293,7 +293,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
         var confirm = document.createElement('button');
         confirm.type = 'button';
         confirm.className = 'btn btn-danger';
-        confirm.textContent = 'Create employees';
+        confirm.textContent = confirmText || 'Continue';
         actions.append(cancel, confirm);
         card.append(icon, title, body, actions);
         overlay.appendChild(card);
@@ -304,14 +304,20 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
         overlay.addEventListener('click', function (event) { if (event.target === overlay) close(); });
         confirm.addEventListener('click', function () { close(); onConfirm(); });
       }
-      document.querySelectorAll('form[method="post"], form[method="POST"], form[data-loading="true"]').forEach(function (form) {
-        form.addEventListener('submit', function (event) {
+      document.body.addEventListener('submit', function (event) {
+        var form = event.target;
+        if (!(form instanceof HTMLFormElement) || !form.matches('form[method="post"], form[method="POST"], form[data-loading="true"]')) return;
           if (event.defaultPrevented) return;
           if (form.dataset.loadingHandled === 'true' || form.dataset.noLoader === 'true') return;
           var confirmation = form.querySelector('[data-confirm]');
           if (confirmation && form.dataset.confirmed !== 'true') {
             event.preventDefault();
-            showConfirmation(confirmation.dataset.confirm, function () { form.dataset.confirmed = 'true'; form.requestSubmit(); });
+            showConfirmation(
+              confirmation.dataset.confirm,
+              function () { form.dataset.confirmed = 'true'; form.requestSubmit(); },
+              confirmation.dataset.confirmTitle,
+              confirmation.dataset.confirmAction
+            );
             return;
           }
           form.dataset.loadingHandled = 'true';
@@ -322,7 +328,6 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
           else if (form.enctype === 'multipart/form-data') message = 'Uploading and validating the file…';
           showLoading(message);
           form.querySelectorAll('button, input[type="submit"]').forEach(function (control) { control.disabled = true; });
-        });
       });
       document.querySelectorAll('a[data-loading="true"]').forEach(function (link) {
         link.addEventListener('click', function () {

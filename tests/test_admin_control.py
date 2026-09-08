@@ -49,9 +49,24 @@ class AdminControlTests(unittest.TestCase):
             response = client.get("/admin/quarantine")
             self.assertEqual(response.status_code, 200)
             self.assertIn(b"Quarantine", response.data)
+            self.assertIn(b'hx-get="/admin/quarantine"', response.data)
+            self.assertIn(b'name="rule_id"', response.data)
             legacy = client.get("/admin/business-rule-findings")
             self.assertEqual(legacy.status_code, 302)
             self.assertIn(b"/admin/quarantine", legacy.headers["Location"].encode())
+
+    def test_quarantine_filters_return_htmx_findings_panel(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            client = self.client_for_admin(database)
+            response = client.get(
+                "/admin/quarantine?status=ALL&severity=WARNING&rule_id=rule-example",
+                headers={"HX-Request": "true"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b'id="quarantine-findings-region"', response.data)
+            self.assertIn(b'hx-target="#quarantine-findings-region"', response.data)
+            self.assertNotIn(b"<!doctype html", response.data.lower())
 
     def test_business_rule_wizard_filters_master_roster_fields_and_contains_operator(self):
         with tempfile.TemporaryDirectory() as tmp:

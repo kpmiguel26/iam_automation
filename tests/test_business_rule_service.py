@@ -99,6 +99,19 @@ class BusinessRuleServiceTests(unittest.TestCase):
             self.assertEqual(service.count_findings_for_records(["record-q"]), 1)
             self.assertEqual(service.count_findings_for_records(["other-record"]), 0)
 
+    def test_quarantine_findings_can_be_filtered_by_rule(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            self._relational_batch(database)
+            service = BusinessRuleService(database)
+            status_rule = self._active_rule(service)
+            email_rule = self._active_rule(service, field="email", operator="missing", value="")
+            self.assertEqual(service.evaluate_batch("relational"), 3)
+            filtered = service.list_quarantine_findings(status="ALL", rule_id=email_rule)
+            self.assertEqual(len(filtered), 1)
+            self.assertEqual(filtered[0]["finding"].rule_id, email_rule)
+            self.assertNotEqual(filtered[0]["finding"].rule_id, status_rule)
+
     def test_relational_facts_take_precedence_over_stale_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
