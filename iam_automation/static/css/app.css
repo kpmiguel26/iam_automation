@@ -658,7 +658,19 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .rule-technical-details summary { color: #607087; cursor: pointer; font-size: .72rem; }
 .rule-technical-details summary:hover { color: var(--kp-teal); }
 .rule-technical-details code { color: #9b2c67; font-size: .72rem; }
+.rule-condition-intro { background: #eef8f7; border-left: 4px solid var(--kp-teal); border-radius: .45rem; display: grid; gap: .2rem; padding: .75rem .9rem; }
+.rule-condition-intro strong { color: #075e61; font-size: .86rem; }
+.rule-condition-intro span { color: #557080; font-size: .78rem; line-height: 1.4; }
+.rule-operator-options { display: grid; gap: .55rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rule-operator-option { align-items: flex-start; background: #f8fafc; border: 1px solid #dce5ee; border-radius: .55rem; cursor: pointer; display: flex; gap: .6rem; padding: .7rem .75rem; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.rule-operator-option:hover { background: #f1fbfb; border-color: #80cfd0; }
+.rule-operator-option:has(input:checked) { background: #eaf8f7; border-color: #159c9e; box-shadow: 0 0 0 2px rgba(21,156,158,.1); }
+.rule-operator-option input { accent-color: #087b80; margin-top: .2rem; }
+.rule-operator-option span { display: grid; gap: .15rem; }
+.rule-operator-option strong { color: var(--kp-navy); font-size: .82rem; }
+.rule-operator-option small { color: #687689; font-size: .73rem; line-height: 1.35; }
 @media (max-width: 576px) { .rule-wizard-header { flex-direction: column; } .rule-step-status { display: none; } .rule-accordion-body { padding: .9rem; } }
+@media (max-width: 576px) { .rule-operator-options { grid-template-columns: 1fr; } }
 @media (max-width: 768px) { .readiness-hero { align-items: stretch; flex-direction: column; } .readiness-hero-metric { flex-basis: auto; } .readiness-legend .ms-auto { margin-left: 0 !important; width: 100%; } }
 @media (max-width: 576px) { .readiness-table { min-width: 760px; } }
 .help-context-callout { background: #eef7f7; border-left: 4px solid var(--kp-teal); border-radius: .45rem; display: grid; gap: .25rem; padding: .85rem 1rem; }

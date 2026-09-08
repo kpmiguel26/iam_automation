@@ -94,6 +94,14 @@ class BusinessRuleService:
         "contains": "contains",
         "in": "is one of",
     }
+    OPERATOR_DESCRIPTIONS = {
+        "exists": "Find rows where this data has been provided.",
+        "missing": "Find rows where this data has not been provided.",
+        "equals": "Find rows whose value matches exactly.",
+        "not_equals": "Find rows whose value is different.",
+        "contains": "Find rows where the value includes some text.",
+        "in": "Find rows whose value matches one of several options.",
+    }
     SEVERITY_LABELS = {
         "INFO": "Informational",
         "WARNING": "Needs review",
@@ -152,6 +160,25 @@ class BusinessRuleService:
         else:
             value_text = str(value or "")
         return f"{field_label} {cls.OPERATOR_LABELS.get(operator, operator)} '{value_text}'"
+
+    @classmethod
+    def operator_options(cls) -> tuple[dict[str, str], ...]:
+        """Return user-facing operator choices for the guided rule builder."""
+        return tuple(
+            {
+                "key": operator,
+                "label": cls.OPERATOR_LABELS.get(operator, operator.title()),
+                "description": cls.OPERATOR_DESCRIPTIONS.get(operator, "Review this condition."),
+            }
+            for operator in cls.ALLOWED_OPERATORS
+        )
+
+    def available_field_options(self, source_system: str = "ALL") -> tuple[dict[str, str], ...]:
+        """Return canonical field keys with readable labels for the wizard."""
+        return tuple(
+            {"key": field, "label": self._humanize_field(field)}
+            for field in self.available_fields(source_system)
+        )
 
     def available_sources(self) -> tuple[dict[str, str], ...]:
         return ({"key": "ALL", "label": "All reports", "description": "Evaluate the rule against every source."}, *tuple({"key": key, "label": label, "description": f"Only fields from {label}."} for key, label in self.SOURCE_LABELS.items()))

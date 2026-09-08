@@ -209,6 +209,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
   <script src="{{ url_for('static', filename='vendor/datatables/js/buttons.html5.min.js') }}"></script>
   {% block scripts %}{% endblock %}
   <script src="{{ url_for('static', filename='js/data-tables.js', v=static_version) }}"></script>
+  <script src="{{ url_for('static', filename='js/business-rule-wizard.js', v=static_version) }}"></script>
   <script src="{{ url_for('static', filename='js/utc-date-inputs.js') }}"></script>
   {% if session.get('iam_user') %}
   <script>
