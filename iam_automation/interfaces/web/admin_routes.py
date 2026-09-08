@@ -315,7 +315,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             mark_publication_pending(database_path, actor=str(session["iam_user"]), reason=f"Business rule status changed: {status}")
             finding_count = rules.evaluate_all_batches() if status == "ACTIVE" else 0
             record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_STATUS_CHANGED", "business_rule", rule_id, new_values={"status": status})
-            notice = f"Rule {status.lower()}. Historical batches evaluated: {finding_count} new finding(s)." if status == "ACTIVE" else "Rule disabled. Existing findings were preserved."
+            notice = f"Rule enabled. We checked previous imports and found {finding_count} new review item(s)." if status == "ACTIVE" else "Rule disabled. Existing review items were preserved."
             if request.headers.get("HX-Request") == "true":
                 return render_template("admin/_business_rule_results.html", rules=rules.list_rules(), message=notice, error=None)
             return redirect(url_for("admin.business_rules", notice=notice))

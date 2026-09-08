@@ -642,6 +642,22 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .rule-phase-option strong { color: var(--kp-navy); font-size: .84rem; }
 .rule-phase-option small { color: #687689; font-size: .74rem; line-height: 1.4; }
 .rule-review-grid { background: #f8fafc; border: 1px solid #e6ebf0; border-radius: .55rem; margin-left: 0; margin-right: 0; padding: .75rem .2rem; }
+.rules-readable-table { min-width: 1120px; }
+.rules-readable-table th { vertical-align: bottom; }
+.rules-readable-table td { max-width: 18rem; }
+.rules-readable-table .rule-readable-name { min-width: 15rem; }
+.rules-readable-table .rule-readable-name > strong { color: var(--kp-navy); display: block; font-size: .9rem; }
+.rules-readable-table .rule-readable-name > .small { line-height: 1.4; margin-top: .25rem; }
+.rule-condition-readable { color: var(--kp-navy); display: block; font-size: .88rem; line-height: 1.35; }
+.rule-phase-badge, .rule-severity-badge { border-radius: 999px; display: inline-flex; font-size: .7rem; font-weight: 800; letter-spacing: .02em; padding: .32rem .55rem; }
+.rule-phase-before { background: #e8f2ff; color: #15549b; }
+.rule-phase-after { background: #eeeaff; color: #58429b; }
+.rule-severity-info { background: #edf4ff; color: #2563a7; }
+.rule-severity-warning { background: #fff4d6; color: #8a5a00; }
+.rule-severity-error, .rule-severity-critical { background: #ffe7e7; color: #a02d2d; }
+.rule-technical-details summary { color: #607087; cursor: pointer; font-size: .72rem; }
+.rule-technical-details summary:hover { color: var(--kp-teal); }
+.rule-technical-details code { color: #9b2c67; font-size: .72rem; }
 @media (max-width: 576px) { .rule-wizard-header { flex-direction: column; } .rule-step-status { display: none; } .rule-accordion-body { padding: .9rem; } }
 @media (max-width: 768px) { .readiness-hero { align-items: stretch; flex-direction: column; } .readiness-hero-metric { flex-basis: auto; } .readiness-legend .ms-auto { margin-left: 0 !important; width: 100%; } }
 @media (max-width: 576px) { .readiness-table { min-width: 760px; } }

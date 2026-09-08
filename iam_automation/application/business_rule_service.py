@@ -86,6 +86,26 @@ class BusinessRuleService:
         "vendor_name",
         "job_title",
     )
+    OPERATOR_LABELS = {
+        "exists": "is present",
+        "missing": "is missing",
+        "equals": "equals",
+        "not_equals": "does not equal",
+        "contains": "contains",
+        "in": "is one of",
+    }
+    SEVERITY_LABELS = {
+        "INFO": "Informational",
+        "WARNING": "Needs review",
+        "ERROR": "Important review",
+        "CRITICAL": "Urgent review",
+    }
+    PHASE_LABELS = {"BEFORE": "Before import", "AFTER": "After import"}
+    PHASE_DESCRIPTIONS = {
+        "BEFORE": "Checks the incoming report before it is saved.",
+        "AFTER": "Checks the saved records after the import completes.",
+    }
+    STATUS_LABELS = {"ACTIVE": "Enabled", "DRAFT": "Draft", "DISABLED": "Disabled"}
 
     def list_rules(self) -> list[dict]:
         with orm_session(self.database_path) as session:
@@ -94,9 +114,44 @@ class BusinessRuleService:
             for rule in rules:
                 version = session.scalar(select(BusinessRuleVersionModel).where(BusinessRuleVersionModel.rule_id == rule.rule_id, BusinessRuleVersionModel.version == rule.current_version))
                 scope = self._json(version.scope_json) if version is not None else {}
+                condition = self._json(version.condition_json) if version is not None else {}
                 source_system = str(scope.get("source_system") or "ALL")
-                result.append({"rule": rule, "version": version, "execution_phase": str(version.phase or "AFTER"), "source_system": source_system, "source_label": "All reports" if source_system == "ALL" else self.SOURCE_LABELS.get(source_system, source_system)})
+                phase = str(version.phase or "AFTER") if version is not None else "AFTER"
+                severity = str(version.severity or "WARNING") if version is not None else "WARNING"
+                result.append({"rule": rule, "version": version, "execution_phase": phase, "source_system": source_system, "source_label": "All reports" if source_system == "ALL" else self.SOURCE_LABELS.get(source_system, source_system)})
+                result[-1].update({
+                    "condition": condition,
+                    "field_label": self._humanize_field(condition.get("field")),
+                    "condition_display": self._condition_display(condition),
+                    "phase_label": self.PHASE_LABELS.get(phase, phase.title()),
+                    "phase_description": self.PHASE_DESCRIPTIONS.get(phase, "Runs during the import workflow."),
+                    "severity_label": self.SEVERITY_LABELS.get(severity, severity.title()),
+                    "status_label": self.STATUS_LABELS.get(str(rule.status), str(rule.status).title()),
+                    "response_display": "Creates a review item without blocking the import.",
+                })
             return result
+
+    @staticmethod
+    def _humanize_field(field: object) -> str:
+        """Turn a canonical field key into a label suitable for end users."""
+        words = []
+        acronyms = {"id": "ID", "nuid": "NUID", "npn": "NPN", "rsr": "RSR", "hr": "HR", "url": "URL"}
+        for word in str(field or "").replace("_", " ").split():
+            words.append(acronyms.get(word.casefold(), word.capitalize()))
+        return " ".join(words) or "This field"
+
+    @classmethod
+    def _condition_display(cls, condition: dict) -> str:
+        field_label = cls._humanize_field(condition.get("field"))
+        operator = str(condition.get("operator") or "").casefold()
+        if operator in {"exists", "missing"}:
+            return f"{field_label} {cls.OPERATOR_LABELS.get(operator, operator)}"
+        value = condition.get("value", "")
+        if isinstance(value, list):
+            value_text = ", ".join(str(item) for item in value)
+        else:
+            value_text = str(value or "")
+        return f"{field_label} {cls.OPERATOR_LABELS.get(operator, operator)} '{value_text}'"
 
     def available_sources(self) -> tuple[dict[str, str], ...]:
         return ({"key": "ALL", "label": "All reports", "description": "Evaluate the rule against every source."}, *tuple({"key": key, "label": label, "description": f"Only fields from {label}."} for key, label in self.SOURCE_LABELS.items()))

@@ -3,17 +3,18 @@
   {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
   <section class="surface overflow-hidden" aria-live="polite">
     <div class="p-4 border-bottom d-flex justify-content-between align-items-center gap-3"><div><p class="eyebrow mb-1">Rule registry</p><h2 class="h5 mb-0">Configured rules</h2></div><span class="badge text-bg-light border">{{ rules|length }} rule(s)</span></div>
-    <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Rule</th><th>Report</th><th>Phase</th><th>Condition</th><th>Status</th><th></th></tr></thead><tbody>
+    <div class="table-responsive"><table class="table align-middle mb-0 rules-readable-table"><thead><tr><th>Rule</th><th>Applies to</th><th>When it runs</th><th>What it checks</th><th>If found</th><th>Status</th><th></th></tr></thead><tbody>
       {% for item in rules %}
       <tr>
-        <td><strong>{{ item.rule.name }}</strong><div class="small text-secondary">{{ item.rule.description }}</div></td>
-        <td><span class="badge text-bg-light border">{{ item.source_label }}</span></td>
-        <td><span class="badge text-bg-light border">{{ item.execution_phase }}</span><div class="small text-secondary">{% if item.execution_phase == 'BEFORE' %}pre-import{% else %}post-import{% endif %}</div></td>
-        <td><code>{{ item.version.condition_json }}</code><div class="small text-secondary">{{ item.version.severity }}</div></td>
-        <td><span class="status-pill {% if item.rule.status == 'ACTIVE' %}status-active{% elif item.rule.status == 'DRAFT' %}status-pending{% else %}status-overdue{% endif %}"><span></span>{{ item.rule.status }}</span></td>
+        <td class="rule-readable-name"><strong>{{ item.rule.name }}</strong><div class="small text-secondary">{{ item.rule.description or 'Advisory check for imported employee data.' }}</div><details class="rule-technical-details mt-2"><summary>Technical details</summary><div class="small mt-2"><span>Field:</span> <code>{{ item.condition.get('field', 'n/a') }}</code><br><span>Operator:</span> <code>{{ item.condition.get('operator', 'n/a') }}</code>{% if item.condition.get('value') is not none %}<br><span>Expected value:</span> <code>{{ item.condition.get('value') }}</code>{% endif %}</div></details></td>
+        <td><span class="badge source-badge">{{ item.source_label }}</span><div class="small text-secondary mt-1">{% if item.source_system == 'ALL' %}All imported reports{% else %}Only this report{% endif %}</div></td>
+        <td><span class="rule-phase-badge rule-phase-{{ item.execution_phase|lower }}">{{ item.phase_label }}</span><div class="small text-secondary mt-1">{{ item.phase_description }}</div></td>
+        <td><strong class="rule-condition-readable">{{ item.condition_display }}</strong><div class="small text-secondary">The import continues normally.</div></td>
+        <td><span class="rule-severity-badge rule-severity-{{ item.version.severity|lower }}">{{ item.severity_label }}</span><div class="small text-secondary mt-1">{{ item.response_display }}</div></td>
+        <td><span class="status-pill {% if item.rule.status == 'ACTIVE' %}status-active{% elif item.rule.status == 'DRAFT' %}status-pending{% else %}status-overdue{% endif %}"><span></span>{{ item.status_label }}</span></td>
         <td class="text-end"><div class="d-flex justify-content-end gap-2"><form method="post" action="{{ url_for('admin.business_rule_status', rule_id=item.rule.rule_id) }}" hx-post="{{ url_for('admin.business_rule_status', rule_id=item.rule.rule_id) }}" hx-target="#rules-table-region" hx-swap="outerHTML" hx-indicator="#rule-evaluation-indicator"><input type="hidden" name="status" value="{% if item.rule.status == 'ACTIVE' %}DISABLED{% else %}ACTIVE{% endif %}">{% if item.rule.status == 'ACTIVE' %}<button class="btn btn-sm btn-outline-secondary" type="submit">Disable</button>{% else %}<button class="btn btn-sm btn-outline-success" type="submit">Activate</button>{% endif %}</form><form method="post" action="{{ url_for('admin.business_rule_delete', rule_id=item.rule.rule_id) }}" hx-post="{{ url_for('admin.business_rule_delete', rule_id=item.rule.rule_id) }}" hx-target="#rules-table-region" hx-swap="outerHTML" onsubmit="return confirm('Delete this rule and all of its detections?');"><button class="btn btn-sm btn-outline-danger" type="submit">Delete</button></form></div></td>
       </tr>
-      {% else %}<tr><td colspan="6" class="empty-state">No rules configured yet.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="7" class="empty-state">No rules configured yet.</td></tr>{% endfor %}
     </tbody></table></div>
   </section>
 </div>

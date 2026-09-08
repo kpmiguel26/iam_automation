@@ -166,6 +166,22 @@ class BusinessRuleServiceTests(unittest.TestCase):
             self.assertEqual(listed[0]["execution_phase"], "BEFORE")
             self.assertIn("email", service.available_fields())
 
+    def test_rule_registry_exposes_user_friendly_condition_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            service = BusinessRuleService(database)
+            service.create_rule(
+                name="Missing employee email", description="Ask the reviewer to confirm the contact address.",
+                field="email", operator="missing", value="", severity="WARNING", actor="test",
+            )
+
+            item = service.list_rules()[0]
+
+            self.assertEqual(item["condition_display"], "Email is missing")
+            self.assertEqual(item["severity_label"], "Needs review")
+            self.assertEqual(item["phase_label"], "After import")
+            self.assertEqual(item["status_label"], "Draft")
+
     def test_observed_source_fields_extend_rule_catalog_without_hardcoding(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
