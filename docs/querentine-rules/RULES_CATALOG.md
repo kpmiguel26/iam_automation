@@ -1,5 +1,16 @@
 # Quarantine rules catalog
 
+El identificador `RL-001`, `MR-001`, etc. es la referencia de este catÃ¡logo.
+El nombre que se guarda lo arma el Guided rule builder con esta convenciÃ³n:
+
+```text
+<PHASE> - <REPORT_CODE> - <NUMBER> - <FIELD> - <DESCRIPTIVE_NAME>
+```
+
+Ejemplo: `BEFORE - RL - 001 - email - Employee email is missing`.
+El cÃ³digo del reporte se calcula desde el nombre del reporte; no se mantiene
+una lista de cÃ³digos quemada en el catÃ¡logo ni en el cÃ³digo.
+
 Catálogo de reglas para recrear después de limpiar `runtime.sqlite`.
 
 La interfaz de reglas crea inicialmente las reglas como `DRAFT`. Después de
@@ -39,6 +50,26 @@ Para probar la ejecución temprana del orquestador, todas las reglas de este
 catálogo se crearán temporalmente con phase `BEFORE`. Esto no las convierte en
 bloqueantes: una coincidencia solamente genera la infracción en
 `fact_quarantine` y la importación continúa.
+
+## Procedimiento para probar una regla
+
+1. Abrir **Administration -> Business rules** y seleccionar **Create a rule**.
+2. Elegir `BEFORE` para probar la fila normalizada, o `AFTER` para probar los
+   hechos ya guardados en SQLite.
+3. Seleccionar el reporte indicado en **Fuente objetivo**. Para reglas
+   especÃ­ficas no usar `All reports`.
+4. Completar field, operator y value exactamente como aparecen en la regla.
+5. Completar el nÃºmero y el nombre descriptivo. Confirmar el preview con el
+   formato `PHASE - CODE - NUMBER - FIELD - NAME`.
+6. Crear la regla como `DRAFT` y presionar **Test** en el catÃ¡logo. La prueba
+   muestra los registros que hacen match, pero no activa la regla ni crea
+   findings.
+7. Si el resultado es correcto, presionar **Activate** y revisar los findings
+   en **Quarantine**.
+
+Si la prueba muestra cero matches, revisar el batch local, el scope, el texto
+normalizado del value y el operador elegido. **Test** tambiÃ©n funciona sobre
+reglas `DRAFT`, para validar la condiciÃ³n antes de activarla.
 
 ## Reglas compartidas para Roster Lock y Master Roster
 
@@ -167,15 +198,37 @@ evidencia de origen y deben revisarse desde Quarantine.
 
 ## Orden recomendado para recrearlas
 
-1. Crear y activar `RL-MR-001 — Employee email is missing`.
-2. Crear y activar `RL-MR-002 — Terminated assignment requires review`.
+Durante la prueba, usar primero el botÃ³n **Test** sobre cada regla `DRAFT` y
+activar solamente las reglas cuyo resultado sea el esperado. DespuÃ©s de
+activar, revisar los findings creados en **Quarantine**.
+
+1. Crear `RL-MR-001 — Employee email is missing` y usar **Test** antes de activar.
+2. Crear `RL-MR-002 — Terminated assignment requires review` y usar **Test** antes de activar.
 3. En las reglas específicas, seleccionar primero el reporte correspondiente
    (`Roster Lock` o `Master Roster`) para que el wizard limite los fields.
-4. Ejecutar o reintentar la evaluación de reglas sobre el batch importado.
-5. Revisar los resultados en **Quarantine**, verificando regla, empleado, campo
+4. Usar **Test** en cada regla y revisar los registros que hicieron match.
+5. Activar solamente las reglas validadas y revisar los resultados en **Quarantine**, verificando regla, empleado, campo
    afectado y valor observado.
 
 ## Registro de recreación
+
+### Nombres finales esperados en el registry
+
+| Referencia | Scope a seleccionar | Nombre generado esperado |
+|---|---|---|
+| RL-MR-001 para Roster Lock | `ROSTER_LOCK` | `BEFORE - RL - 001 - email - Employee email is missing` |
+| RL-MR-001 para Master Roster | `MASTER_ROSTER` | `BEFORE - MR - 001 - email - Employee email is missing` |
+| RL-MR-002 para Roster Lock | `ROSTER_LOCK` | `BEFORE - RL - 002 - assignment_status - Terminated assignment requires review` |
+| RL-MR-002 para Master Roster | `MASTER_ROSTER` | `BEFORE - MR - 002 - assignment_status - Terminated assignment requires review` |
+| RL-003 | `ROSTER_LOCK` | `BEFORE - RL - 003 - vendor_employee_id - Vendor employee ID is missing` |
+| RL-004 | `ROSTER_LOCK` | `BEFORE - RL - 004 - vendor_name - Vendor name is missing` |
+| RL-005 | `ROSTER_LOCK` | `BEFORE - RL - 005 - work_order_id - Work order is missing` |
+| MR-003 | `MASTER_ROSTER` | `BEFORE - MR - 003 - nuid_login_id - NUID login ID is missing` |
+| MR-004 | `MASTER_ROSTER` | `BEFORE - MR - 004 - employee_number - Employee number is missing` |
+| MR-005 | `MASTER_ROSTER` | `BEFORE - MR - 005 - npn_login_id - Composite NPN value requires review` |
+
+Para reglas compartidas se recomienda crear una variante por reporte. AsÃ­ el
+scope evita evaluar como `missing` un field que no existe en otra fuente.
 
 | Rule ID | Nombre | Phase | Field | Operator | Severity | Estado |
 |---|---|---|---|---|---|---|

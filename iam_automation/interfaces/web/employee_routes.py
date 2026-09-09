@@ -210,10 +210,12 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             manifest = load_watcher_manifest(database_path).get("observations", {})
             if isinstance(manifest, dict):
                 known_paths = {str(item.get("source_path", item.get("source_file", ""))) for item in files}
+                known_files = {str(item.get("source_file", "")) for item in files}
                 for item in manifest.values():
                     if not isinstance(item, dict) or item.get("source_system") != source_system:
                         continue
-                    if str(item.get("path", "")) in known_paths:
+                    manifest_path = str(item.get("path", ""))
+                    if manifest_path in known_paths or Path(manifest_path.replace("\\", "/")).name in known_files:
                         continue
                     files.append({
                         "source_file": str(item.get("source_file", Path(str(item.get("path", ""))).name)),

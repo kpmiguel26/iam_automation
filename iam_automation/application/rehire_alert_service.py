@@ -20,7 +20,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from ..infrastructure.sqlite.orm import IngestionRecordModel, WorkerModel, orm_session
-from .business_calendar import business_days_between, configured_rehire_holidays
+from .business_calendar import business_days_between, configured_rehire_holidays, configured_rule_calendar
 from .publication_state import mark_publication_pending
 from .source_date import parse_source_date
 from .status_catalog import is_inactive_source_status, normalize_accessnow_status
@@ -43,8 +43,19 @@ class RehireAlertService:
         return parse_source_date(value)
 
     @staticmethod
-    def _business_days_between(start: date, end: date) -> int:
-        return business_days_between(start, end, configured_rehire_holidays())
+    def _business_days_between(
+        start: date,
+        end: date,
+        *,
+        holidays=None,
+        operating_weekdays=None,
+    ) -> int:
+        return business_days_between(
+            start,
+            end,
+            configured_rehire_holidays() if holidays is None else holidays,
+            operating_weekdays=operating_weekdays or frozenset({0, 1, 2, 3, 4}),
+        )
 
     @staticmethod
     def _candidate_keys(payload: dict[str, object], source_record_key: str = "") -> set[str]:
@@ -64,6 +75,7 @@ class RehireAlertService:
 
     def list_alerts(self, source_file: str = "") -> list[dict[str, object]]:
         selected_file = self._source_file_name(source_file) if source_file else ""
+        calendar = configured_rule_calendar(self.database_path)
         with orm_session(self.database_path) as session:
             roster_rows = session.scalars(select(IngestionRecordModel).where(
                 IngestionRecordModel.source_system == "ROSTER_LOCK",
@@ -121,7 +133,12 @@ class RehireAlertService:
                 roster_date = roster_date or self._alert_date(roster.created_at_utc)
                 if not termination_date or not roster_date:
                     continue
-                elapsed = self._business_days_between(termination_date, roster_date)
+                elapsed = self._business_days_between(
+                    termination_date,
+                    roster_date,
+                    holidays=calendar.holidays_between(termination_date, roster_date),
+                    operating_weekdays=calendar.operating_weekdays,
+                )
                 if elapsed < 0 or elapsed > 30:
                     continue
                 worker_id = str(roster.matched_worker_id or access.matched_worker_id or "")

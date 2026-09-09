@@ -19,6 +19,7 @@ from pathlib import Path
 
 from iam_automation import webapp
 from iam_automation.application.shared_request_service import SharedRequestService
+from iam_automation.application.business_rule_service import BusinessRuleService
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_REQUESTER, ROLE_SUPER_OPERATOR
 from iam_automation.startup import PreflightResult, StartupSettings, StartupState
@@ -81,16 +82,24 @@ class AdminControlTests(unittest.TestCase):
             self.assertIn(b"Master Roster", source.data)
             self.assertIn(b"rule-accordion", source.data)
             self.assertIn(b"Execution phase", source.data)
+            details = client.post(
+                "/admin/business-rules/wizard/details",
+                data={"phase": "AFTER", "source_system": "MASTER_ROSTER"},
+                headers=headers,
+            )
+            self.assertEqual(details.status_code, 200)
+            self.assertIn(b"npn_login_id", details.data)
+            self.assertIn(b"Data to check", details.data)
             condition = client.post(
                 "/admin/business-rules/wizard/condition",
-                data={"phase": "AFTER", "source_system": "MASTER_ROSTER", "name": "Composite NPN", "description": "Review composite values."},
+                data={"phase": "AFTER", "source_system": "MASTER_ROSTER", "field": "npn_login_id", "operator": "contains", "value": "|RECORD|"},
                 headers=headers,
             )
             self.assertEqual(condition.status_code, 200)
-            self.assertIn(b"npn_login_id", condition.data)
+            self.assertIn(b"Rule naming", condition.data)
             review = client.post(
                 "/admin/business-rules/wizard/review",
-                data={"phase": "AFTER", "source_system": "MASTER_ROSTER", "name": "Composite NPN", "description": "Review composite values.", "field": "npn_login_id", "operator": "contains", "value": "|RECORD|"},
+                data={"phase": "AFTER", "source_system": "MASTER_ROSTER", "field": "npn_login_id", "operator": "contains", "value": "|RECORD|", "rule_number": "7", "name": "Composite NPN", "description": "Review composite values.", "generated_name": "AFTER - MR - 007 - npn_login_id - Composite NPN"},
                 headers=headers,
             )
             self.assertEqual(review.status_code, 200)
@@ -100,6 +109,25 @@ class AdminControlTests(unittest.TestCase):
             start = client.get("/admin/business-rules/wizard/start")
             self.assertEqual(start.status_code, 200)
             self.assertIn(b"Create a rule", start.data)
+
+    def test_business_rule_catalog_can_test_a_draft_rule(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            rule_id = BusinessRuleService(database).create_rule(
+                name="Draft status test", description="Preview this rule.", field="status",
+                operator="equals", value="TERMINATED", severity="WARNING", actor="test",
+            )
+            client = self.client_for_admin(database)
+            client.get("/admin/business-rules")
+            with client.session_transaction() as session:
+                csrf_token = session["iam_csrf_token"]
+            response = client.post(
+                f"/admin/business-rules/{rule_id}/test",
+                headers={"X-CSRF-Token": csrf_token, "HX-Request": "true"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Rule test", response.data)
+            self.assertIn(b"No records matched this rule", response.data)
 
     def test_requester_cannot_open_control_center(self):
         with tempfile.TemporaryDirectory() as tmp:

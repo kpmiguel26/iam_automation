@@ -26,7 +26,7 @@ from sqlalchemy import select
 from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.accessnow_ingestion_service import AccessNowIngestionService
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.infrastructure.sqlite.orm import IngestionRecordModel, WorkerEngagementModel, WorkerIdentifierModel, WorkerModel, WorkerProfileVersionModel, WorkerSourceLineageModel, orm_session
+from iam_automation.infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, WorkerEngagementModel, WorkerIdentifierModel, WorkerModel, WorkerProfileVersionModel, WorkerSourceLineageModel, orm_session
 from iam_automation.application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 from iam_automation.application.source_date import parse_source_date
 from iam_automation.application.status_catalog import normalize_accessnow_status
@@ -36,6 +36,30 @@ from iam_automation.application.user_service import UserService
 
 
 class SourceUpdatesTests(unittest.TestCase):
+    def test_accessnow_batch_files_with_no_new_rows_are_marked_imported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            with orm_session(database) as session:
+                session.add(ImportBatchModel(
+                    batch_id="access-batch",
+                    filename="CompanyName_TELETECH_report_09032026.csv; CompanyName_TELETECH_report_09042026.csv",
+                    source_type="ACCESSNOW",
+                    status="COMPLETED_WITH_WARNINGS",
+                    total_rows=2,
+                    valid_rows=2,
+                    quarantine_rows=0,
+                    created_by="test",
+                    created_at_utc="2026-09-09T20:00:00+00:00",
+                    source_modified_at_utc="2026-09-09T20:00:00+00:00",
+                ))
+
+            files = {item["source_file"]: item for item in EmployeeService(database).list_source_files("ACCESSNOW")}
+
+            self.assertTrue(files["CompanyName_TELETECH_report_09032026.csv"]["imported"])
+            self.assertEqual(files["CompanyName_TELETECH_report_09042026.csv"]["record_count"], 0)
+            self.assertTrue(files["CompanyName_TELETECH_report_09042026.csv"]["imported"])
+            self.assertIsNotNone(EmployeeService(database).get_source_file_summary("ACCESSNOW", "CompanyName_TELETECH_report_09042026.csv"))
+
     def test_status_catalog_normalizes_accessnow_aliases(self):
         self.assertEqual(normalize_accessnow_status("termination"), "TERMINATED")
         self.assertEqual(normalize_accessnow_status("disabled"), "DEACTIVATED")

@@ -10,6 +10,8 @@ from pathlib import Path
 
 from sqlalchemy import delete, func, select
 
+from .business_calendar import configured_rule_calendar
+from .condition_evaluator import ConditionEvaluator, ConditionValidationError
 from ..infrastructure.sqlite.star_schema_writer import StarSchemaWriter
 from ..infrastructure.sqlite.orm import (
     BusinessRuleModel,
@@ -23,6 +25,8 @@ from ..infrastructure.sqlite.orm import (
     ImportBatchModel,
     IngestionRecordModel,
     RuleFindingModel,
+    RuleContextVersionModel,
+    RuleContextModel,
     SourceFieldMappingModel,
     WorkerModel,
     orm_session,
@@ -93,6 +97,11 @@ class BusinessRuleService:
         "not_equals": "does not equal",
         "contains": "contains",
         "in": "is one of",
+        "greater_than": "is greater than",
+        "less_than": "is less than",
+        "between": "is between",
+        "before": "is before",
+        "after": "is after",
     }
     OPERATOR_DESCRIPTIONS = {
         "exists": "Find rows where this data has been provided.",
@@ -101,6 +110,11 @@ class BusinessRuleService:
         "not_equals": "Find rows whose value is different.",
         "contains": "Find rows where the value includes some text.",
         "in": "Find rows whose value matches one of several options.",
+        "greater_than": "Find values greater than the comparison value.",
+        "less_than": "Find values less than the comparison value.",
+        "between": "Find values inside an inclusive range.",
+        "before": "Find dates before the comparison date.",
+        "after": "Find dates after the comparison date.",
     }
     SEVERITY_LABELS = {
         "INFO": "Informational",
@@ -150,6 +164,17 @@ class BusinessRuleService:
 
     @classmethod
     def _condition_display(cls, condition: dict) -> str:
+        if "all" in condition:
+            return " AND ".join(cls._condition_display(item) for item in condition.get("all", []))
+        if "any" in condition:
+            return " OR ".join(cls._condition_display(item) for item in condition.get("any", []))
+        if "not" in condition:
+            return f"NOT ({cls._condition_display(condition.get('not') or {})})"
+        if "left" in condition:
+            left = cls._operand_display(condition.get("left"))
+            right = cls._operand_display(condition.get("right"))
+            operator = str(condition.get("operator") or "").casefold()
+            return f"{left} {cls.OPERATOR_LABELS.get(operator, operator)} {right}".strip()
         field_label = cls._humanize_field(condition.get("field"))
         operator = str(condition.get("operator") or "").casefold()
         if operator in {"exists", "missing"}:
@@ -160,6 +185,22 @@ class BusinessRuleService:
         else:
             value_text = str(value or "")
         return f"{field_label} {cls.OPERATOR_LABELS.get(operator, operator)} '{value_text}'"
+
+    @classmethod
+    def _operand_display(cls, operand: object) -> str:
+        if not isinstance(operand, dict):
+            return "value"
+        kind = str(operand.get("kind") or "").casefold()
+        if kind == "field":
+            source = str(operand.get("source") or "").strip()
+            field = cls._humanize_field(operand.get("field"))
+            return f"{source} / {field}" if source else field
+        if kind == "derived":
+            return str(operand.get("function") or "derived value").replace("_", " ")
+        value = operand.get("value", "")
+        if isinstance(value, list):
+            return "[" + ", ".join(str(item) for item in value) + "]"
+        return f"'{value}'"
 
     @classmethod
     def operator_options(cls) -> tuple[dict[str, str], ...]:
@@ -229,9 +270,104 @@ class BusinessRuleService:
         if operator == "in": condition["value"] = [item.strip() for item in value.split(",") if item.strip()]
         scope = {} if source_system == "ALL" else {"source_system": source_system}
         with orm_session(self.database_path) as session:
+            context_version_id = self._current_context_version_id(session)
             session.add(BusinessRuleModel(rule_id=rule_id, name=name, description=description.strip(), status="DRAFT", current_version=1, created_by=actor, created_at_utc=now, updated_at_utc=now))
-            session.add(BusinessRuleVersionModel(rule_version_id=f"{rule_id}:1", rule_id=rule_id, version=1, phase=phase, condition_json=json.dumps(condition, sort_keys=True), scope_json=json.dumps(scope, sort_keys=True), severity=severity, status="DRAFT", created_by=actor, created_at_utc=now))
+            session.add(BusinessRuleVersionModel(rule_version_id=f"{rule_id}:1", rule_id=rule_id, version=1, phase=phase, context_version_id=context_version_id, condition_json=json.dumps(condition, sort_keys=True), scope_json=json.dumps(scope, sort_keys=True), severity=severity, status="DRAFT", created_by=actor, created_at_utc=now))
         return rule_id
+
+    def create_complex_rule(
+        self,
+        *,
+        name: str,
+        description: str,
+        condition: dict,
+        severity: str,
+        actor: str,
+        phase: str = "AFTER",
+        source_system: str = "ALL",
+    ) -> str:
+        """Create a rule using the explicit left/operator/right language.
+
+        The guided builder can continue using :meth:`create_rule` while more
+        advanced builders compose conditions with ``all``/``any`` and derived
+        operands. Both forms persist in the same versioned rule contract.
+        """
+        name = str(name or "").strip()
+        description = str(description or "").strip()
+        severity = str(severity or "").strip().upper()
+        phase = str(phase or "").strip().upper()
+        source_system = str(source_system or "ALL").strip().upper()
+        if not name or severity not in self.ALLOWED_SEVERITIES or phase not in self.ALLOWED_PHASES:
+            raise ValueError("Name, phase and severity are required.")
+        if source_system not in {"ALL", *self.SOURCE_FIELDS}:
+            raise ValueError("Invalid rule report scope.")
+        try:
+            ConditionEvaluator().validate(condition)
+            self._validate_condition_fields(condition, source_system)
+        except ConditionValidationError as exc:
+            raise ValueError(str(exc)) from exc
+        except ValueError:
+            raise
+        rule_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        scope = {} if source_system == "ALL" else {"source_system": source_system}
+        with orm_session(self.database_path) as session:
+            context_version_id = self._current_context_version_id(session)
+            session.add(BusinessRuleModel(
+                rule_id=rule_id, name=name, description=description,
+                rule_type="COMPOSITE_CONDITION", status="DRAFT", current_version=1,
+                created_by=actor, created_at_utc=now, updated_at_utc=now,
+            ))
+            session.add(BusinessRuleVersionModel(
+                rule_version_id=f"{rule_id}:1", rule_id=rule_id, version=1,
+                phase=phase, context_version_id=context_version_id, condition_json=json.dumps(condition, sort_keys=True),
+                scope_json=json.dumps(scope, sort_keys=True), severity=severity,
+                status="DRAFT", created_by=actor, created_at_utc=now,
+            ))
+        return rule_id
+
+    def _validate_condition_fields(self, condition: dict, default_source: str = "ALL") -> None:
+        """Ensure field operands refer to the governed source catalog."""
+        if "field" in condition:
+            if str(condition.get("field") or "") not in set(self.available_fields(default_source)):
+                raise ValueError("The rule field is not enabled in the governed field catalog.")
+            return
+        for key in ("all", "any"):
+            children = condition.get(key)
+            if isinstance(children, list):
+                for child in children:
+                    if isinstance(child, dict):
+                        self._validate_condition_fields(child, default_source)
+        nested = condition.get("not")
+        if isinstance(nested, dict):
+            self._validate_condition_fields(nested, default_source)
+        left = condition.get("left")
+        right = condition.get("right")
+        for operand in (left, right):
+            if not isinstance(operand, dict):
+                continue
+            if operand.get("kind") == "field":
+                source = str(operand.get("source") or default_source).strip().upper() or "ALL"
+                if source not in {"ALL", *self.SOURCE_FIELDS}:
+                    raise ValueError("The rule field source is not governed.")
+                if str(operand.get("field") or "") not in set(self.available_fields(source)):
+                    raise ValueError("The rule field is not enabled in the governed field catalog.")
+            elif operand.get("kind") == "derived":
+                for argument in operand.get("arguments", []):
+                    if isinstance(argument, dict) and argument.get("kind") == "field":
+                        self._validate_condition_fields({"left": argument, "right": {"kind": "literal", "value": None}}, default_source)
+
+    @staticmethod
+    def _current_context_version_id(session) -> str | None:
+        """Pin newly created rules to the context active at creation time."""
+        context = session.scalar(select(RuleContextModel).where(RuleContextModel.context_key == "DEFAULT"))
+        if context is None:
+            return None
+        context_version = session.scalar(select(RuleContextVersionModel).where(
+            RuleContextVersionModel.context_id == context.context_id,
+            RuleContextVersionModel.version == context.current_version,
+        ))
+        return context_version.context_version_id if context_version is not None else None
 
     def set_status(self, rule_id: str, status: str) -> None:
         status = status.upper()
@@ -284,6 +420,71 @@ class BusinessRuleService:
             batch_ids = session.scalars(select(IngestionRecordModel.batch_id).distinct()).all()
         return sum(self.evaluate_batch(str(batch_id)) for batch_id in batch_ids)
 
+    def test_rule(self, rule_id: str, batch_id: str | None = None) -> dict:
+        """Preview a rule against local evidence without creating findings.
+
+        This is intentionally available for DRAFT rules so an administrator
+        can confirm the rule's scope and matches before activation. The preview
+        never changes rule status, source facts, quarantine facts or findings.
+        """
+        rule_id = str(rule_id or "").strip()
+        selected_batch = str(batch_id or "").strip()
+        if not rule_id:
+            raise ValueError("Rule not found.")
+        with orm_session(self.database_path) as session:
+            rule = session.get(BusinessRuleModel, rule_id)
+            if rule is None:
+                raise ValueError("Rule not found.")
+            version = session.scalar(select(BusinessRuleVersionModel).where(
+                BusinessRuleVersionModel.rule_id == rule_id,
+                BusinessRuleVersionModel.version == rule.current_version,
+            ))
+            if version is None:
+                raise ValueError("Rule version not found.")
+            query = select(IngestionRecordModel).order_by(IngestionRecordModel.created_at_utc.desc())
+            if selected_batch:
+                query = query.where(IngestionRecordModel.batch_id == selected_batch)
+            records = session.scalars(query).all()
+            scope = self._json(version.scope_json)
+            condition = self._json(version.condition_json)
+            payload_cache: dict[str, dict] = {}
+            matches: list[dict] = []
+            evaluated = 0
+            for record in records:
+                if scope.get("source_system") and scope["source_system"] != record.source_system:
+                    continue
+                evaluated += 1
+                if record.record_id not in payload_cache:
+                    try:
+                        payload = StarSchemaWriter.payload_for_record(session, record)
+                    except (TypeError, ValueError):
+                        payload = {}
+                    payload_cache[record.record_id] = payload if isinstance(payload, dict) else {}
+                payload = payload_cache[record.record_id]
+                if not self._matches(condition, payload, version.context_version_id):
+                    continue
+                field_key = self._condition_field(condition)
+                actual = payload.get(field_key, "") if field_key else ""
+                matches.append({
+                    "batch_id": record.batch_id,
+                    "record_id": record.record_id,
+                    "source_system": record.source_system,
+                    "source_record_key": record.source_record_key,
+                    "row_number": record.row_number,
+                    "field": field_key,
+                    "actual_value": actual,
+                })
+            return {
+                "rule_id": rule.rule_id,
+                "rule_name": rule.name,
+                "rule_status": rule.status,
+                "phase": version.phase,
+                "batch_id": selected_batch or "ALL",
+                "evaluated": evaluated,
+                "match_count": len(matches),
+                "matches": matches,
+            }
+
     def evaluate_batch(self, batch_id: str) -> int:
         """Evaluate active AFTER rules against one persisted import batch."""
         now = datetime.now(timezone.utc).isoformat()
@@ -321,7 +522,7 @@ class BusinessRuleService:
                             payload = {}
                         payloads[record.record_id] = payload if isinstance(payload, dict) else {}
                     payload = payloads[record.record_id]
-                    if not self._matches(self._json(version.condition_json), payload):
+                    if not self._matches(self._json(version.condition_json), payload, version.context_version_id):
                         continue
                     fingerprint = hashlib.sha256(f"{rule.rule_id}:{version.rule_version_id}:{record.record_id}".encode()).hexdigest()
                     if session.scalar(select(RuleFindingModel.finding_id).where(RuleFindingModel.fingerprint == fingerprint)):
@@ -371,7 +572,7 @@ class BusinessRuleService:
                     continue
                 condition = self._json(version.condition_json)
                 for row_number, source_record_key, payload in rows:
-                    if self._matches(condition, payload):
+                    if self._matches(condition, payload, version.context_version_id):
                         matches.append({
                             "rule_id": rule.rule_id,
                             "rule_version_id": version.rule_version_id,
@@ -607,9 +808,11 @@ class BusinessRuleService:
     @staticmethod
     def _create_quarantine_fact(session, finding_id, rule, version, record, payload, condition, evidence_json, now) -> None:
         source = session.scalar(select(DimSourceModel).where(DimSourceModel.source_system == record.source_system))
-        field_key = str(condition.get("field") or "")
+        field_key = BusinessRuleService._condition_field(condition)
         field = session.scalar(select(DimFieldModel).where(DimFieldModel.field_key == field_key)) if field_key else None
         expected = condition.get("value", "")
+        if "right" in condition and isinstance(condition.get("right"), dict):
+            expected = condition["right"].get("value", "")
         expected_text = json.dumps(expected, sort_keys=True) if isinstance(expected, (list, dict)) else str(expected or "")
         actual = payload.get(field_key, "") if field_key else ""
         actual_text = json.dumps(actual, sort_keys=True) if isinstance(actual, (list, dict)) else str(actual or "")
@@ -630,6 +833,25 @@ class BusinessRuleService:
         ))
 
     @staticmethod
+    def _condition_field(condition: dict) -> str:
+        """Expose the first governed field for the quarantine projection."""
+        if condition.get("field"):
+            return str(condition["field"])
+        left = condition.get("left")
+        if isinstance(left, dict) and left.get("kind") == "field" and left.get("field"):
+            return str(left["field"])
+        for key in ("all", "any"):
+            children = condition.get(key)
+            if isinstance(children, list):
+                for child in children:
+                    if isinstance(child, dict):
+                        field = BusinessRuleService._condition_field(child)
+                        if field:
+                            return field
+        nested = condition.get("not")
+        return BusinessRuleService._condition_field(nested) if isinstance(nested, dict) else ""
+
+    @staticmethod
     def _json(value: str) -> dict:
         try:
             parsed = json.loads(value or "{}")
@@ -637,20 +859,8 @@ class BusinessRuleService:
         except (TypeError, ValueError):
             return {}
 
-    @classmethod
-    def _matches(cls, condition: dict, payload: dict) -> bool:
-        if "all" in condition:
-            return all(cls._matches(item, payload) for item in condition["all"])
-        if "any" in condition:
-            return any(cls._matches(item, payload) for item in condition["any"])
-        field = condition.get("field")
-        operator = condition.get("operator")
-        actual = payload.get(field) if field else None
-        expected = condition.get("value")
-        if operator == "exists": return field in payload
-        if operator == "missing": return field not in payload or actual in (None, "")
-        if operator == "equals": return actual == expected
-        if operator == "not_equals": return actual != expected
-        if operator == "contains": return str(expected or "").casefold() in str(actual or "").casefold()
-        if operator == "in": return actual in (expected or [])
-        return False
+    def _matches(self, condition: dict, payload: dict, context_version_id: str | None = None) -> bool:
+        """Evaluate with the active local calendar and retain old rule behavior."""
+        return ConditionEvaluator(
+            configured_rule_calendar(self.database_path, context_version_id=context_version_id)
+        ).matches(condition, payload)

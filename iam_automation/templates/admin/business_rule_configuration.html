@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Rule Configuration{% endblock %}
+{% block content %}
+{% set primary_calendar = calendars[0] if calendars else none %}
+{% set current_calendar_id = context_version.default_calendar_id if context_version else (primary_calendar.model.calendar_id if primary_calendar else '') %}
+<div class="container-fluid px-4 px-lg-5 py-4 admin-page">
+  <a class="back-link" href="{{ url_for('admin.business_rules') }}">Business rules</a>
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mt-3 mb-4">
+    <div>
+      <p class="eyebrow mb-1">Rule context</p>
+      <h1>Rule configuration</h1>
+      <p class="text-secondary mb-0">Configure the calendar and field metadata that advisory rules are allowed to use.</p>
+    </div>
+    <span class="badge text-bg-light border align-self-center">Local configuration</span>
+  </div>
+  {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+  {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+  <div class="alert alert-info" role="note"><strong>Phase 1 boundary:</strong> these settings affect local rule evaluation only. They do not modify source files, canonical employee data or source mappings.</div>
+
+  <div class="row g-4">
+    <div class="col-xl-5">
+      <section class="surface p-4">
+        <div class="mb-4"><p class="eyebrow mb-1">Default context{% if context_version %} · v{{ context_version.version }}{% endif %}</p><h2 class="h5 mb-1">Evaluation defaults</h2><p class="small text-secondary mb-0">Rules can later override these values through their versioned context.</p></div>
+        <form method="post" action="{{ url_for('admin.business_rule_configuration') }}" class="vstack gap-3">
+          <input type="hidden" name="section" value="context">
+          <div><label class="form-label" for="context-calendar">Default operating calendar</label><select class="form-select" id="context-calendar" name="calendar_id" required>{% for item in calendars %}<option value="{{ item.model.calendar_id }}" {% if item.model.calendar_id == current_calendar_id %}selected{% endif %}>{{ item.model.label }} (v{{ item.model.current_version }})</option>{% endfor %}</select></div>
+          <div><label class="form-label" for="context-timezone">Time zone</label><input class="form-control" id="context-timezone" name="timezone" value="{{ context_version.timezone if context_version else 'UTC' }}" required><div class="form-text">Use an IANA value such as <code>UTC</code> or <code>America/Guatemala</code>.</div></div>
+          <div><label class="form-label" for="missing-data-behavior">When required evidence is missing</label><select class="form-select" id="missing-data-behavior" name="missing_data_behavior" required>{% for value in missing_data_behaviors %}<option value="{{ value }}" {% if (context_version.missing_data_behavior if context_version else 'FINDING') == value %}selected{% endif %}>{{ value|replace('_', ' ')|title }}</option>{% endfor %}</select></div>
+          <div><label class="form-label" for="date-boundary">Date interval convention</label><select class="form-select" id="date-boundary" name="date_boundary" required>{% for value in date_boundaries %}<option value="{{ value }}" {% if (context_version.date_boundary if context_version else 'EXCLUSIVE_START_INCLUSIVE_END') == value %}selected{% endif %}>{{ value|replace('_', ' ')|title }}</option>{% endfor %}</select><div class="form-text">This keeps date-based rules deterministic and explainable.</div></div>
+          <button class="btn btn-primary align-self-start" type="submit">Save context</button>
+        </form>
+      </section>
+    </div>
+
+    <div class="col-xl-7">
+      <section class="surface p-4">
+        <div class="mb-4"><p class="eyebrow mb-1">Operating calendar</p><h2 class="h5 mb-1">Days and holidays</h2><p class="small text-secondary mb-0">Saving creates a new calendar version; prior rule evidence remains reproducible.</p></div>
+        {% if primary_calendar %}
+        <form method="post" action="{{ url_for('admin.business_rule_configuration') }}" class="vstack gap-3">
+          <input type="hidden" name="section" value="calendar"><input type="hidden" name="calendar_id" value="{{ primary_calendar.model.calendar_id }}">
+          <div><label class="form-label" for="calendar-label">Calendar name</label><input class="form-control" id="calendar-label" name="label" value="{{ primary_calendar.model.label }}" required></div>
+          <div><label class="form-label" for="calendar-timezone">Calendar time zone</label><input class="form-control" id="calendar-timezone" name="timezone" value="{{ primary_calendar.version.timezone }}" required></div>
+          <fieldset><legend class="form-label mb-2">Operating days</legend><div class="d-flex flex-wrap gap-3">{% set day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] %}{% for day in range(7) %}<label class="form-check"><input class="form-check-input" type="checkbox" name="weekdays" value="{{ day }}" {% if day in primary_calendar.weekdays %}checked{% endif %}><span class="form-check-label">{{ day_names[day] }}</span></label>{% endfor %}</div></fieldset>
+          <div>
+            <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-2"><div><span class="form-label d-block mb-1">Holidays</span><span class="small text-secondary">Disable dates that do not apply to this operating calendar.</span></div><span class="badge text-bg-light border">{{ primary_calendar.holidays|length }} date(s)</span></div>
+            <div class="table-responsive border rounded"><table class="table table-sm align-middle mb-0"><thead><tr><th>Date</th><th>Holiday</th><th>Source</th><th class="text-center">Enabled</th></tr></thead><tbody>
+              {% for holiday in primary_calendar.holidays %}<tr><td class="text-nowrap"><input type="hidden" name="holiday_date" value="{{ holiday.holiday_date }}"><input type="hidden" name="holiday_label" value="{{ holiday.label }}"><input type="hidden" name="holiday_source" value="{{ holiday.source }}"><input type="hidden" name="holiday_country" value="{{ holiday.source_country }}"><input type="hidden" name="holiday_year" value="{{ holiday.source_year or '' }}"><input type="hidden" name="holiday_type" value="{{ holiday.holiday_type }}"><input type="hidden" name="holiday_observed_date" value="{{ holiday.observed_date or holiday.holiday_date }}">{{ holiday.holiday_date }}</td><td>{{ holiday.label }}{% if holiday.recurring_annually %}<span class="badge text-bg-light border ms-1">Annual</span>{% endif %}<div class="small text-secondary">{% if holiday.observed_date and holiday.observed_date != holiday.holiday_date %}Observed {{ holiday.observed_date }}{% endif %}</div></td><td class="small text-secondary">{{ holiday.source or 'MANUAL' }}{% if holiday.source_country %} · {{ holiday.source_country }}{% endif %}</td><td class="text-center"><label class="form-check form-switch mb-0" title="Enable {{ holiday.label }}"><input class="form-check-input" type="checkbox" name="holiday_enabled" value="{{ loop.index0 }}" {% if holiday.enabled %}checked{% endif %}><span class="visually-hidden">Enable {{ holiday.label }}</span></label></td></tr>{% else %}<tr><td colspan="4" class="empty-state py-3">No holidays configured yet. Import public holidays or add one manually below.</td></tr>{% endfor %}
+            </tbody></table></div>
+          </div>
+          <div><label class="form-label" for="calendar-holidays">Add manual holidays</label><textarea class="form-control" id="calendar-holidays" name="holidays" rows="3" placeholder="2026-12-25|Christmas"></textarea><div class="form-text">One per line: <code>YYYY-MM-DD|Label</code>. Add <code>|true</code> for an annually recurring date.</div></div>
+          <button class="btn btn-primary align-self-start" type="submit">Save calendar</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.business_rule_holiday_import') }}" class="row g-2 align-items-end mt-3 pt-3 border-top"><input type="hidden" name="calendar_id" value="{{ primary_calendar.model.calendar_id }}"><div class="col-sm-4"><label class="form-label" for="holiday-country">Import country</label><input class="form-control" id="holiday-country" name="country_code" value="US" maxlength="2" placeholder="US" required></div><div class="col-sm-4"><label class="form-label" for="holiday-year">Year</label><input class="form-control" id="holiday-year" name="year" type="number" value="{{ current_year|default(2026) }}" min="2000" max="2100" required></div><div class="col-sm-4"><button class="btn btn-outline-primary w-100" type="submit">Import public holidays</button></div><div class="col-12"><div class="form-text">Imports a proposal from Nager.Date. Review each switch before saving the calendar.</div></div></form>
+        {% else %}<div class="empty-state">No active rule calendar is available.</div>{% endif %}
+      </section>
+    </div>
+  </div>
+
+  <section class="surface mt-4 overflow-hidden">
+    <div class="p-4 border-bottom"><p class="eyebrow mb-1">Governed metadata</p><h2 class="h5 mb-1">Field catalog</h2><p class="small text-secondary mb-0">The detected type is a starting point. The configured type controls which operands and operators the rule builder can offer.</p></div>
+    <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Field</th><th>Source</th><th>Data type</th><th>Normalization</th><th>Nullable</th><th>Rule enabled</th><th></th></tr></thead><tbody>
+      {% for item in fields %}<tr><td><strong>{{ item.model.label or item.model.field_key }}</strong><div class="small text-secondary"><code>{{ item.model.field_key }}</code></div></td><td class="small">{{ item.sources|join(', ') }}</td><td colspan="5"><form method="post" action="{{ url_for('admin.business_rule_configuration') }}" class="row g-2 align-items-center"><input type="hidden" name="section" value="field"><input type="hidden" name="field_id" value="{{ item.model.field_id }}"><div class="col-sm-3"><label class="visually-hidden" for="field-type-{{ loop.index }}">Data type for {{ item.model.field_key }}</label><select class="form-select form-select-sm" id="field-type-{{ loop.index }}" name="data_type">{% for value in data_types %}<option value="{{ value }}" {% if item.data_type == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></div><div class="col-sm-3"><label class="visually-hidden" for="field-normalization-{{ loop.index }}">Normalization for {{ item.model.field_key }}</label><select class="form-select form-select-sm" id="field-normalization-{{ loop.index }}" name="normalization_name">{% for value in normalizations %}<option value="{{ value }}" {% if (item.model.normalization_name or 'identity') == value %}selected{% endif %}>{{ value|replace('_', ' ')|title }}</option>{% endfor %}</select></div><div class="col-auto"><label class="form-check small"><input class="form-check-input" type="checkbox" name="nullable" {% if item.model.nullable %}checked{% endif %}> Nullable</label></div><div class="col-auto"><label class="form-check small"><input class="form-check-input" type="checkbox" name="rule_enabled" {% if item.model.rule_enabled %}checked{% endif %}> Enabled</label></div><div class="col-auto ms-sm-auto"><button class="btn btn-sm btn-outline-primary" type="submit">Save</button></div></form></td></tr>{% else %}<tr><td colspan="7" class="empty-state">No governed fields are available yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+{% endblock %}

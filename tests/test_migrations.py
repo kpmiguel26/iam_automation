@@ -29,7 +29,7 @@ class MigrationTests(unittest.TestCase):
             first = applied_migrations(database)
             second = apply_pending_migrations(database, actor="test")
 
-            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps", "v009_local_notification_store", "v010_accessnow_match_indexes", "v011_business_rules", "v012_compact_employee_fields", "v013_star_schema", "v014_worker_field_history", "v015_source_separated_write_model", "v016_allow_fact_linking", "v017_rule_execution_phase", "v018_fact_quarantine"))
+            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps", "v009_local_notification_store", "v010_accessnow_match_indexes", "v011_business_rules", "v012_compact_employee_fields", "v013_star_schema", "v014_worker_field_history", "v015_source_separated_write_model", "v016_allow_fact_linking", "v017_rule_execution_phase", "v018_fact_quarantine", "v019_rule_configuration", "v020_rule_context_binding"))
             self.assertEqual(second, ())
             connection = sqlite3.connect(database)
             try:
@@ -39,6 +39,8 @@ class MigrationTests(unittest.TestCase):
                 table_names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
                 trigger_names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")}
                 worker_columns = {row[1] for row in connection.execute("PRAGMA table_info(workers)")}
+                field_columns = {row[1] for row in connection.execute("PRAGMA table_info(dim_field)")}
+                rule_version_columns = {row[1] for row in connection.execute("PRAGMA table_info(business_rule_versions)")}
                 alembic_revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
             finally:
                 connection.close()
@@ -78,8 +80,16 @@ class MigrationTests(unittest.TestCase):
             self.assertIn("idx_workers_canonical_email", worker_indexes)
             self.assertIn("idx_workers_canonical_name", worker_indexes)
             self.assertIn("fact_quarantine", table_names)
-            self.assertEqual(alembic_revision, "0018_fact_quarantine")
-            self.assertEqual(current_database_revision(database), "0018_fact_quarantine")
+            self.assertIn("rule_calendars", table_names)
+            self.assertIn("rule_calendar_versions", table_names)
+            self.assertIn("rule_calendar_holidays", table_names)
+            self.assertIn("rule_contexts", table_names)
+            self.assertIn("rule_context_versions", table_names)
+            self.assertIn("semantic_type", field_columns)
+            self.assertIn("allowed_operators_json", field_columns)
+            self.assertIn("context_version_id", rule_version_columns)
+            self.assertEqual(alembic_revision, "0020_rule_context_binding")
+            self.assertEqual(current_database_revision(database), "0020_rule_context_binding")
 
 
 if __name__ == "__main__":

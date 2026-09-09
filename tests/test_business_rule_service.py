@@ -299,6 +299,53 @@ class BusinessRuleServiceTests(unittest.TestCase):
             service = BusinessRuleService(database)
             self.assertEqual(service.evaluate_batch("missing-batch"), 0)
 
+    def test_complex_rule_is_persisted_and_evaluated_against_pinned_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            self._relational_batch(database)
+            service = BusinessRuleService(database)
+            rule_id = service.create_complex_rule(
+                name="Status requires review",
+                description="Review terminated source evidence.",
+                condition={
+                    "all": [{
+                        "left": {"kind": "field", "field": "status"},
+                        "operator": "equals",
+                        "right": {"kind": "literal", "value": "TERMINATED"},
+                    }]
+                },
+                severity="WARNING",
+                actor="test",
+            )
+            with orm_session(database) as session:
+                version = session.query(BusinessRuleVersionModel).filter_by(rule_id=rule_id).one()
+                self.assertEqual(version.context_version_id, "context:default:1")
+            service.set_status(rule_id, "ACTIVE")
+            self.assertEqual(service.evaluate_batch("relational"), 2)
+            self.assertEqual(service.list_rules()[0]["condition_display"], "Status equals 'TERMINATED'")
+
+    def test_rule_test_preview_does_not_create_findings_or_change_draft_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            self._relational_batch(database)
+            service = BusinessRuleService(database)
+            rule_id = self._active_rule(service)
+            service.set_status(rule_id, "DISABLED")
+            with orm_session(database) as session:
+                rule = session.get(BusinessRuleModel, rule_id)
+                rule.status = "DRAFT"
+                version = session.query(BusinessRuleVersionModel).filter_by(rule_id=rule_id).one()
+                version.status = "DRAFT"
+
+            result = service.test_rule(rule_id)
+
+            self.assertEqual(result["match_count"], 2)
+            self.assertEqual(result["evaluated"], 2)
+            self.assertEqual(result["rule_status"], "DRAFT")
+            self.assertEqual(service.list_findings(status="ALL"), [])
+            with orm_session(database) as session:
+                self.assertEqual(session.get(BusinessRuleModel, rule_id).status, "DRAFT")
+
 
 if __name__ == "__main__":
     unittest.main()

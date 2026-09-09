@@ -334,6 +334,13 @@ class DimFieldModel(Base):
     reportable: Mapped[bool] = mapped_column(Boolean, default=True)
     rule_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    semantic_type: Mapped[str] = mapped_column(String, default="TEXT")
+    nullable: Mapped[bool] = mapped_column(Boolean, default=True)
+    allowed_operators_json: Mapped[str] = mapped_column(Text, default="[]")
+    normalization_name: Mapped[str] = mapped_column(String, default="identity")
+    metadata_version: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by: Mapped[str] = mapped_column(String, default="system")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
 
 
 class DimDateModel(Base):
@@ -345,6 +352,77 @@ class DimDateModel(Base):
     day: Mapped[int] = mapped_column(Integer)
     day_of_week: Mapped[int] = mapped_column(Integer)
     is_weekend: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class RuleCalendarModel(Base):
+    __tablename__ = "rule_calendars"
+
+    calendar_id: Mapped[str] = mapped_column(String, primary_key=True)
+    calendar_key: Mapped[str] = mapped_column(String, unique=True)
+    label: Mapped[str] = mapped_column(String)
+    current_version: Mapped[int] = mapped_column(Integer, default=1)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String, default="system")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class RuleCalendarVersionModel(Base):
+    __tablename__ = "rule_calendar_versions"
+    __table_args__ = (UniqueConstraint("calendar_id", "version", name="uq_rule_calendar_version"),)
+
+    calendar_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    calendar_id: Mapped[str] = mapped_column(ForeignKey("rule_calendars.calendar_id"))
+    version: Mapped[int] = mapped_column(Integer)
+    timezone: Mapped[str] = mapped_column(String, default="UTC")
+    operating_weekdays_json: Mapped[str] = mapped_column(Text, default="[0,1,2,3,4]")
+    created_by: Mapped[str] = mapped_column(String, default="system")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class RuleCalendarHolidayModel(Base):
+    __tablename__ = "rule_calendar_holidays"
+    __table_args__ = (UniqueConstraint("calendar_version_id", "holiday_date", "label", name="uq_rule_calendar_holiday"),)
+
+    holiday_id: Mapped[str] = mapped_column(String, primary_key=True)
+    calendar_version_id: Mapped[str] = mapped_column(ForeignKey("rule_calendar_versions.calendar_version_id"))
+    holiday_date: Mapped[str] = mapped_column(String)
+    label: Mapped[str] = mapped_column(String, default="")
+    recurring_annually: Mapped[bool] = mapped_column(Boolean, default=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    source: Mapped[str] = mapped_column(String, default="MANUAL")
+    source_country: Mapped[str] = mapped_column(String, default="")
+    source_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    holiday_type: Mapped[str] = mapped_column(String, default="")
+    observed_date: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class RuleContextModel(Base):
+    __tablename__ = "rule_contexts"
+
+    context_id: Mapped[str] = mapped_column(String, primary_key=True)
+    context_key: Mapped[str] = mapped_column(String, unique=True)
+    label: Mapped[str] = mapped_column(String)
+    current_version: Mapped[int] = mapped_column(Integer, default=1)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String, default="system")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
+    updated_at_utc: Mapped[str] = mapped_column(String, default="")
+
+
+class RuleContextVersionModel(Base):
+    __tablename__ = "rule_context_versions"
+    __table_args__ = (UniqueConstraint("context_id", "version", name="uq_rule_context_version"),)
+
+    context_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    context_id: Mapped[str] = mapped_column(ForeignKey("rule_contexts.context_id"))
+    version: Mapped[int] = mapped_column(Integer)
+    default_calendar_id: Mapped[str] = mapped_column(ForeignKey("rule_calendars.calendar_id"))
+    timezone: Mapped[str] = mapped_column(String, default="UTC")
+    missing_data_behavior: Mapped[str] = mapped_column(String, default="FINDING")
+    date_boundary: Mapped[str] = mapped_column(String, default="EXCLUSIVE_START_INCLUSIVE_END")
+    created_by: Mapped[str] = mapped_column(String, default="system")
+    created_at_utc: Mapped[str] = mapped_column(String, default="")
 
 
 class DimVendorModel(Base):
@@ -861,6 +939,7 @@ class BusinessRuleVersionModel(Base):
     rule_id: Mapped[str] = mapped_column(ForeignKey("business_rules.rule_id"))
     version: Mapped[int] = mapped_column(Integer)
     phase: Mapped[str] = mapped_column(String, default="AFTER", server_default="AFTER")
+    context_version_id: Mapped[str | None] = mapped_column(ForeignKey("rule_context_versions.context_version_id"), nullable=True)
     scope_json: Mapped[str] = mapped_column(Text, default="{}")
     condition_json: Mapped[str] = mapped_column(Text, default="{}")
     severity: Mapped[str] = mapped_column(String, default="WARNING")

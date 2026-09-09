@@ -1,6 +1,20 @@
 <div id="rules-table-region">
   {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
   {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+  {% if test_result %}
+  <section class="surface p-4 mb-4" aria-live="polite">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+      <div><p class="eyebrow mb-1">Rule test</p><h2 class="h5 mb-1">{{ test_result.rule_name }}</h2><p class="small text-secondary mb-0">Preview against local evidence. Nothing was activated or changed.</p></div>
+      <span class="badge text-bg-light border">{{ test_result.match_count }} match(es)</span>
+    </div>
+    <p class="small mt-3 mb-3">Evaluated {{ test_result.evaluated }} record(s) from {% if test_result.batch_id == 'ALL' %}all imported batches{% else %}batch {{ test_result.batch_id }}{% endif %}.</p>
+    {% if test_result.matches %}
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Source</th><th>Record</th><th>Row</th><th>Field</th><th>Observed value</th></tr></thead><tbody>
+      {% for match in test_result.matches %}<tr><td>{{ match.source_system }}</td><td><code>{{ match.source_record_key }}</code></td><td>{{ match.row_number }}</td><td><code>{{ match.field or 'Composite condition' }}</code></td><td>{{ match.actual_value if match.actual_value is not none else 'Empty' }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<div class="empty-state">No records matched this rule.</div>{% endif %}
+  </section>
+  {% endif %}
   <section class="surface overflow-hidden" aria-live="polite">
     <div class="p-4 border-bottom d-flex justify-content-between align-items-center gap-3"><div><p class="eyebrow mb-1">Rule registry</p><h2 class="h5 mb-0">Configured rules</h2></div><span class="badge text-bg-light border">{{ rules|length }} rule(s)</span></div>
     <div class="table-responsive"><table class="table align-middle mb-0 rules-readable-table"><thead><tr><th>Rule</th><th>Applies to</th><th>When it runs</th><th>What it checks</th><th>If found</th><th>Status</th><th></th></tr></thead><tbody>
@@ -12,7 +26,7 @@
         <td><strong class="rule-condition-readable">{{ item.condition_display }}</strong><div class="small text-secondary">The import continues normally.</div></td>
         <td><span class="rule-severity-badge rule-severity-{{ item.version.severity|lower }}">{{ item.severity_label }}</span><div class="small text-secondary mt-1">{{ item.response_display }}</div></td>
         <td><span class="status-pill {% if item.rule.status == 'ACTIVE' %}status-active{% elif item.rule.status == 'DRAFT' %}status-pending{% else %}status-overdue{% endif %}"><span></span>{{ item.status_label }}</span></td>
-        <td class="text-end"><div class="d-flex justify-content-end gap-2"><form method="post" action="{{ url_for('admin.business_rule_status', rule_id=item.rule.rule_id) }}" hx-post="{{ url_for('admin.business_rule_status', rule_id=item.rule.rule_id) }}" hx-target="#rules-table-region" hx-swap="outerHTML" hx-indicator="#rule-evaluation-indicator"><input type="hidden" name="status" value="{% if item.rule.status == 'ACTIVE' %}DISABLED{% else %}ACTIVE{% endif %}">{% if item.rule.status == 'ACTIVE' %}<button class="btn btn-sm btn-outline-secondary" type="submit">Disable</button>{% else %}<button class="btn btn-sm btn-outline-success" type="submit">Activate</button>{% endif %}</form><form method="post" action="{{ url_for('admin.business_rule_delete', rule_id=item.rule.rule_id) }}" hx-post="{{ url_for('admin.business_rule_delete', rule_id=item.rule.rule_id) }}" hx-target="#rules-table-region" hx-swap="outerHTML"><button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Delete this rule and all of its detections?" data-confirm-title="Delete rule" data-confirm-action="Delete rule">Delete</button></form></div></td>
+        <td class="text-end"><div class="d-flex justify-content-end gap-2"><form method="post" action="{{ url_for('admin.business_rule_test', rule_id=item.rule.rule_id) }}" hx-post="{{ url_for('admin.business_rule_test', rule_id=item.rule.rule_id) }}" hx-target="#rules-table-region" hx-swap="outerHTML" hx-indicator="#rule-evaluation-indicator"><button class="btn btn-sm btn-outline-primary" type="submit">Test</button></form><form method="post" action="{{ url_for('admin.business_rule_status', rule_id=item.rule.rule_id) }}" hx-post="{{ url_for('admin.business_rule_status', rule_id=item.rule.rule_id) }}" hx-target="#rules-table-region" hx-swap="outerHTML" hx-indicator="#rule-evaluation-indicator"><input type="hidden" name="status" value="{% if item.rule.status == 'ACTIVE' %}DISABLED{% else %}ACTIVE{% endif %}">{% if item.rule.status == 'ACTIVE' %}<button class="btn btn-sm btn-outline-secondary" type="submit">Disable</button>{% else %}<button class="btn btn-sm btn-outline-success" type="submit">Activate</button>{% endif %}</form><form method="post" action="{{ url_for('admin.business_rule_delete', rule_id=item.rule.rule_id) }}" hx-post="{{ url_for('admin.business_rule_delete', rule_id=item.rule.rule_id) }}" hx-target="#rules-table-region" hx-swap="outerHTML"><button class="btn btn-sm btn-outline-danger" type="submit" data-confirm="Delete this rule and all of its detections?" data-confirm-title="Delete rule" data-confirm-action="Delete rule">Delete</button></form></div></td>
       </tr>
       {% else %}<tr><td colspan="7" class="empty-state">No rules configured yet.</td></tr>{% endfor %}
     </tbody></table></div>

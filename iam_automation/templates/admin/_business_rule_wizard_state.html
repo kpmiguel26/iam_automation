@@ -3,7 +3,7 @@
     <div>
       <p class="eyebrow mb-1">Guided rule builder</p>
       <h2 class="h5 mb-1">Create a business rule</h2>
-      <p class="small text-secondary mb-0">Complete each section. Completed sections stay visible and can be collapsed.</p>
+      <p class="small text-secondary mb-0">Complete each section. The frontend assembles the rule name from the naming convention.</p>
     </div>
     <span class="rule-wizard-count">{{ step }} / 5</span>
   </div>
@@ -12,105 +12,67 @@
 
   <div class="rule-accordion">
     <details class="rule-accordion-item {% if step == 1 %}is-current{% elif step > 1 %}is-complete{% else %}is-locked{% endif %}" {% if step == 1 %}open{% endif %}>
-      <summary>
-        <span class="rule-step-number">1</span>
-        <span class="rule-step-copy"><strong>Execution phase</strong><small>{% if step > 1 %}{{ phase }} selected{% else %}When should this rule run?{% endif %}</small></span>
-        <span class="rule-step-status">{% if step > 1 %}✓ Complete{% elif step == 1 %}Current{% else %}Locked{% endif %}</span>
-      </summary>
+      <summary><span class="rule-step-number">1</span><span class="rule-step-copy"><strong>Execution phase</strong><small>{% if step > 1 %}{{ phase }} selected{% else %}When should this rule run?{% endif %}</small></span><span class="rule-step-status">{% if step > 1 %}Complete{% elif step == 1 %}Current{% else %}Locked{% endif %}</span></summary>
       {% if step == 1 %}
-      <div class="rule-accordion-body">
-        <form method="post" action="{{ url_for('admin.business_rule_wizard_source') }}" hx-post="{{ url_for('admin.business_rule_wizard_source') }}" hx-target="#rule-wizard" hx-swap="outerHTML" class="vstack gap-3">
-          <div class="rule-phase-options">
-            {% for option in phases %}
-            <label class="rule-phase-option {% if phase == option %}selected{% endif %}">
-              <input type="radio" name="phase" value="{{ option }}" {% if phase == option %}checked{% endif %} required>
-              <span><strong>{{ option }}</strong><small>{% if option == 'BEFORE' %}Check normalized rows before the adapter runs.{% else %}Check committed facts after the adapter completes.{% endif %}</small></span>
-            </label>
-            {% endfor %}
-          </div>
-          <div class="d-flex justify-content-between gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" hx-get="{{ url_for('admin.business_rule_wizard_start') }}" hx-target="#rule-wizard" hx-swap="outerHTML">Cancel</button><button class="btn btn-primary" type="submit">Continue <span aria-hidden="true">→</span></button></div>
-        </form>
-      </div>
-      {% elif step > 1 %}
-      <div class="rule-accordion-body rule-completed-summary"><span class="rule-summary-label">Selected phase</span><strong>{{ phase }}</strong><button class="btn btn-sm btn-link ms-auto p-0" type="button" hx-get="{{ url_for('admin.business_rule_wizard_phase') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase}|tojson }}'>Edit</button></div>
-      {% endif %}
+      <div class="rule-accordion-body"><form method="post" action="{{ url_for('admin.business_rule_wizard_source') }}" hx-post="{{ url_for('admin.business_rule_wizard_source') }}" hx-target="#rule-wizard" hx-swap="outerHTML" class="vstack gap-3">
+        <div class="rule-phase-options">{% for option in phases %}<label class="rule-phase-option {% if phase == option %}selected{% endif %}"><input type="radio" name="phase" value="{{ option }}" {% if phase == option %}checked{% endif %} required><span><strong>{{ option }}</strong><small>{% if option == 'BEFORE' %}Check normalized rows before the adapter runs.{% else %}Check committed facts after the adapter completes.{% endif %}</small></span></label>{% endfor %}</div>
+        <div class="d-flex justify-content-between gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" hx-get="{{ url_for('admin.business_rule_wizard_start') }}" hx-target="#rule-wizard" hx-swap="outerHTML">Cancel</button><button class="btn btn-primary" type="submit">Continue</button></div>
+      </form></div>
+      {% elif step > 1 %}<div class="rule-accordion-body rule-completed-summary"><span class="rule-summary-label">Selected phase</span><strong>{{ phase }}</strong><button class="btn btn-sm btn-link ms-auto p-0" type="button" hx-get="{{ url_for('admin.business_rule_wizard_phase') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase}|tojson }}'>Edit</button></div>{% endif %}
     </details>
 
     <details class="rule-accordion-item {% if step == 2 %}is-current{% elif step > 2 %}is-complete{% else %}is-locked{% endif %}" {% if step == 2 %}open{% endif %}>
-      <summary>
-        <span class="rule-step-number">2</span>
-        <span class="rule-step-copy"><strong>Report scope</strong><small>{% if step > 2 %}{{ source_label }}{% else %}Which report owns this rule?{% endif %}</small></span>
-        <span class="rule-step-status">{% if step > 2 %}✓ Complete{% elif step == 2 %}Current{% else %}Locked{% endif %}</span>
-      </summary>
+      <summary><span class="rule-step-number">2</span><span class="rule-step-copy"><strong>Report scope</strong><small>{% if step > 2 %}{{ source_label }}{% else %}Which report owns this rule?{% endif %}</small></span><span class="rule-step-status">{% if step > 2 %}Complete{% elif step == 2 %}Current{% else %}Locked{% endif %}</span></summary>
       {% if step == 2 %}
-      <div class="rule-accordion-body">
-        <form method="post" action="{{ url_for('admin.business_rule_wizard_details') }}" hx-post="{{ url_for('admin.business_rule_wizard_details') }}" hx-target="#rule-wizard" hx-swap="outerHTML" class="vstack gap-3">
-          <input type="hidden" name="phase" value="{{ phase }}">
-          <label class="form-label mb-0" for="rule-source">Report / source</label>
-          <select id="rule-source" class="form-select" name="source_system" required><option value="" disabled {% if not source_system %}selected{% endif %}>Select a report</option>{% for source in sources %}<option value="{{ source.key }}" {% if source.key == source_system %}selected{% endif %}>{{ source.label }} — {{ source.description }}</option>{% endfor %}</select>
-          <div class="d-flex justify-content-between gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" hx-get="{{ url_for('admin.business_rule_wizard_phase') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase}|tojson }}'>Back</button><button class="btn btn-primary" type="submit">Continue <span aria-hidden="true">→</span></button></div>
-        </form>
-      </div>
-      {% elif step > 2 %}
-      <div class="rule-accordion-body rule-completed-summary"><span class="rule-summary-label">Report</span><strong>{{ source_label }}</strong><button class="btn btn-sm btn-link ms-auto p-0" type="button" hx-get="{{ url_for('admin.business_rule_wizard_source') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system}|tojson }}'>Edit</button></div>
-      {% endif %}
+      <div class="rule-accordion-body"><form method="post" action="{{ url_for('admin.business_rule_wizard_details') }}" hx-post="{{ url_for('admin.business_rule_wizard_details') }}" hx-target="#rule-wizard" hx-swap="outerHTML" class="vstack gap-3">
+        <input type="hidden" name="phase" value="{{ phase }}"><label class="form-label mb-0" for="rule-source">Report / source</label>
+        <select id="rule-source" class="form-select" name="source_system" required><option value="" disabled {% if not source_system %}selected{% endif %}>Select a report</option>{% for source in sources %}<option value="{{ source.key }}" data-source-label="{{ source.label }}" {% if source.key == source_system %}selected{% endif %}>{{ source.label }} - {{ source.description }}</option>{% endfor %}</select>
+        <div class="d-flex justify-content-between gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" hx-get="{{ url_for('admin.business_rule_wizard_phase') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase}|tojson }}'>Back</button><button class="btn btn-primary" type="submit">Continue</button></div>
+      </form></div>
+      {% elif step > 2 %}<div class="rule-accordion-body rule-completed-summary"><span class="rule-summary-label">Report</span><strong>{{ source_label }}</strong><button class="btn btn-sm btn-link ms-auto p-0" type="button" hx-get="{{ url_for('admin.business_rule_wizard_source') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system}|tojson }}'>Edit</button></div>{% endif %}
     </details>
 
     <details class="rule-accordion-item {% if step == 3 %}is-current{% elif step > 3 %}is-complete{% else %}is-locked{% endif %}" {% if step == 3 %}open{% endif %}>
-      <summary>
-        <span class="rule-step-number">3</span>
-        <span class="rule-step-copy"><strong>Rule identity</strong><small>{% if step > 3 %}{{ name }}{% else %}Name and explain the alert{% endif %}</small></span>
-        <span class="rule-step-status">{% if step > 3 %}✓ Complete{% elif step == 3 %}Current{% else %}Locked{% endif %}</span>
-      </summary>
+      <summary><span class="rule-step-number">3</span><span class="rule-step-copy"><strong>Field and condition</strong><small>{% if step > 3 %}{{ field_label }} {{ operator }}{% else %}What should be reviewed?{% endif %}</small></span><span class="rule-step-status">{% if step > 3 %}Complete{% elif step == 3 %}Current{% else %}Locked{% endif %}</span></summary>
       {% if step == 3 %}
-      <div class="rule-accordion-body">
+      <div class="rule-accordion-body"><div class="rule-condition-intro mb-3"><strong>Tell us what should be reviewed.</strong><span>Choose a report field and describe the situation that needs attention. Imports are never blocked by this rule.</span></div>
         <form method="post" action="{{ url_for('admin.business_rule_wizard_condition') }}" hx-post="{{ url_for('admin.business_rule_wizard_condition') }}" hx-target="#rule-wizard" hx-swap="outerHTML" class="vstack gap-3">
           <input type="hidden" name="phase" value="{{ phase }}"><input type="hidden" name="source_system" value="{{ source_system }}">
-          <div><label class="form-label" for="rule-name">Rule name</label><input id="rule-name" class="form-control" name="name" value="{{ name|default('') }}" required autofocus></div>
-          <div><label class="form-label" for="rule-description">Alert message / description</label><textarea id="rule-description" class="form-control" name="description" rows="3" placeholder="Explain why a reviewer should pay attention.">{{ description|default('') }}</textarea></div>
-          <div class="d-flex justify-content-between gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" hx-get="{{ url_for('admin.business_rule_wizard_source') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system}|tojson }}'>Back</button><button class="btn btn-primary" type="submit">Continue <span aria-hidden="true">→</span></button></div>
+          <div><label class="form-label" for="rule-field">Data to check</label><select id="rule-field" class="form-select" name="field" required><option value="" disabled {% if not field %}selected{% endif %}>Choose a field from {{ source_label }}</option>{% for item in field_options %}<option value="{{ item.key }}" data-field-label="{{ item.label }}" {% if item.key == field %}selected{% endif %}>{{ item.label }}</option>{% endfor %}</select><div class="form-text">These are fields detected or governed for the selected report.</div></div>
+          <fieldset class="border-0 p-0 m-0"><legend class="form-label mb-2">How should it be checked?</legend><div class="rule-operator-options">{% for item in operator_options %}<label class="rule-operator-option"><input type="radio" name="operator" value="{{ item.key }}" data-rule-operator {% if item.key == operator %}checked{% endif %} required><span><strong>{{ item.label|title }}</strong><small>{{ item.description }}</small></span></label>{% endfor %}</div></fieldset>
+          <div data-rule-value-group><label class="form-label" for="rule-value">Value to compare <span class="text-secondary fw-normal">(not needed for "is present" or "is missing")</span></label><input id="rule-value" class="form-control" name="value" value="{{ value|default('') }}" placeholder="Text for contains; separate options with commas for is one of"><div class="form-text" data-rule-value-help>Enter the value the report should be compared with.</div></div>
+          <div class="d-flex justify-content-between gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" hx-get="{{ url_for('admin.business_rule_wizard_details') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system}|tojson }}'>Back</button><button class="btn btn-primary" type="submit">Continue</button></div>
         </form>
       </div>
-      {% elif step > 3 %}
-      <div class="rule-accordion-body rule-completed-summary"><span class="rule-summary-label">Rule</span><strong>{{ name }}</strong><button class="btn btn-sm btn-link ms-auto p-0" type="button" hx-get="{{ url_for('admin.business_rule_wizard_details') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system, "name": name, "description": description}|tojson }}'>Edit</button></div>
-      {% endif %}
+      {% elif step > 3 %}<div class="rule-accordion-body rule-completed-summary"><span class="rule-summary-label">Condition</span><strong><code>{{ field_label }} {{ operator }}{% if value %} {{ value }}{% endif %}</code></strong><button class="btn btn-sm btn-link ms-auto p-0" type="button" hx-get="{{ url_for('admin.business_rule_wizard_condition') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system, "field": field, "operator": operator, "value": value}|tojson }}'>Edit</button></div>{% endif %}
     </details>
 
     <details class="rule-accordion-item {% if step == 4 %}is-current{% elif step > 4 %}is-complete{% else %}is-locked{% endif %}" {% if step == 4 %}open{% endif %}>
-      <summary>
-        <span class="rule-step-number">4</span>
-        <span class="rule-step-copy"><strong>Condition</strong><small>{% if step > 4 %}{{ field }} {{ operator }}{% else %}Choose the governed field and operator{% endif %}</small></span>
-        <span class="rule-step-status">{% if step > 4 %}✓ Complete{% elif step == 4 %}Current{% else %}Locked{% endif %}</span>
-      </summary>
+      <summary><span class="rule-step-number">4</span><span class="rule-step-copy"><strong>Rule naming</strong><small>{% if step > 4 %}{{ generated_name }}{% else %}Add the number and descriptive name{% endif %}</small></span><span class="rule-step-status">{% if step > 4 %}Complete{% elif step == 4 %}Current{% else %}Locked{% endif %}</span></summary>
       {% if step == 4 %}
-      <div class="rule-accordion-body">
-        <div class="rule-condition-intro mb-3"><strong>Tell us what should be reviewed.</strong><span>Choose a report field and describe the situation that needs attention. Imports are never blocked by this rule.</span></div>
-        <form method="post" action="{{ url_for('admin.business_rule_wizard_review') }}" hx-post="{{ url_for('admin.business_rule_wizard_review') }}" hx-target="#rule-wizard" hx-swap="outerHTML" class="vstack gap-3">
-          <input type="hidden" name="phase" value="{{ phase }}"><input type="hidden" name="source_system" value="{{ source_system }}"><input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="description" value="{{ description }}">
-          <div><label class="form-label" for="rule-field">Data to check</label><select id="rule-field" class="form-select" name="field" required><option value="" disabled {% if not field %}selected{% endif %}>Choose a field from {{ source_label }}</option>{% for item in field_options %}<option value="{{ item.key }}" {% if item.key == field %}selected{% endif %}>{{ item.label }}</option>{% endfor %}</select><div class="form-text">These are fields detected or governed for the selected report.</div></div>
-          <fieldset class="border-0 p-0 m-0"><legend class="form-label mb-2">How should it be checked?</legend><div class="rule-operator-options">{% for item in operator_options %}<label class="rule-operator-option"><input type="radio" name="operator" value="{{ item.key }}" data-rule-operator {% if item.key == operator %}checked{% endif %} required><span><strong>{{ item.label|title }}</strong><small>{{ item.description }}</small></span></label>{% endfor %}</div></fieldset>
-          <div data-rule-value-group><label class="form-label" for="rule-value">Value to compare <span class="text-secondary fw-normal">(not needed for “is present” or “is missing”)</span></label><input id="rule-value" class="form-control" name="value" value="{{ value|default('') }}" placeholder="Text for contains; separate options with commas for is one of"><div class="form-text" data-rule-value-help>Enter the value the report should be compared with.</div></div>
-          <div class="d-flex justify-content-between gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" hx-get="{{ url_for('admin.business_rule_wizard_details') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system, "name": name, "description": description}|tojson }}'>Back</button><button class="btn btn-primary" type="submit">Continue <span aria-hidden="true">→</span></button></div>
+      <div class="rule-accordion-body"><div class="rule-condition-intro mb-3"><strong>No artistic names required.</strong><span>The frontend assembles the final rule name from phase, report code, number, field key and your description.</span></div>
+        <div class="small text-secondary border rounded p-3 mb-3"><span class="d-block mb-1">Naming pattern</span><code data-rule-name-pattern>AFTER - RL - 001 - email - email missing</code></div>
+        <form method="post" action="{{ url_for('admin.business_rule_wizard_review') }}" hx-post="{{ url_for('admin.business_rule_wizard_review') }}" hx-target="#rule-wizard" hx-swap="outerHTML" class="vstack gap-3" data-rule-name-form data-rule-source-label="{{ source_label }}" data-rule-field-label="{{ field_label|default(field) }}">
+          <input type="hidden" name="phase" value="{{ phase }}"><input type="hidden" name="source_system" value="{{ source_system }}"><input type="hidden" name="field" value="{{ field }}"><input type="hidden" name="operator" value="{{ operator }}"><input type="hidden" name="value" value="{{ value }}"><input type="hidden" name="generated_name" value="{{ generated_name|default('') }}" data-rule-generated-name>
+          <div><label class="form-label" for="rule-number">Rule number</label><input id="rule-number" class="form-control" name="rule_number" type="number" min="1" step="1" value="{{ rule_number|default('') }}" required data-rule-number autofocus><div class="form-text">Use the number assigned by your team.</div></div>
+          <div><label class="form-label" for="rule-name">Descriptive name</label><input id="rule-name" class="form-control" name="name" value="{{ name|default('') }}" maxlength="120" required data-rule-descriptive-name placeholder="For example: Missing employee email"></div>
+          <div><label class="form-label" for="rule-description">Reviewer message <span class="text-secondary fw-normal">(optional)</span></label><textarea id="rule-description" class="form-control" name="description" rows="3" placeholder="Explain why a reviewer should pay attention.">{{ description|default('') }}</textarea></div>
+          <output class="d-block border rounded p-3 bg-light" data-rule-name-preview aria-live="polite">Complete the number and descriptive name to preview the final rule name.</output>
+          <div class="d-flex justify-content-between gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" hx-get="{{ url_for('admin.business_rule_wizard_condition') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system, "field": field, "operator": operator, "value": value}|tojson }}'>Back</button><button class="btn btn-primary" type="submit">Continue</button></div>
         </form>
       </div>
-      {% elif step > 4 %}
-      <div class="rule-accordion-body rule-completed-summary"><span class="rule-summary-label">Condition</span><strong><code>{{ field }} {{ operator }}{% if value %} {{ value }}{% endif %}</code></strong><button class="btn btn-sm btn-link ms-auto p-0" type="button" hx-get="{{ url_for('admin.business_rule_wizard_condition') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system, "name": name, "description": description, "field": field, "operator": operator, "value": value}|tojson }}'>Edit</button></div>
-      {% endif %}
+      {% elif step > 4 %}<div class="rule-accordion-body rule-completed-summary"><span class="rule-summary-label">Generated name</span><strong>{{ generated_name }}</strong><button class="btn btn-sm btn-link ms-auto p-0" type="button" hx-get="{{ url_for('admin.business_rule_wizard_review') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system, "field": field, "operator": operator, "value": value, "rule_number": rule_number, "name": name, "description": description, "generated_name": generated_name}|tojson }}'>Edit</button></div>{% endif %}
     </details>
 
     <details class="rule-accordion-item {% if step == 5 %}is-current{% else %}is-locked{% endif %}" {% if step == 5 %}open{% endif %}>
-      <summary>
-        <span class="rule-step-number">5</span>
-        <span class="rule-step-copy"><strong>Review and create</strong><small>Severity and final confirmation</small></span>
-        <span class="rule-step-status">{% if step == 5 %}Current{% else %}Locked{% endif %}</span>
-      </summary>
+      <summary><span class="rule-step-number">5</span><span class="rule-step-copy"><strong>Review and create</strong><small>Severity and final confirmation</small></span><span class="rule-step-status">{% if step == 5 %}Current{% else %}Locked{% endif %}</span></summary>
       {% if step == 5 %}
-      <div class="rule-accordion-body">
-        <dl class="row small mb-4 rule-review-grid"><dt class="col-5 text-secondary">Name</dt><dd class="col-7">{{ name }}</dd><dt class="col-5 text-secondary">Report</dt><dd class="col-7">{{ source_label }}</dd><dt class="col-5 text-secondary">Phase</dt><dd class="col-7"><span class="badge text-bg-light border">{{ phase }}</span></dd><dt class="col-5 text-secondary">Condition</dt><dd class="col-7"><code>{{ field }} {{ operator }}{% if value %} {{ value }}{% endif %}</code></dd></dl>
+      <div class="rule-accordion-body"><div class="alert alert-info py-2" role="status"><strong>Final rule name:</strong> {{ generated_name }}</div>
+        <dl class="row small mb-4 rule-review-grid"><dt class="col-5 text-secondary">Number</dt><dd class="col-7">{{ rule_number }}</dd><dt class="col-5 text-secondary">Name</dt><dd class="col-7">{{ name }}</dd><dt class="col-5 text-secondary">Report</dt><dd class="col-7">{{ source_label }}</dd><dt class="col-5 text-secondary">Phase</dt><dd class="col-7"><span class="badge text-bg-light border">{{ phase }}</span></dd><dt class="col-5 text-secondary">Condition</dt><dd class="col-7"><code>{{ field_label }} {{ operator }}{% if value %} {{ value }}{% endif %}</code></dd></dl>
         <form method="post" action="{{ url_for('admin.business_rules') }}" hx-post="{{ url_for('admin.business_rules') }}" hx-target="#rules-table-region" hx-swap="outerHTML" hx-indicator="#rule-evaluation-indicator" class="vstack gap-3">
-          <input type="hidden" name="phase" value="{{ phase }}"><input type="hidden" name="source_system" value="{{ source_system }}"><input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="description" value="{{ description }}"><input type="hidden" name="field" value="{{ field }}"><input type="hidden" name="operator" value="{{ operator }}"><input type="hidden" name="value" value="{{ value }}">
+          <input type="hidden" name="phase" value="{{ phase }}"><input type="hidden" name="source_system" value="{{ source_system }}"><input type="hidden" name="name" value="{{ generated_name }}"><input type="hidden" name="description" value="{{ description }}"><input type="hidden" name="field" value="{{ field }}"><input type="hidden" name="operator" value="{{ operator }}"><input type="hidden" name="value" value="{{ value }}">
           <div><label class="form-label" for="rule-severity">Severity</label><select id="rule-severity" class="form-select" name="severity" required>{% for item in severities %}<option value="{{ item }}" {% if item == severity|default('WARNING') %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
-          <div class="d-flex justify-content-between gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" hx-get="{{ url_for('admin.business_rule_wizard_condition') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system, "name": name, "description": description, "field": field, "operator": operator, "value": value}|tojson }}'>Back</button><button class="btn btn-primary" type="submit">Create rule <span aria-hidden="true">✓</span></button></div>
+          <div class="d-flex justify-content-between gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" hx-get="{{ url_for('admin.business_rule_wizard_review') }}" hx-target="#rule-wizard" hx-swap="outerHTML" hx-vals='{{ {"phase": phase, "source_system": source_system, "field": field, "operator": operator, "value": value, "rule_number": rule_number, "name": name, "description": description, "generated_name": generated_name}|tojson }}'>Back</button><button class="btn btn-primary" type="submit">Create rule <span aria-hidden="true">-</span></button></div>
         </form>
       </div>
       {% endif %}

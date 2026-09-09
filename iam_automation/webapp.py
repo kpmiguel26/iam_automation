@@ -270,8 +270,11 @@ def create_app(
     def internal_server_error(error):
         return render_template("errors/500.html"), 500
 
-    css_path = Path(__file__).resolve().parent / "static" / "css" / "app.css"
-    static_version = str(int(css_path.stat().st_mtime)) if css_path.is_file() else "dev"
+    static_root = Path(__file__).resolve().parent / "static"
+    css_path = static_root / "css" / "app.css"
+    rule_wizard_js_path = static_root / "js" / "business-rule-wizard.js"
+    asset_mtimes = [int(path.stat().st_mtime) for path in (css_path, rule_wizard_js_path) if path.is_file()]
+    static_version = "-".join(str(mtime) for mtime in asset_mtimes) or "dev"
     runtime_path = preflight_result.settings.local_runtime_db_path if preflight_result.settings else None
     app.extensions["iam_file_watcher"] = None
     app.extensions["iam_refresh_lock"] = threading.Lock()

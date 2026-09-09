@@ -469,6 +469,7 @@ class EmployeeService:
 
     def list_source_files(self, source_system: str) -> list[dict[str, object]]:
         """Return file summaries using columns only; payloads are not read."""
+        imported_batch_files: dict[str, tuple[str, str]] = {}
         with orm_session(self.database_path) as session:
             rows = session.execute(
                 select(
@@ -483,6 +484,24 @@ class EmployeeService:
                 .where(IngestionRecordModel.source_system == source_system)
                 .order_by(ImportBatchModel.source_modified_at_utc.asc(), IngestionRecordModel.created_at_utc.asc())
             ).all()
+            if source_system == "ACCESSNOW":
+                batches = session.execute(
+                    select(
+                        ImportBatchModel.filename,
+                        ImportBatchModel.status,
+                        ImportBatchModel.created_at_utc,
+                        ImportBatchModel.source_modified_at_utc,
+                    )
+                    .where(ImportBatchModel.source_type == source_system)
+                    .order_by(ImportBatchModel.created_at_utc.desc())
+                ).all()
+                for filename, status, created_at, source_modified_at in batches:
+                    if str(status or "") not in {"COMPLETED", "COMPLETED_WITH_WARNINGS"}:
+                        continue
+                    for candidate in str(filename or "").split(";"):
+                        file_name = self._source_file_name(candidate.strip())
+                        if file_name and file_name not in imported_batch_files:
+                            imported_batch_files[file_name] = (str(created_at or ""), str(source_modified_at or ""))
         grouped: dict[tuple[str, str], dict[str, object]] = {}
         for source_file, checksum, status, match_status, observation_state, created_at, source_modified_at in rows:
             key = (self._source_file_name(source_file), str(checksum or ""))
@@ -515,9 +534,30 @@ class EmployeeService:
                 item["linked_count"] = int(item["linked_count"]) + 1
             elif str(status) != "QUARANTINED":
                 item["pending_count"] = int(item["pending_count"]) + 1
+        if source_system == "ACCESSNOW":
+            known_files = {str(item.get("source_file") or "") for item in grouped.values()}
+            for file_name, (created_at, source_modified_at) in imported_batch_files.items():
+                if file_name in known_files:
+                    continue
+                grouped[(file_name, "ACCESSNOW_BATCH")] = {
+                    "source_system": source_system,
+                    "source_file": file_name,
+                    "source_path": file_name,
+                    "source_checksum": "",
+                    "record_count": 0,
+                    "staged_count": 0,
+                    "pending_count": 0,
+                    "linked_count": 0,
+                    "ambiguous_count": 0,
+                    "conflict_count": 0,
+                    "superseded_count": 0,
+                    "latest_at": created_at,
+                    "source_modified_at": source_modified_at or created_at,
+                    "imported_without_new_rows": True,
+                }
         for item in grouped.values():
             staged_count = int(item["staged_count"])
-            item["imported"] = bool(item["record_count"]) and staged_count == 0
+            item["imported"] = bool(item.get("imported_without_new_rows")) or (bool(item["record_count"]) and staged_count == 0)
             item["import_status"] = "IMPORTED" if item["imported"] else "READY_TO_IMPORT"
         return sorted(
             grouped.values(),
