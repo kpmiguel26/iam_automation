@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sqlite3
 import logging
+import json
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
@@ -30,6 +31,7 @@ from ...application.audit_service import record_audit
 from ...application.import_service import ImportService
 from ...application.notification_service import NotificationService
 from ...application.business_rule_service import BusinessRuleService
+from ...application.condition_evaluator import ConditionEvaluator
 from ...application.rule_configuration_service import RuleConfigurationService
 from ...application.file_watch_service import load_watcher_health
 from ...application.publication_service import PublicationService
@@ -200,10 +202,41 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         status = request.args.get("status", "OPEN").upper()
         severity = request.args.get("severity", "ALL").upper()
         rule_id = request.args.get("rule_id", "ALL").strip() or "ALL"
+        findings = rules.list_quarantine_findings(status=status, severity=severity, rule_id=rule_id)
+        configured_rules = rules.list_rules()
+        rule_cards = {}
+        for configured in configured_rules:
+            configured_rule_id = configured["rule"].rule_id
+            if rule_id != "ALL" and rule_id != configured_rule_id:
+                continue
+            rule_cards[configured_rule_id] = {
+                "rule_id": configured_rule_id,
+                "rule_name": configured["rule"].name,
+                "rule_description": configured["rule"].description or "Advisory check for imported employee data.",
+                "source_system": configured["source_system"],
+                "finding_count": 0,
+                "statuses": set(),
+                "severities": set(),
+            }
+        for item in findings:
+            key = item["finding"].rule_id
+            card = rule_cards.setdefault(key, {
+                "rule_id": key,
+                "rule_name": item["rule_name"],
+                "rule_description": item["rule_description"],
+                "source_system": item["source_system"],
+                "finding_count": 0,
+                "statuses": set(),
+                "severities": set(),
+            })
+            card["finding_count"] += 1
+            card["statuses"].add(item["finding"].status)
+            card["severities"].add(item["finding"].severity)
         context = {
-            "findings": rules.list_quarantine_findings(status=status, severity=severity, rule_id=rule_id),
+            "findings": findings,
+            "rule_cards": list(rule_cards.values()),
             "quarantine": imports.list_quarantine(open_only=True),
-            "rules": rules.list_rules(),
+            "rules": configured_rules,
             "status": status,
             "severity": severity,
             "rule_id": rule_id,
@@ -214,6 +247,23 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         if request.headers.get("HX-Request") == "true":
             return render_template("admin/_quarantine_findings_panel.html", **context)
         return render_template("admin/quarantine.html", **context)
+
+    @blueprint.get("/quarantine/rules/<rule_id>")
+    @admin_required
+    def quarantine_rule_detail(rule_id: str):
+        status = request.args.get("status", "OPEN").upper()
+        severity = request.args.get("severity", "ALL").upper()
+        item = next((value for value in rules.list_rules() if value["rule"].rule_id == rule_id), None)
+        if item is None:
+            return redirect(url_for("admin.quarantine", notice="Rule not found."))
+        return render_template(
+            "admin/quarantine_rule_detail.html",
+            rule=item,
+            findings=rules.list_quarantine_findings(status=status, severity=severity, rule_id=rule_id),
+            status=status,
+            severity=severity,
+            severities=BusinessRuleService.ALLOWED_SEVERITIES,
+        )
 
     @blueprint.post("/quarantine/findings/<finding_id>/status")
     @blueprint.post("/business-rule-findings/<finding_id>/status")
@@ -226,6 +276,8 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_FINDING_STATUS_CHANGED", "rule_finding", finding_id, new_values={"status": status, "note": note})
             if request.headers.get("HX-Request") == "true":
                 item = next((item for item in rules.list_quarantine_findings(status="ALL") if item["finding"].finding_id == finding_id), None)
+                if request.form.get("view") == "table":
+                    return render_template("admin/_quarantine_finding_table_row.html", item=item) if item is not None else ""
                 return render_template("admin/_quarantine_finding_row.html", item=item) if item is not None else ""
             return redirect(url_for("admin.quarantine", notice="Finding updated."))
         except ValueError as exc:
@@ -238,7 +290,11 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         message = None
         if request.method == "POST":
             try:
-                rule_id = rules.create_rule(name=request.form.get("name", ""), description=request.form.get("description", ""), field=request.form.get("field", ""), operator=request.form.get("operator", ""), value=request.form.get("value", ""), severity=request.form.get("severity", "WARNING"), phase=request.form.get("phase", "AFTER"), source_system=request.form.get("source_system", "ALL"), actor=str(session["iam_user"]))
+                condition_json = request.form.get("condition_json", "").strip()
+                if condition_json:
+                    rule_id = rules.create_complex_rule(name=request.form.get("name", ""), description=request.form.get("description", ""), condition=json.loads(condition_json), severity=request.form.get("severity", "WARNING"), phase=request.form.get("phase", "AFTER"), source_system=request.form.get("source_system", "ALL"), actor=str(session["iam_user"]))
+                else:
+                    rule_id = rules.create_rule(name=request.form.get("name", ""), description=request.form.get("description", ""), field=request.form.get("field", ""), operator=request.form.get("operator", ""), value=request.form.get("value", ""), severity=request.form.get("severity", "WARNING"), phase=request.form.get("phase", "AFTER"), source_system=request.form.get("source_system", "ALL"), actor=str(session["iam_user"]))
                 mark_publication_pending(database_path, actor=str(session["iam_user"]), reason="Business rule created")
                 record_audit(audit_path, str(session["iam_user"]), "BUSINESS_RULE_CREATED", "business_rule", rule_id, new_values={"name": request.form.get("name", ""), "source_system": request.form.get("source_system", "ALL"), "field": request.form.get("field", ""), "operator": request.form.get("operator", ""), "severity": request.form.get("severity", "WARNING"), "phase": request.form.get("phase", "AFTER")})
                 message = "Rule created as DRAFT. Activate it after reviewing the condition."
@@ -254,6 +310,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
     @admin_required
     def business_rule_test(rule_id: str):
         """Preview a draft or active rule against persisted local evidence."""
+        configured_rules = rules.list_rules()
         try:
             result = rules.test_rule(rule_id, batch_id=request.form.get("batch_id", ""))
             message = f"Rule test completed: {result['match_count']} match(es) across {result['evaluated']} evaluated record(s)."
@@ -263,7 +320,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             message = None
             error = str(exc)
         context = {
-            "rules": rules.list_rules(),
+            "rules": configured_rules,
             "operators": BusinessRuleService.ALLOWED_OPERATORS,
             "severities": BusinessRuleService.ALLOWED_SEVERITIES,
             "phases": BusinessRuleService.ALLOWED_PHASES,
@@ -398,7 +455,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         if source_system not in valid_sources:
             return render_template("admin/_business_rule_wizard_state.html", step=2, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system="", source_label="", sources=rules.available_sources(), error="Choose the report that owns this rule."), 400
         source_label = next((source["label"] for source in rules.available_sources() if source["key"] == source_system), source_system)
-        return render_template("admin/_business_rule_wizard_state.html", step=3, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), field_options=rules.available_field_options(source_system), operator_options=BusinessRuleService.operator_options())
+        return render_template("admin/_business_rule_wizard_state.html", step=3, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), field_options=rules.available_field_options(source_system), operator_options=BusinessRuleService.operator_options(), condition_field_options=rules.available_condition_fields(), explicit_operators=tuple(sorted(ConditionEvaluator.OPERATORS)), condition_functions=tuple(sorted(ConditionEvaluator.DERIVED_FUNCTIONS)))
 
     @blueprint.route("/business-rules/wizard/condition", methods=["GET", "POST"])
     @admin_required
@@ -412,11 +469,19 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
         if source_system not in valid_sources:
             return render_template("admin/_business_rule_wizard_state.html", step=2, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system="", source_label="", sources=rules.available_sources(), error="Choose the report that owns this rule."), 400
         source_label = next((source["label"] for source in rules.available_sources() if source["key"] == source_system), source_system)
+        condition_mode = values.get("condition_mode", "simple").strip().lower()
+        if condition_mode == "explicit" or values.getlist("condition_operator"):
+            try:
+                condition = rules.condition_from_form(values)
+                ConditionEvaluator().validate(condition)
+            except (ValueError, TypeError, IndexError, json.JSONDecodeError) as exc:
+                return render_template("admin/_business_rule_wizard_state.html", step=3, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), condition_mode="explicit", condition_field_options=rules.available_condition_fields(), explicit_operators=tuple(sorted(ConditionEvaluator.OPERATORS)), condition_functions=tuple(sorted(ConditionEvaluator.DERIVED_FUNCTIONS)), error=str(exc)), 400
+            return render_template("admin/_business_rule_wizard_state.html", step=4, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), condition_mode="explicit", condition_json=json.dumps(condition, sort_keys=True), condition_display=BusinessRuleService._condition_display(condition), field="condition", field_label="Explicit condition", operator="composite", value="",)
         field = values.get("field", "").strip()
         operator = values.get("operator", "").strip()
         value = values.get("value", "").strip()
         if field not in set(rules.available_fields(source_system)) or operator not in BusinessRuleService.ALLOWED_OPERATORS or (operator in {"equals", "not_equals", "contains", "in"} and not value):
-            return render_template("admin/_business_rule_wizard_state.html", step=3, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), field=field, operator=operator, value=value, field_options=rules.available_field_options(source_system), operator_options=BusinessRuleService.operator_options(), error="Choose a valid field and check type. Add a value when the selected check requires one."), 400
+            return render_template("admin/_business_rule_wizard_state.html", step=3, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), field=field, operator=operator, value=value, field_options=rules.available_field_options(source_system), operator_options=BusinessRuleService.operator_options(), condition_field_options=rules.available_condition_fields(), explicit_operators=tuple(sorted(ConditionEvaluator.OPERATORS)), condition_functions=tuple(sorted(ConditionEvaluator.DERIVED_FUNCTIONS)), error="Choose a valid field and check type. Add a value when the selected check requires one."), 400
         return render_template("admin/_business_rule_wizard_state.html", step=4, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), field=field, field_label=BusinessRuleService._humanize_field(field), operator=operator, value=value)
 
     @blueprint.route("/business-rules/wizard/review", methods=["GET", "POST"])
@@ -429,25 +494,37 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
             field = values.get("field", "").strip()
             operator = values.get("operator", "").strip()
             value = values.get("value", "").strip()
+            condition_mode = values.get("condition_mode", "simple").strip().lower()
+            condition_json = values.get("condition_json", "").strip()
             source_label = next((source["label"] for source in rules.available_sources() if source["key"] == source_system), source_system)
-            return render_template("admin/_business_rule_wizard_state.html", step=4, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), field=field, field_label=BusinessRuleService._humanize_field(field), operator=operator, value=value, rule_number=values.get("rule_number", ""), name=values.get("name", ""), description=values.get("description", ""), generated_name=values.get("generated_name", ""))
+            return render_template("admin/_business_rule_wizard_state.html", step=4, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), condition_mode=condition_mode, condition_json=condition_json, condition_display=values.get("condition_display", ""), field=field, field_label=BusinessRuleService._humanize_field(field), operator=operator, value=value, rule_number=values.get("rule_number", ""), name=values.get("name", ""), description=values.get("description", ""), generated_name=values.get("generated_name", ""))
         phase = request.form.get("phase", "").upper()
         source_system = request.form.get("source_system", "").upper()
         operator = request.form.get("operator", "").strip()
         field = request.form.get("field", "").strip()
         value = request.form.get("value", "").strip()
+        condition_mode = request.form.get("condition_mode", "simple").strip().lower()
+        condition_json = request.form.get("condition_json", "").strip()
+        condition_display = request.form.get("condition_display", "").strip()
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "")
         rule_number = request.form.get("rule_number", "").strip()
         generated_name = request.form.get("generated_name", "").strip()
         valid_sources = {source["key"] for source in rules.available_sources()}
-        if phase not in BusinessRuleService.ALLOWED_PHASES or source_system not in valid_sources or operator not in BusinessRuleService.ALLOWED_OPERATORS or not field or (operator in {"equals", "not_equals", "contains", "in"} and not value):
+        source_label = next((source["label"] for source in rules.available_sources() if source["key"] == source_system), source_system)
+        if condition_mode == "explicit":
+            try:
+                condition = json.loads(condition_json)
+                ConditionEvaluator().validate(condition)
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                return render_template("admin/_business_rule_wizard_state.html", step=3, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label if source_system in valid_sources else source_system, sources=rules.available_sources(), condition_mode="explicit", condition_field_options=rules.available_condition_fields(), explicit_operators=tuple(sorted(ConditionEvaluator.OPERATORS)), condition_functions=tuple(sorted(ConditionEvaluator.DERIVED_FUNCTIONS)), error=str(exc)), 400
+        elif phase not in BusinessRuleService.ALLOWED_PHASES or source_system not in valid_sources or operator not in BusinessRuleService.ALLOWED_OPERATORS or not field or (operator in {"equals", "not_equals", "contains", "in"} and not value):
             source_label = next((source["label"] for source in rules.available_sources() if source["key"] == source_system), source_system)
             return render_template("admin/_business_rule_wizard_state.html", step=3, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), field=field, operator=operator, value=value, field_options=rules.available_field_options(source_system), operator_options=BusinessRuleService.operator_options(), error="Choose a field and a check type. Add a value when the selected check requires one."), 400
         source_label = next((source["label"] for source in rules.available_sources() if source["key"] == source_system), source_system)
         if not generated_name or not name or not rule_number:
-            return render_template("admin/_business_rule_wizard_state.html", step=4, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), field=field, operator=operator, value=value, rule_number=rule_number, name=name, description=description, generated_name=generated_name, error="Complete the rule number and descriptive name so the frontend can compose the final name."), 400
-        return render_template("admin/_business_rule_wizard_state.html", step=5, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), name=name, description=description, generated_name=generated_name, rule_number=rule_number, field=field, field_label=BusinessRuleService._humanize_field(field), operator=operator, value=value, severities=BusinessRuleService.ALLOWED_SEVERITIES, severity=request.form.get("severity", "WARNING"))
+            return render_template("admin/_business_rule_wizard_state.html", step=4, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), condition_mode=condition_mode, condition_json=condition_json, condition_display=condition_display, field=field, operator=operator, value=value, rule_number=rule_number, name=name, description=description, generated_name=generated_name, error="Complete the rule number and descriptive name so the frontend can compose the final name."), 400
+        return render_template("admin/_business_rule_wizard_state.html", step=5, phases=BusinessRuleService.ALLOWED_PHASES, phase=phase, source_system=source_system, source_label=source_label, sources=rules.available_sources(), condition_mode=condition_mode, condition_json=condition_json, condition_display=condition_display, name=name, description=description, generated_name=generated_name, rule_number=rule_number, field=field, field_label=BusinessRuleService._humanize_field(field), operator=operator, value=value, severities=BusinessRuleService.ALLOWED_SEVERITIES, severity=request.form.get("severity", "WARNING"))
 
     @blueprint.post("/business-rules/<rule_id>/status")
     @admin_required

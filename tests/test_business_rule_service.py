@@ -9,6 +9,7 @@ import uuid
 from unittest.mock import patch
 from datetime import datetime, timezone
 from pathlib import Path
+from werkzeug.datastructures import MultiDict
 
 from iam_automation.application.business_rule_service import BusinessRuleService
 from iam_automation.application.ingestion.orchestrator import IngestionOrchestrator
@@ -323,6 +324,36 @@ class BusinessRuleServiceTests(unittest.TestCase):
             service.set_status(rule_id, "ACTIVE")
             self.assertEqual(service.evaluate_batch("relational"), 2)
             self.assertEqual(service.list_rules()[0]["condition_display"], "Status equals 'TERMINATED'")
+
+    def test_explicit_condition_form_builds_rehire_shape_without_business_rule_template(self):
+        values = MultiDict([
+            ("condition_group", "all"),
+            ("condition_left_kind", "field"), ("condition_left_kind", "derived"),
+            ("condition_left_source", "ACCESSNOW"), ("condition_left_source", "ACCESSNOW"),
+            ("condition_left_field", "accessnow_status"), ("condition_left_field", ""),
+            ("condition_left_value", ""), ("condition_left_value", ""),
+            ("condition_left_function", "business_days_between"), ("condition_left_function", "business_days_between"),
+            ("condition_left_arg1_kind", "field"), ("condition_left_arg1_kind", "field"),
+            ("condition_left_arg1_source", "ACCESSNOW"), ("condition_left_arg1_source", "ACCESSNOW"),
+            ("condition_left_arg1_field", ""), ("condition_left_arg1_field", "termination_date"),
+            ("condition_left_arg1_value", ""), ("condition_left_arg1_value", ""),
+            ("condition_left_arg2_kind", "field"), ("condition_left_arg2_kind", "field"),
+            ("condition_left_arg2_source", "ACCESSNOW"), ("condition_left_arg2_source", "ROSTER_LOCK"),
+            ("condition_left_arg2_field", ""), ("condition_left_arg2_field", "onboarding_date"),
+            ("condition_left_arg2_value", ""), ("condition_left_arg2_value", ""),
+            ("condition_operator", "in"), ("condition_operator", "between"),
+            ("condition_right_kind", "literal"), ("condition_right_kind", "literal"),
+            ("condition_right_source", "ACCESSNOW"), ("condition_right_source", "ACCESSNOW"),
+            ("condition_right_field", ""), ("condition_right_field", ""),
+            ("condition_right_value", "TERMINATED,DEACTIVATED"), ("condition_right_value", "0,30"),
+        ])
+
+        condition = BusinessRuleService.condition_from_form(values)
+
+        self.assertEqual(condition["all"][0]["right"]["value"], ["TERMINATED", "DEACTIVATED"])
+        self.assertEqual(condition["all"][1]["left"]["function"], "business_days_between")
+        self.assertEqual(condition["all"][1]["left"]["arguments"][1]["source"], "ROSTER_LOCK")
+        self.assertEqual(condition["all"][1]["right"]["value"], ["0", "30"])
 
     def test_rule_test_preview_does_not_create_findings_or_change_draft_status(self):
         with tempfile.TemporaryDirectory() as tmp:

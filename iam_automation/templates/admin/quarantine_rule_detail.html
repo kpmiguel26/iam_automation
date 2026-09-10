@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Rule findings{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 admin-page">
+  <a class="back-link" href="{{ url_for('admin.quarantine') }}">← Quarantine</a>
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mt-3 mb-4">
+    <div><p class="eyebrow mb-1">Rule quarantine</p><h1>{{ rule.rule.name }}</h1><p class="text-secondary mb-0">{{ rule.rule.description or 'Review the records detected by this advisory rule.' }}</p></div>
+    <span class="status-pill {% if rule.rule.status == 'ACTIVE' %}status-active{% elif rule.rule.status == 'DRAFT' %}status-pending{% else %}status-overdue{% endif %}"><span></span>{{ rule.status_label }}</span>
+  </div>
+  <section class="surface p-3 mb-4">
+    <form class="row g-3 align-items-end" method="get" action="{{ url_for('admin.quarantine_rule_detail', rule_id=rule.rule.rule_id) }}">
+      <div class="col-md-4"><label class="form-label" for="rule-detail-status">Status</label><select class="form-select" id="rule-detail-status" name="status"><option value="OPEN"{% if status == 'OPEN' %} selected{% endif %}>Open</option><option value="ALL"{% if status == 'ALL' %} selected{% endif %}>All</option><option value="ACKNOWLEDGED"{% if status == 'ACKNOWLEDGED' %} selected{% endif %}>Acknowledged</option><option value="RESOLVED"{% if status == 'RESOLVED' %} selected{% endif %}>Resolved</option><option value="SUPPRESSED"{% if status == 'SUPPRESSED' %} selected{% endif %}>Suppressed</option></select></div>
+      <div class="col-md-4"><label class="form-label" for="rule-detail-severity">Severity</label><select class="form-select" id="rule-detail-severity" name="severity"><option value="ALL"{% if severity == 'ALL' %} selected{% endif %}>All severities</option>{% for option in severities %}<option value="{{ option }}"{% if severity == option %} selected{% endif %}>{{ option|title }}</option>{% endfor %}</select></div>
+      <div class="col-md-4"><button class="btn btn-primary" type="submit">Apply filters</button></div>
+    </form>
+  </section>
+  <section class="surface overflow-hidden">
+    <div class="p-3 border-bottom d-flex justify-content-between align-items-center"><div><p class="eyebrow mb-1">Finding details</p><h2 class="h5 mb-0">Affected records</h2></div><span class="badge text-bg-light border">{{ findings|length }} finding(s)</span></div>
+    {% if findings %}<div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Employee</th><th>Source</th><th>Affected field</th><th>Observed</th><th>Status</th><th class="text-end">Action</th></tr></thead><tbody>{% for item in findings %}{% include "admin/_quarantine_finding_table_row.html" %}{% endfor %}</tbody></table></div>{% else %}<div class="empty-state p-5">No findings match the selected filters.</div>{% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -224,6 +224,52 @@ class BusinessRuleService:
     def available_sources(self) -> tuple[dict[str, str], ...]:
         return ({"key": "ALL", "label": "All reports", "description": "Evaluate the rule against every source."}, *tuple({"key": key, "label": label, "description": f"Only fields from {label}."} for key, label in self.SOURCE_LABELS.items()))
 
+    def available_condition_fields(self) -> tuple[dict[str, str], ...]:
+        """Return field choices annotated with their governed source."""
+        fields = []
+        for source_system, source_label in self.SOURCE_LABELS.items():
+            for field in self.available_fields(source_system):
+                fields.append({"source": source_system, "source_label": source_label, "key": field, "label": self._humanize_field(field)})
+        return tuple(fields)
+
+    @staticmethod
+    def condition_from_form(values) -> dict:
+        """Build the explicit condition tree from the guided editor fields."""
+        def get_list(name: str) -> list[str]:
+            return [str(item or "").strip() for item in values.getlist(name)]
+
+        def operand(prefix: str, index: int) -> dict:
+            kind = get_list(f"{prefix}_kind")[index]
+            if kind == "field":
+                return {"kind": "field", "source": get_list(f"{prefix}_source")[index], "field": get_list(f"{prefix}_field")[index]}
+            if kind == "derived":
+                arguments = []
+                for argument in ("arg1", "arg2"):
+                    argument_kind = get_list(f"{prefix}_{argument}_kind")[index]
+                    if argument_kind == "field":
+                        arguments.append({"kind": "field", "source": get_list(f"{prefix}_{argument}_source")[index], "field": get_list(f"{prefix}_{argument}_field")[index]})
+                    else:
+                        arguments.append({"kind": "literal", "value": get_list(f"{prefix}_{argument}_value")[index]})
+                return {"kind": "derived", "function": get_list(f"{prefix}_function")[index], "arguments": arguments}
+            return {"kind": "literal", "value": get_list(f"{prefix}_value")[index]}
+
+        group = str(values.get("condition_group") or "all").strip().lower()
+        if group not in {"all", "any"}:
+            raise ValueError("Choose whether all or any conditions must match.")
+        operators = get_list("condition_operator")
+        rows = []
+        for index, operator in enumerate(operators):
+            if not operator:
+                continue
+            left = operand("condition_left", index)
+            right = operand("condition_right", index)
+            if right.get("kind") == "literal" and operator in {"in", "between"}:
+                right["value"] = [item.strip() for item in str(right.get("value") or "").split(",") if item.strip()]
+            rows.append({"left": left, "operator": operator, "right": right})
+        if not rows:
+            raise ValueError("Add at least one comparison to the condition.")
+        return {group: rows}
+
     def available_fields(self, source_system: str = "ALL") -> tuple[str, ...]:
         """Return known source fields for the guided rule builder."""
         with orm_session(self.database_path) as session:
@@ -456,7 +502,7 @@ class BusinessRuleService:
                 evaluated += 1
                 if record.record_id not in payload_cache:
                     try:
-                        payload = StarSchemaWriter.payload_for_record(session, record)
+                        payload = self._payload_for_record(session, record, condition)
                     except (TypeError, ValueError):
                         payload = {}
                     payload_cache[record.record_id] = payload if isinstance(payload, dict) else {}
@@ -515,19 +561,20 @@ class BusinessRuleService:
                     # Valid imports clear their JSON once source facts exist.
                     # Read those facts once per record, retaining compatibility
                     # with legacy and quarantine rows during the transition.
-                    if record.record_id not in payloads:
+                    condition = self._json(version.condition_json)
+                    payload_key = (record.record_id, version.rule_version_id)
+                    if payload_key not in payloads:
                         try:
-                            payload = StarSchemaWriter.payload_for_record(session, record)
+                            payload = self._payload_for_record(session, record, condition)
                         except (TypeError, ValueError):
                             payload = {}
-                        payloads[record.record_id] = payload if isinstance(payload, dict) else {}
-                    payload = payloads[record.record_id]
-                    if not self._matches(self._json(version.condition_json), payload, version.context_version_id):
+                        payloads[payload_key] = payload if isinstance(payload, dict) else {}
+                    payload = payloads[payload_key]
+                    if not self._matches(condition, payload, version.context_version_id):
                         continue
                     fingerprint = hashlib.sha256(f"{rule.rule_id}:{version.rule_version_id}:{record.record_id}".encode()).hexdigest()
                     if session.scalar(select(RuleFindingModel.finding_id).where(RuleFindingModel.fingerprint == fingerprint)):
                         continue
-                    condition = self._json(version.condition_json)
                     if self._create_finding(session, rule, version, record, payload, condition, fingerprint, now):
                         created += 1
         return created
@@ -864,3 +911,54 @@ class BusinessRuleService:
         return ConditionEvaluator(
             configured_rule_calendar(self.database_path, context_version_id=context_version_id)
         ).matches(condition, payload)
+
+    @classmethod
+    def _condition_sources(cls, condition: dict) -> set[str]:
+        """Collect explicit source references used by a condition tree."""
+        sources: set[str] = set()
+        if not isinstance(condition, dict):
+            return sources
+        for key in ("left", "right"):
+            operand = condition.get(key)
+            if not isinstance(operand, dict):
+                continue
+            if operand.get("kind") == "field" and str(operand.get("source") or "").strip():
+                sources.add(str(operand["source"]).strip().upper())
+            if operand.get("kind") == "derived":
+                for argument in operand.get("arguments", []):
+                    if isinstance(argument, dict) and argument.get("kind") == "field" and str(argument.get("source") or "").strip():
+                        sources.add(str(argument["source"]).strip().upper())
+        for key in ("all", "any"):
+            children = condition.get(key)
+            if isinstance(children, list):
+                for child in children:
+                    sources.update(cls._condition_sources(child))
+        nested = condition.get("not")
+        if isinstance(nested, dict):
+            sources.update(cls._condition_sources(nested))
+        return sources
+
+    @classmethod
+    def _payload_for_record(cls, session, record, condition: dict | None = None) -> dict:
+        """Build a payload with linked source snapshots for explicit rules."""
+        payload = StarSchemaWriter.payload_for_record(session, record)
+        if not isinstance(payload, dict):
+            payload = {}
+        sources = cls._condition_sources(condition or {})
+        if not sources or not record.matched_worker_id:
+            return payload
+        linked = session.scalars(select(IngestionRecordModel).where(
+            IngestionRecordModel.matched_worker_id == record.matched_worker_id,
+            IngestionRecordModel.source_system.in_(sources),
+        ).order_by(IngestionRecordModel.created_at_utc.desc())).all()
+        source_payloads: dict[str, dict] = {}
+        for linked_record in linked:
+            source = str(linked_record.source_system or "").upper()
+            if source in source_payloads:
+                continue
+            linked_payload = StarSchemaWriter.payload_for_record(session, linked_record)
+            source_payloads[source] = linked_payload if isinstance(linked_payload, dict) else {}
+        if source_payloads:
+            source_payloads.setdefault(str(record.source_system or "").upper(), payload)
+            payload = {**payload, "sources": source_payloads}
+        return payload

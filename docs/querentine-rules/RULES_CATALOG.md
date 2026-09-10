@@ -240,3 +240,275 @@ scope evita evaluar como `missing` un field que no existe en otra fuente.
 | MR-003 | NUID login ID is missing | BEFORE | `nuid_login_id` | `missing` | WARNING | Pendiente |
 | MR-004 | Employee number is missing | BEFORE | `employee_number` | `missing` | ERROR | Cubierta por validación |
 | MR-005 | Composite NPN value requires review | BEFORE | `npn_login_id` | `contains` | WARNING | Pendiente |
+
+## Auditoría de rule evaluation y backlog de hoy
+
+**Revisión:** 2026-09-10. Esta sección registra el estado del trabajo de
+evaluación después de implementar la comparación explícita de
+`left operand + operator + right operand`. No cambia el alcance de fase 1:
+las reglas siguen siendo advisory, no bloquean la ingesta y no escriben en
+plataformas autoritativas.
+
+### Estado confirmado en el código
+
+- **Implementado:** `ConditionEvaluator` acepta el contrato explícito con
+  operandos `field`, `literal` y `derived`, además del contrato legado
+  `field/operator/value`.
+- **Implementado:** operadores allow-listed `exists`, `missing`, `equals`,
+  `not_equals`, `contains`, `in`, `greater_than`, `less_than`, `between`,
+  `before` y `after`.
+- **Implementado:** composición con `all`, `any` y `not`; la validación
+  rechaza operadores, operandos y funciones derivadas no permitidos.
+- **Implementado:** el derivado `business_days_between` usa el calendario y
+  la versión de contexto fijados para la regla.
+- **Implementado:** `create_complex_rule` valida el árbol y persiste una
+  versión en estado `DRAFT`; la evaluación `BEFORE` y `AFTER` conserva el
+  comportamiento no bloqueante.
+- **Cubierto por pruebas:** forma legado, forma explícita compuesta,
+  calendario/feriados, operador no permitido, scope por reporte, persistencia
+  de findings y preview de reglas `DRAFT`.
+
+### Hallazgos de la auditoría
+
+1. **El motor está por delante de la interfaz.** El wizard guiado y sus rutas
+   siguen creando solo condiciones legado y exponen seis operadores:
+   `exists`, `missing`, `equals`, `not_equals`, `contains` e `in`. No permiten
+   construir desde la UI `left/right`, grupos, comparaciones entre campos ni
+   `greater_than`/`less_than`/`between`/`before`/`after`.
+2. **La evidencia persistida es suficiente para el match, no para el razonamiento
+   completo.** `fact_quarantine` guarda campo, operador, esperado, observado,
+   regla, versión, lote y registro; el `trace` detallado del evaluador queda
+   en memoria y no se incorpora al finding.
+3. **La cobertura explícita todavía es mínima.** Falta probar de forma aislada
+   cada operador nuevo, comparaciones field-to-field, valores ausentes,
+   tipos/fechas, fuentes explícitas y trazas de árboles anidados.
+4. **La presentación compuesta ya existe en el servicio**, pero debe validarse
+   con casos de `derived`, `all/any/not` y condiciones malformadas para evitar
+   mensajes ambiguos en administración y cuarentena.
+
+### Backlog priorizado para hoy
+
+| Prioridad | Trabajo | Criterio de terminado | Estado |
+|---|---|---|---|
+| P0 | Cerrar contrato de la DSL explícita | Documentar esquema, operandos válidos, operadores, tipos, missing y semántica inclusiva de fechas; agregar ejemplos JSON versionados | Pendiente |
+| P0 | Completar pruebas del evaluador | Cubrir todos los operadores, field-to-field, `all/any/not`, fuentes, valores faltantes, errores de validación y trazas | Pendiente |
+| P0 | Verificar findings de reglas compuestas | Confirmar que campo, esperado, observado, fuente, lote, registro y versión quedan correctos para `left/right` y condiciones anidadas | Pendiente |
+| P1 | Diseñar la extensión del wizard | Definir una UI accesible para uno o varios predicados, operandos y grupos, con preview humano y fallback POST/HTMX | Pendiente |
+| P1 | Implementar la creación gobernada desde UI | Conectar el wizard a `create_complex_rule`, conservar `DRAFT`, scope por reporte, CSRF, autorización y auditoría | Pendiente |
+| P1 | Decidir y, si se aprueba, persistir trace | Acordar tamaño, privacidad y formato de evidencia; guardar solo el detalle necesario para reproducir la decisión | Decisión pendiente |
+| P2 | Prueba end-to-end de ingesta | Validar `BEFORE` y `AFTER` con una regla compuesta, sin bloquear ni modificar hechos canónicos, y revisar Quarantine | Pendiente |
+| P2 | Actualizar mensajes y catálogo operativo | Mostrar condiciones compuestas de forma legible y añadir recetas reproducibles para pruebas manuales | Pendiente |
+
+### Fuera de alcance de hoy
+
+- No convertir findings en bloqueos de importación.
+- No modificar, corregir, aprobar o publicar datos de empleados en fuentes
+  autoritativas.
+- No reemplazar el contrato legado mientras existan reglas ya persistidas.
+- No eliminar ni reescribir `rule_findings`, `fact_quarantine` ni evidencia de
+  lotes anteriores.
+
+## Editor generico de reglas compuestas
+
+El wizard de reglas ya permite crear condiciones sin depender de una plantilla
+de negocio concreta. La condicion se guarda en el mismo contrato versionado
+del motor y la regla queda en `DRAFT` hasta que una persona la revise y active.
+
+### Paso a paso para crear una regla de 30 dias de rehire
+
+1. Abrir **Admin > Business rules** y seleccionar **Create rule**.
+2. Elegir la fase `AFTER` y como reporte objetivo `ROSTER_LOCK`. Ese scope hace
+   que el finding quede asociado al registro de onboarding que se esta
+   revisando.
+3. En **Condition style**, seleccionar **Multiple comparisons / calculated
+   value**.
+4. Mantener el grupo `All conditions must match`.
+5. En la primera comparacion seleccionar como lado izquierdo el campo
+   `ACCESSNOW.accessnow_status`, operador `in` y como valor fijo
+   `TERMINATED, DEACTIVATED`.
+6. Agregar una segunda comparacion. Seleccionar como lado izquierdo
+   **Calculated value > Business days between**.
+7. Configurar sus dos entradas como campos: primero
+   `ACCESSNOW.termination_date` y segundo `ROSTER_LOCK.onboarding_date`.
+8. Seleccionar operador `between` y valor fijo `0, 30`.
+9. Continuar con el nombre descriptivo, severidad y revision. Usar **Test**
+   sobre la regla `DRAFT` antes de activarla y revisar los resultados en
+   **Quarantine**.
+
+El mismo flujo sirve para reglas similares: se pueden cambiar las fuentes,
+campos, operador, grupo `all/any`, valores fijos o calculados. El editor no
+conoce ni necesita conocer el concepto de rehire.
+
+### Regla de prueba con doble condicion
+
+Usar esta receta para validar el recorrido completo del wizard sin depender de
+una logica especial de rehire:
+
+| Campo | Valor |
+|---|---|
+| Nombre sugerido | `TEST - Terminated record has termination date` |
+| Phase | `AFTER` |
+| Fuente objetivo | `MASTER_ROSTER` |
+| Grupo | `All conditions must match` |
+| Severidad | `WARNING` |
+| Estado inicial | `DRAFT` |
+
+Configurar las dos comparaciones siguientes:
+
+1. Lado izquierdo **Report field**: `MASTER_ROSTER.assignment_status`;
+   operador `equals`; lado derecho **Fixed value**: `TERMINATED`.
+2. Lado izquierdo **Report field**: `MASTER_ROSTER.actual_termination_date`;
+   operador `exists`; dejar el valor derecho vacio.
+
+La regla debe coincidir solamente cuando ambas condiciones sean verdaderas:
+el registro esta terminado y tiene fecha de terminacion. Si una de las dos
+condiciones falla, no debe generarse finding. Guardarla como `DRAFT`, usar
+**Test**, revisar el conteo y los registros coincidentes, y activarla solo
+despues de confirmar el resultado en **Quarantine**. Para probar la variante
+OR, cambiar el grupo a `Any condition may match` y verificar que el conteo
+aumente de acuerdo con cada condicion individual.
+
+El contrato equivalente queda expresado así:
+
+```json
+{
+  "all": [
+    {
+      "left": {"kind": "field", "source": "MASTER_ROSTER", "field": "assignment_status"},
+      "operator": "equals",
+      "right": {"kind": "literal", "value": "TERMINATED"}
+    },
+    {
+      "left": {"kind": "field", "source": "MASTER_ROSTER", "field": "actual_termination_date"},
+      "operator": "exists",
+      "right": {"kind": "literal", "value": ""}
+    }
+  ]
+}
+```
+
+### Requisito para comparar fuentes
+
+En evaluacion `AFTER`, el motor arma el contexto `sources` con el registro mas
+reciente de cada fuente vinculada al mismo `matched_worker_id`. Por eso una
+condicion entre fuentes solo puede producir un resultado reproducible cuando
+la reconciliacion local ya enlazo los registros. Si no existe ese enlace, el
+motor conserva el comportamiento de payload plano y la condicion no debe
+interpretarse como una coincidencia.
+
+### Pendiente despues de esta entrega
+
+- Agregar una prueba de integracion con dos registros enlazados de fuentes
+  distintas y verificar el finding en el registro ancla.
+- Mejorar la proyeccion de `fact_quarantine` para mostrar todos los operandos
+  y el trace de una condicion compuesta, en lugar del primer campo solamente.
+- Decidir si las reglas `BEFORE` entre fuentes deben esperar un contexto
+  previo de reconciliacion o limitarse a una sola fuente.
+
+## Receta de prueba con Roster Lock y Master Roster
+
+La base local revisada el 2026-09-10 contiene evidencia suficiente para probar
+una comparacion entre fuentes sin inventar valores:
+
+- `ROSTER_LOCK`: 359 hechos.
+- `MASTER_ROSTER`: 3,351 hechos.
+- 173 trabajadores tienen registros enlazados en ambas fuentes.
+- 543 filas historicas enlazadas cumplen `ROSTER_LOCK.assignment_status = New
+  Hire` y tienen el mismo email en ambas fuentes.
+
+Crear esta regla desde el wizard:
+
+| Campo | Configuracion |
+|---|---|
+| Nombre sugerido | `TEST - Roster Lock hire matches Master Roster email` |
+| Phase | `AFTER` |
+| Fuente objetivo | `ROSTER_LOCK` |
+| Grupo | `All conditions must match` |
+| Severidad | `WARNING` |
+
+Comparacion 1:
+
+- Lado izquierdo: campo `ROSTER_LOCK.assignment_status`.
+- Operador: `equals`.
+- Lado derecho: valor fijo `New Hire`.
+
+Comparacion 2:
+
+- Lado izquierdo: campo `ROSTER_LOCK.email`.
+- Operador: `equals`.
+- Lado derecho: campo `MASTER_ROSTER.email`.
+
+El scope `ROSTER_LOCK` hace que el finding quede anclado al registro de
+Roster Lock. La comparacion de fuentes usa el contexto de registros enlazados
+por `matched_worker_id`; no se debe interpretar como coincidencia si el
+registro aun no esta enlazado. La vista **Test** debe mostrar coincidencias
+historicas, pero la regla no crea findings mientras permanezca en `DRAFT`.
+
+El JSON equivalente es:
+
+```json
+{
+  "all": [
+    {
+      "left": {"kind": "field", "source": "ROSTER_LOCK", "field": "assignment_status"},
+      "operator": "equals",
+      "right": {"kind": "literal", "value": "New Hire"}
+    },
+    {
+      "left": {"kind": "field", "source": "ROSTER_LOCK", "field": "email"},
+      "operator": "equals",
+      "right": {"kind": "field", "source": "MASTER_ROSTER", "field": "email"}
+    }
+  ]
+}
+```
+
+## Configuracion y prueba del 30-day rehire
+
+La regla de rehire debe crearse como una regla generica de tres comparaciones;
+no existe una plantilla especial en el motor. Antes de probarla, ingerir en
+este orden:
+
+1. `MASTER_ROSTER`, para que exista el trabajador local.
+2. Los archivos de `ACCESSNOW`, incluyendo los estados terminados o
+   desactivados y su fecha de terminacion.
+3. `ROSTER_LOCK`, con el nuevo onboarding y su fecha propuesta.
+
+En el wizard configurar:
+
+| Campo | Configuracion |
+|---|---|
+| Nombre sugerido | `TEST - 30 business day rehire hold` |
+| Phase | `AFTER` |
+| Fuente objetivo | `ROSTER_LOCK` |
+| Grupo | `All conditions must match` |
+| Severidad | `CRITICAL` o `ERROR`, segun la politica de revision |
+
+Comparacion 1:
+
+- Lado izquierdo: `ACCESSNOW.accessnow_status`.
+- Operador: `in`.
+- Valor fijo: `TERMINATED, DEACTIVATED`.
+
+Comparacion 2:
+
+- Lado izquierdo: **Calculated value > Business days between**.
+- Primera entrada: `ACCESSNOW.termination_date`.
+- Segunda entrada: `ROSTER_LOCK.onboarding_date`.
+- Operador: `between`.
+- Valor fijo: `0, 30`.
+
+Comparacion 3, recomendada para evitar fechas vacias:
+
+- Lado izquierdo: `ROSTER_LOCK.onboarding_date`.
+- Operador: `exists`.
+- Lado derecho: valor fijo vacio.
+
+Luego guardar como `DRAFT`, usar **Test**, revisar el numero de matches y
+confirmar que el registro encontrado sea el onboarding de Roster Lock. Solo
+despues activar la regla. La activacion revisa tambien batches historicos y
+las ingestas posteriores volveran a ejecutar la regla despues de cada batch.
+
+La base local revisada actualmente no tiene hechos de `ACCESSNOW`, por lo que
+esta regla no puede generar una coincidencia de rehire hasta que se ingieran
+esos archivos y los registros queden enlazados por `matched_worker_id`.

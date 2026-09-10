@@ -1,38 +1,8 @@
-<tr id="finding-{{ item.finding.finding_id }}">
-  <td>
-    <strong>{{ item.rule_name }}</strong>
-    <div class="small text-secondary">{{ item.rule_description }}</div>
-  </td>
-  <td>
-    {% if item.employee.worker_id %}
-      <a href="{{ url_for('employees.employee_detail', worker_id=item.employee.worker_id) }}"><strong>{{ item.employee.name }}</strong></a>
-    {% else %}
-      <strong>{{ item.employee.name }}</strong>
-    {% endif %}
-    {% if item.employee.email %}<div class="small text-secondary">{{ item.employee.email }}</div>{% endif %}
-    {% if item.employee.status %}<span class="badge text-bg-light mt-1">{{ item.employee.status }}</span>{% endif %}
-    {% if item.source_record_key %}<div class="small text-secondary mt-1">Source key: {{ item.source_record_key }}</div>{% endif %}
-  </td>
-  <td>
-    <code>{{ item.field }}</code>
-    <div class="small mt-1"><strong>Actual:</strong> {{ item.actual_value if item.actual_value != '' else 'Empty / missing' }}</div>
-    {% if item.operator %}<div class="small text-secondary">{{ item.operator }}{% if item.expected_value != '' %} {{ item.expected_value }}{% endif %}</div>{% endif %}
-  </td>
-  <td><span class="badge text-bg-{{ 'danger' if item.finding.severity in ('ERROR', 'CRITICAL') else 'warning' }}">{{ item.finding.severity }}</span><div class="small text-secondary mt-1">{{ item.source_system }}</div></td>
-  <td><span class="status-pill status-{{ item.finding.status|lower }}"><span></span>{{ item.finding.status }}</span></td>
-  <td class="text-end">
-    {% if item.finding.status == 'OPEN' or item.finding.status == 'ACKNOWLEDGED' %}
-      <form method="post" action="{{ url_for('admin.business_rule_finding_status', finding_id=item.finding.finding_id) }}" hx-post="{{ url_for('admin.business_rule_finding_status', finding_id=item.finding.finding_id) }}" hx-target="#finding-{{ item.finding.finding_id }}" hx-swap="outerHTML" class="d-grid gap-2">
-        <input class="form-control form-control-sm" name="note" placeholder="Note for resolve/suppress">
-        <select class="form-select form-select-sm" name="status" aria-label="Finding disposition">
-          <option value="ACKNOWLEDGED"{% if item.finding.status == 'ACKNOWLEDGED' %} selected{% endif %}>Acknowledge</option>
-          <option value="RESOLVED">Resolve</option>
-          <option value="SUPPRESSED">Suppress</option>
-        </select>
-        <button class="btn btn-sm btn-outline-primary">Save</button>
-      </form>
-    {% else %}
-      <details><summary class="small">Evidence</summary><pre class="small bg-light p-2 mt-2 mb-0 text-start">{{ item.finding.evidence_json }}</pre></details>
-    {% endif %}
-  </td>
-</tr>
+<article id="finding-{{ item.finding.finding_id }}" class="quarantine-finding-card {% if item.finding.severity in ('ERROR', 'CRITICAL') %}is-high-severity{% endif %}">
+  <header class="quarantine-finding-header"><div><p class="eyebrow mb-1">Rule violation</p><h3>{{ item.rule_name }}</h3></div><div class="d-flex flex-wrap gap-2 justify-content-end"><span class="badge text-bg-{{ 'danger' if item.finding.severity in ('ERROR', 'CRITICAL') else 'warning' }}">{{ item.finding.severity }}</span><span class="status-pill status-{{ item.finding.status|lower }}"><span></span>{{ item.finding.status }}</span></div></header>
+  <p class="small text-secondary mb-3">{{ item.rule_description }}</p>
+  <div class="quarantine-finding-meta"><div><span>Employee</span>{% if item.employee.worker_id %}<strong><a href="{{ url_for('employees.employee_detail', worker_id=item.employee.worker_id) }}">{{ item.employee.name }}</a></strong>{% else %}<strong>{{ item.employee.name }}</strong>{% endif %}{% if item.employee.email %}<small>{{ item.employee.email }}</small>{% endif %}</div><div><span>Source</span><strong>{{ item.source_system }}</strong><small>{{ item.source_record_key or 'No source key' }}</small></div></div>
+  <div class="quarantine-finding-condition"><span>Affected field</span><strong><code>{{ item.field }}</code></strong><div><span>Observed</span><strong>{{ item.actual_value if item.actual_value != '' else 'Empty / missing' }}</strong></div>{% if item.operator %}<div><span>Expected</span><strong><code>{{ item.operator }}{% if item.expected_value != '' %} {{ item.expected_value }}{% endif %}</code></strong></div>{% endif %}</div>
+  <details class="rule-technical-details mt-3"><summary>Evidence and technical details</summary><div class="small mt-2"><div>Rule status: <strong>{{ item.finding.status }}</strong></div><div>Created: {{ item.finding.created_at_utc|human_datetime }}</div><details class="mt-2"><summary>Evidence JSON</summary><pre class="small bg-light p-2 mt-2 mb-0 text-start overflow-auto">{{ item.finding.evidence_json }}</pre></details></div></details>
+  <footer class="quarantine-finding-actions mt-3">{% if item.finding.status == 'OPEN' or item.finding.status == 'ACKNOWLEDGED' %}<form method="post" action="{{ url_for('admin.business_rule_finding_status', finding_id=item.finding.finding_id) }}" hx-post="{{ url_for('admin.business_rule_finding_status', finding_id=item.finding.finding_id) }}" hx-target="#finding-{{ item.finding.finding_id }}" hx-swap="outerHTML" class="quarantine-finding-form"><input class="form-control form-control-sm" name="note" placeholder="Note for resolve/suppress"><select class="form-select form-select-sm" name="status" aria-label="Finding disposition"><option value="ACKNOWLEDGED"{% if item.finding.status == 'ACKNOWLEDGED' %} selected{% endif %}>Acknowledge</option><option value="RESOLVED">Resolve</option><option value="SUPPRESSED">Suppress</option></select><button class="btn btn-sm btn-outline-primary">Save</button></form>{% else %}<span class="small text-secondary">No further action required.</span>{% endif %}</footer>
+</article>

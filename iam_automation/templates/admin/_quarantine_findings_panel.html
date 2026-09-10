@@ -12,7 +12,7 @@
   </div>
 
   <section class="surface p-3 mb-4">
-    <form class="row g-3 align-items-end" method="get" action="{{ url_for('admin.quarantine') }}" hx-get="{{ url_for('admin.quarantine') }}" hx-target="#quarantine-findings-region" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#quarantine-filter-indicator">
+    <form class="row g-3 align-items-end" method="get" action="{{ url_for('admin.quarantine') }}" hx-get="{{ url_for('admin.quarantine') }}" hx-target="#quarantine-findings-region" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#quarantine-filter-submit">
       <div class="col-md-3">
         <label class="form-label" for="quarantine-status">Status</label>
         <select class="form-select" id="quarantine-status" name="status">
@@ -30,25 +30,30 @@
       </div>
       <div class="col-md-4">
         <label class="form-label" for="quarantine-rule">Rule</label>
-        <select class="form-select" id="quarantine-rule" name="rule_id">
+        <select class="form-select" id="quarantine-rule" name="rule_id" hx-get="{{ url_for('admin.quarantine') }}" hx-target="#quarantine-findings-region" hx-swap="outerHTML" hx-include="closest form" hx-push-url="true" hx-indicator="#quarantine-filter-submit" aria-describedby="quarantine-rule-help">
           <option value="ALL"{% if rule_id == 'ALL' %} selected{% endif %}>All rules</option>
           {% for item in rules %}<option value="{{ item.rule.rule_id }}"{% if rule_id == item.rule.rule_id %} selected{% endif %}>{{ item.rule.name }}</option>{% endfor %}
         </select>
       </div>
       <div class="col-md-2 d-flex gap-2">
-        <button class="btn btn-primary flex-grow-1" type="submit">Apply filters</button>
-        <span id="quarantine-filter-indicator" class="htmx-indicator align-self-center small text-secondary" role="status" aria-live="polite">Updating…</span>
+        <button id="quarantine-filter-submit" class="btn btn-primary flex-grow-1 quarantine-filter-submit" type="submit"><span class="quarantine-filter-label">Apply filters</span><span class="quarantine-filter-loading" role="status" aria-live="polite"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Updating…</span></button>
       </div>
     </form>
   </section>
 
-  <section class="surface table-responsive mb-4">
-    <div class="p-3 border-bottom d-flex justify-content-between align-items-center"><div><p class="eyebrow mb-1">Business rules</p><h2 class="h5 mb-0">Rule violations</h2></div><a class="small" href="{{ url_for('admin.business_rules') }}">Manage rules →</a></div>
-    <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>Rule violated</th><th>Employee</th><th>Affected field</th><th>Severity / source</th><th>Status</th><th class="text-end">Action</th></tr></thead>
-      <tbody id="quarantine-findings-list">
-        {% for item in findings %}{% include "admin/_quarantine_finding_row.html" %}{% else %}<tr><td colspan="6" class="empty-state">No rule findings match the selected filters.</td></tr>{% endfor %}
-      </tbody>
-    </table>
+  <section class="surface overflow-hidden mb-4">
+    <div class="p-3 border-bottom d-flex justify-content-between align-items-center"><div><p class="eyebrow mb-1">Business rules</p><h2 class="h5 mb-0">Configured rules</h2><p id="quarantine-rule-help" class="small text-secondary mb-0">Choose a rule to refresh its quarantine summary.</p></div><a class="small" href="{{ url_for('admin.business_rules') }}">Manage rules →</a></div>
+    {% if rule_cards %}<div id="quarantine-findings-list" class="quarantine-findings-grid p-3 p-lg-4">
+      {% for card in rule_cards %}
+      <a class="quarantine-rule-card-link" href="{{ url_for('admin.quarantine_rule_detail', rule_id=card.rule_id) }}">
+        <article class="quarantine-rule-card">
+          <header class="quarantine-rule-card-header"><div><p class="eyebrow mb-1">Rule quarantine</p><h3>{{ card.rule_name }}</h3></div><span class="badge text-bg-warning">{{ card.finding_count }} finding(s)</span></header>
+          <p class="small text-secondary mb-3">{{ card.rule_description }}</p>
+          <div class="quarantine-rule-card-meta"><div><span>Source</span><strong>{{ card.source_system or 'All imported reports' }}</strong></div><div><span>Findings</span><strong>{{ card.finding_count }}</strong></div><div><span>Status</span><strong>{{ card.statuses|join(', ') or 'No findings' }}</strong></div></div>
+          <footer class="quarantine-rule-card-footer"><span>Open rule findings</span><span aria-hidden="true">→</span></footer>
+        </article>
+      </a>
+      {% endfor %}
+    </div>{% else %}<div class="empty-state p-5">No rule findings match the selected filters.</div>{% endif %}
   </section>
 </div>

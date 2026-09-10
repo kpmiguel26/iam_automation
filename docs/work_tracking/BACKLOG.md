@@ -1,5 +1,61 @@
 # Implementation Backlog
 
+## 2026-09-10 Phase 1 review closure and next work session
+
+Management and leadership reviewed the current increment and approved
+continuing the polish of **Phase 1 — Read-only Employee & Evidence Review**.
+The approval does not expand the scope into authoritative writes, approval,
+blocking imports or automated rehire decisions.
+
+### Completed today
+
+- [x] Confirmed the generic rule engine can create reusable rules with explicit
+  left operand, operator and right operand conditions; no rehire template or
+  hard-coded business rule was introduced.
+- [x] Added and verified composite-rule recipes for the 30-day rehire scenario
+  and cross-source Roster Lock/Master Roster comparisons.
+- [x] Kept report-field choices scoped to the selected report in the guided
+  builder and fixed the explicit-condition validation path so valid compound
+  rules can continue.
+- [x] Refined Business Rules presentation with a guided builder, rule registry
+  cards and responsive layouts while preserving server-rendered Flask/Jinja
+  and HTMX interactions.
+- [x] Refined Quarantine to show one card per configured rule, including rules
+  with zero findings; clicking a card opens a rule-detail page with the
+  affected-record table.
+- [x] Added HTMX rule filtering in Quarantine. The filter button shows a
+  yellow updating state with a loader while results refresh without a full
+  page reload.
+- [x] Saved and verified the operating calendar, weekdays, holidays, context
+  versions and date-boundary settings in the local SQLite evidence store.
+- [x] Focused regression suite passed: 28 tests.
+
+### Backlog for tomorrow
+
+- [ ] Pin the exact calendar version in each rule context/version. The current
+  context stores the calendar ID, while the evaluator still resolves the
+  calendar's current version; add an additive migration and regression tests so
+  historical findings remain reproducible.
+- [ ] Create the generic 30-day rehire rule through the UI after all required
+  sources are ingested; keep it `DRAFT`, run the preview, then review the
+  finding evidence before activation.
+- [ ] Execute boundary fixtures for 0, 1, 29, 30 and 31 business days,
+  including a configured holiday and missing-date cases.
+- [ ] Verify the 30-day rule's source matching, worker lineage, batch lineage,
+  context version, calendar version and evidence in Quarantine.
+- [ ] Add regression coverage for Quarantine's rule cards, zero-finding rules,
+  HTMX rule-select filtering and the rule-detail table response.
+- [ ] Improve composite finding presentation so all operands, sources and
+  calculated values are visible without requiring raw JSON inspection.
+- [ ] Run the complete test suite and record the result before the next
+  management/UAT checkpoint.
+
+### Phase 1 guardrail
+
+Rules remain advisory and non-blocking. Rehire detection produces local
+findings and evidence only; it must not approve, reject, merge, correct or
+publish employee data to an authoritative source.
+
 ## 2026-09-07 SQLite consumer transition
 
 Evidence: [transition review](../bugs/2026-09-sqlite-consumer-transition.md).

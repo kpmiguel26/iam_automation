@@ -1,5 +1,43 @@
 # Implementation Bitacora
 
+## 2026-09-10 — Business Rules and Quarantine review closure
+
+Management and leadership reviewed the current Business Rules increment and
+approved continued refinement within **Phase 1 — Read-only Employee & Evidence
+Review**.
+
+### Delivered
+
+- The rule engine now supports generic explicit conditions using left/right
+  operands, allow-listed operators, compound `all`/`any`/`not` groups and the
+  `business_days_between` derived value. The 30-day rehire use case remains a
+  configuration recipe, not a hard-coded rule.
+- The guided builder filters fields by selected report and persists composite
+  rules as draft, versioned rule definitions.
+- Business Rules uses responsive registry cards. Quarantine uses one card per
+  configured rule and a separate detail page with a table of affected records.
+- Quarantine filtering is HTMX-driven. Selecting a rule refreshes the result
+  region without a full page reload; the filter button shows a yellow loading
+  state and spinner during the request.
+- The operating calendar was saved and verified in SQLite with weekday settings,
+  imported 2026 holidays, context versions and the exclusive-start/
+  inclusive-end date convention.
+- Focused verification passed: 28 tests.
+
+### Evidence and limitation recorded
+
+The local database contains versioned calendar and rule-context records. A rule
+currently pins a context version, but the context stores the calendar ID rather
+than the exact calendar version. This is now a Phase 1 reproducibility backlog
+item before relying on historical rehire findings across future calendar edits.
+
+### Next session
+
+The next session will add exact calendar-version binding, ingest the required
+source batches, create and preview the generic 30-day rehire rule, test date
+boundaries and holidays, and verify source/batch/worker lineage in Quarantine.
+No authoritative write or import-blocking behavior is planned.
+
 ## 2026-09-04
 
 ### Documentation architecture and September milestone

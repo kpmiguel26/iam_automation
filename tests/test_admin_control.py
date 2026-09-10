@@ -16,6 +16,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from werkzeug.datastructures import MultiDict
 
 from iam_automation import webapp
 from iam_automation.application.shared_request_service import SharedRequestService
@@ -109,6 +110,43 @@ class AdminControlTests(unittest.TestCase):
             start = client.get("/admin/business-rules/wizard/start")
             self.assertEqual(start.status_code, 200)
             self.assertIn(b"Create a rule", start.data)
+
+    def test_business_rule_wizard_accepts_two_explicit_conditions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            client = self.client_for_admin(database)
+            client.get("/admin/business-rules/wizard/phase")
+            with client.session_transaction() as session:
+                csrf_token = session["iam_csrf_token"]
+            headers = {"X-CSRF-Token": csrf_token}
+            client.post("/admin/business-rules/wizard/source", data={"phase": "AFTER"}, headers=headers)
+            client.post("/admin/business-rules/wizard/details", data={"phase": "AFTER", "source_system": "MASTER_ROSTER"}, headers=headers)
+            data = MultiDict([
+                ("phase", "AFTER"), ("source_system", "MASTER_ROSTER"),
+                ("condition_mode", "explicit"), ("condition_group", "all"),
+                ("condition_left_kind", "field"), ("condition_left_kind", "field"),
+                ("condition_left_source", "MASTER_ROSTER"), ("condition_left_source", "MASTER_ROSTER"),
+                ("condition_left_field", "assignment_status"), ("condition_left_field", "actual_termination_date"),
+                ("condition_left_value", ""), ("condition_left_value", ""),
+                ("condition_left_function", "business_days_between"), ("condition_left_function", "business_days_between"),
+                ("condition_left_arg1_kind", "field"), ("condition_left_arg1_kind", "field"),
+                ("condition_left_arg1_source", "MASTER_ROSTER"), ("condition_left_arg1_source", "MASTER_ROSTER"),
+                ("condition_left_arg1_field", "assignment_status"), ("condition_left_arg1_field", "actual_termination_date"),
+                ("condition_left_arg1_value", ""), ("condition_left_arg1_value", ""),
+                ("condition_left_arg2_kind", "field"), ("condition_left_arg2_kind", "field"),
+                ("condition_left_arg2_source", "MASTER_ROSTER"), ("condition_left_arg2_source", "MASTER_ROSTER"),
+                ("condition_left_arg2_field", "assignment_status"), ("condition_left_arg2_field", "actual_termination_date"),
+                ("condition_left_arg2_value", ""), ("condition_left_arg2_value", ""),
+                ("condition_operator", "equals"), ("condition_operator", "exists"),
+                ("condition_right_kind", "literal"), ("condition_right_kind", "literal"),
+                ("condition_right_source", "MASTER_ROSTER"), ("condition_right_source", "MASTER_ROSTER"),
+                ("condition_right_field", ""), ("condition_right_field", ""),
+                ("condition_right_value", "TERMINATED"), ("condition_right_value", ""),
+            ])
+            response = client.post("/admin/business-rules/wizard/condition", data=data, headers=headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b'name="condition_json"', response.data)
+            self.assertIn(b"Rule naming", response.data)
 
     def test_business_rule_catalog_can_test_a_draft_rule(self):
         with tempfile.TemporaryDirectory() as tmp:
