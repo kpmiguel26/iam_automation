@@ -543,10 +543,21 @@ class LocalWebAppServer:
         return f"http://{self.host}:{self.port}/login"
 
     def stop(self) -> None:
-        if self._server is not None:
-            self._server.close()  # type: ignore[attr-defined]
-        if self._thread is not None:
-            self._thread.join(timeout=2)
+        server = self._server
+        thread = self._thread
+        if server is None:
+            return
+        # Waitress request workers call ``server.pull_trigger()`` after each
+        # request.  Closing the trigger first can race with that final call
+        # and produce a misleading ``EBADF`` traceback during normal shutdown.
+        # Drain the workers before closing the trigger so no request worker can
+        # touch it after it has been closed.
+        task_dispatcher = getattr(server, "task_dispatcher", None)
+        if task_dispatcher is not None:
+            task_dispatcher.shutdown(timeout=2)
+        server.close()  # type: ignore[attr-defined]
+        if thread is not None:
+            thread.join(timeout=2)
         self._server = None
         self._thread = None
 

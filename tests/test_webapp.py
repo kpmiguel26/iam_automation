@@ -295,6 +295,34 @@ class WebAppTests(unittest.TestCase):
         finally:
             server.stop()
 
+    def test_local_server_drains_waitress_workers_before_closing(self):
+        events = []
+
+        class FakeDispatcher:
+            def shutdown(self, *, timeout):
+                events.append(("dispatcher.shutdown", timeout))
+
+        class FakeServer:
+            task_dispatcher = FakeDispatcher()
+
+            def close(self):
+                events.append(("server.close",))
+
+        class FakeThread:
+            def join(self, *, timeout):
+                events.append(("thread.join", timeout))
+
+        server = webapp.LocalWebAppServer(object())
+        server._server = FakeServer()
+        server._thread = FakeThread()
+
+        server.stop()
+
+        self.assertEqual(
+            events,
+            [("dispatcher.shutdown", 2), ("server.close",), ("thread.join", 2)],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
