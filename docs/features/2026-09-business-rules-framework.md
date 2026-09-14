@@ -1,6 +1,6 @@
 # Feature F-005/F-006 — Configurable Business Rules and Alerts
 
-**Status:** Planned  
+**Status:** Active — foundation implemented; remaining governance and alert slices are planned
 **Priority:** High  
 **Target:** 2026-09-08  
 **Source:** [Meeting notes](../meetings/2026-09-04/notes.md), [meeting backlog](../meetings/2026-09-04/backlog.md)

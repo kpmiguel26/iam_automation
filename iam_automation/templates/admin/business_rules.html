@@ -4,7 +4,7 @@
 <div class="container-fluid px-4 px-lg-5 py-4 admin-page">
   <a class="back-link" href="{{ url_for('admin.home') }}">Control Center</a>
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mt-3 mb-4">
-    <div><p class="eyebrow mb-1">Advisory controls</p><h1>Business rules</h1><p class="text-secondary mb-0">BEFORE rules inspect normalized rows before the adapter runs; AFTER rules inspect committed SQLite facts. Both alert people and never block imports.</p></div><div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="{{ url_for('admin.business_rule_configuration') }}">Rule configuration</a><a class="btn btn-outline-primary" href="{{ url_for('admin.quarantine') }}">Open quarantine →</a></div>
+    <div><p class="eyebrow mb-1">Advisory controls</p><h1>Business rules</h1><p class="text-secondary mb-0">BEFORE rules inspect normalized rows before the adapter runs; AFTER rules inspect committed SQLite facts. Both alert people and never block imports.</p></div><div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="{{ url_for('business_rules_help') }}">Rules help</a><a class="btn btn-outline-secondary" href="{{ url_for('admin.business_rule_configuration') }}">Rule configuration</a><a class="btn btn-outline-primary" href="{{ url_for('admin.quarantine') }}">Open quarantine →</a></div>
     <div id="rule-evaluation-indicator" class="htmx-indicator alert alert-info py-2 px-3 mb-0"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Evaluating historical SQLite data…</div>
   </div>
   {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}

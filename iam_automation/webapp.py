@@ -432,6 +432,12 @@ def create_app(
             return redirect(url_for("login"))
         return render_template("help/employees.html")
 
+    @app.get("/help/business-rules")
+    def business_rules_help():
+        if not session.get("iam_user"):
+            return redirect(url_for("login"))
+        return render_template("help/business_rules.html")
+
     @app.get("/notifications")
     def notifications_page():
         username = session.get("iam_user")

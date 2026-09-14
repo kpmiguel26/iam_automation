@@ -26,7 +26,7 @@ are linked.
 | F-002 | Authentication and authorization | Completed for development scope | Existing user/access stories | `identity.py`, admin tests; production hardening pending |
 | F-003 | Admin control center and notifications | Completed for current scope | Existing admin stories | `admin_routes.py`, notification tests |
 | F-004 | Source ingestion and employee evidence review | Active / adapter refactor complete; source-separated ORM landed | Master Roster and source reconciliation stories | [Ingestion architecture](./architecture/INGESTION_ARCHITECTURE.md), [Write model](./architecture/WRITE_MODEL_ARCHITECTURE.md), [Master Roster requirements](./work_tracking/2026-08-27_MASTER_ROSTER_REQUIREMENTS.md) |
-| F-005 | Business Rules Framework | Active / foundation implemented | BR-001–BR-006 | [Architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md), [feature brief](./features/2026-09-business-rules-framework.md) |
+| F-005 | Business Rules Framework | Active / foundation implemented | BR-001–BR-006 | [Architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md), [feature brief](./features/2026-09-business-rules-framework.md), [user help](./architecture/RULES_ENGINE.md) |
 | F-006 | Alert definition framework | Active / findings surface started | AL-001–AL-004 | [Architecture](./architecture/BUSINESS_RULES_ARCHITECTURE.md), [feature brief](./features/2026-09-business-rules-framework.md) |
 | F-007 | Database publication and workspace refresh | Active investigation | DB-001–DB-003 | [Bug record](./bugs/2026-09-refresh-alert.md) |
 | F-008 | Canonical mutation, approval and publication writer | Deferred | Future controlled-change stories | [Architecture boundary](../ARCHITECTURE.md) |

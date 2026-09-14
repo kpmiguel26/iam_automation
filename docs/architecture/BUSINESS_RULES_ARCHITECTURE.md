@@ -54,8 +54,8 @@ whether the field can be used by rules.
 
 The configuration page can import a public-holiday proposal by country and
 year from Nager.Date. Imported dates are displayed as table rows with an
-administrator-controlled enabled switch. The imported response is never read
-live by the evaluator; saving the switches creates the next local calendar
+administrator-controlled enabled switch. The current import endpoint already
+persists a new local calendar version; saving the switches creates another
 version. Nager.Date exposes public, bank, authority, optional and observance
 types, so the application must still distinguish public holidays from the
 organization's actual operating schedule. A failed import leaves the last
@@ -68,8 +68,10 @@ can suggest a type, but the configured type controls the future operand and
 operator vocabulary.
 
 Calendar and context saves create a new version. Each newly created rule
-version stores the current context version, so later calendar changes remain
-auditable and do not reinterpret the rule's evaluation contract.
+version stores the current context version. The current implementation does
+not yet store the selected calendar version inside that context, so later
+calendar changes can still affect older rule evaluations; see the [current
+rules engine behavior](./RULES_ENGINE.md).
 The configurable 30-business-day rehire threshold belongs to the rule
 condition (`right operand = 30`); the calendar determines which dates count as
 business days.
@@ -119,9 +121,9 @@ submitted, while the reviewer message remains separate optional text.
 ## User experience and status
 
 Overview shows open and critical finding counts. Dashboard shows latest
-findings, severity and context with a clear “post-import, advisory” label. A
-future Findings work area can acknowledge, resolve or suppress findings with
-actor, timestamp and reason.
+findings, severity and context with a clear “post-import, advisory” label.
+Current findings can be acknowledged, resolved or suppressed from
+Administration / Quarantine, with actor, timestamp and reason.
 
 Rule lifecycle: `DRAFT -> ACTIVE -> DISABLED`. Finding lifecycle:
 `OPEN -> ACKNOWLEDGED -> RESOLVED`, with `SUPPRESSED` requiring an authorized

@@ -74,6 +74,60 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(b"PRE-001", response.data)
         self.assertIn(b"Report a bug", response.data)
 
+    def test_business_rules_help_requires_login_and_contains_main_sections(self):
+        app = webapp.create_app(self.make_result(True))
+        client = app.test_client()
+        self.assertEqual(client.get("/help/business-rules").status_code, 302)
+        with client.session_transaction() as session:
+            session["iam_user"] = "tester"
+            session["iam_roles"] = ["REQUESTER"]
+
+        response = client.get("/help/business-rules")
+
+        self.assertEqual(response.status_code, 200)
+        for anchor in ("what-it-does", "before-after", "creating-rule", "operands", "operators", "composite", "business-days", "rule-lifecycle", "finding-lifecycle", "troubleshooting"):
+            self.assertIn(f'id="{anchor}"'.encode(), response.data)
+        self.assertIn(b"advisory-only", response.data)
+        self.assertIn(b"30-business-day rehire review", response.data)
+        self.assertIn(b"Rules do not block imports", response.data)
+
+    def test_business_rules_contextual_help_links_point_to_help_anchors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            admin = CurrentUser("app.admin", "PC01", (ROLE_APPLICATION_ADMIN,))
+            root = database.parent / "sharepoint"
+            settings = StartupSettings(root, root / "database.accdb", root / "published.sqlite", database, root / "workspace", root / "backups", root / "audit")
+            app = webapp.create_app(PreflightResult(StartupState.READY, True, "ready", settings), app_authenticator=lambda _u, _p: admin)
+            client = app.test_client()
+            with client.session_transaction() as session:
+                session["iam_user"] = admin.username
+                session["iam_roles"] = list(admin.roles)
+
+            business_rules = client.get("/admin/business-rules")
+            self.assertEqual(business_rules.status_code, 200)
+            self.assertIn(b'href="/help/business-rules"', business_rules.data)
+
+            wizard = client.get("/admin/business-rules/wizard/phase")
+            self.assertEqual(wizard.status_code, 200)
+            self.assertIn(b"/help/business-rules#before-after", wizard.data)
+
+            with client.session_transaction() as session:
+                csrf_token = session["iam_csrf_token"]
+            headers = {"X-CSRF-Token": csrf_token}
+            source = client.post("/admin/business-rules/wizard/source", data={"phase": "AFTER"}, headers=headers)
+            self.assertIn(b"/help/business-rules#creating-rule", source.data)
+            details = client.post("/admin/business-rules/wizard/details", data={"phase": "AFTER", "source_system": "MASTER_ROSTER"}, headers=headers)
+            for anchor in ("composite", "operands", "operators"):
+                self.assertIn(f"/help/business-rules#{anchor}".encode(), details.data)
+            condition = client.post("/admin/business-rules/wizard/condition", data={"phase": "AFTER", "source_system": "MASTER_ROSTER", "field": "email", "operator": "missing", "value": ""}, headers=headers)
+            self.assertIn(b"/help/business-rules#creating-rule", condition.data)
+            review = client.post("/admin/business-rules/wizard/review", data={"phase": "AFTER", "source_system": "MASTER_ROSTER", "field": "email", "operator": "missing", "value": "", "rule_number": "1", "name": "Missing email", "description": "Review missing email.", "generated_name": "AFTER - MR - 001 - email - Missing email"}, headers=headers)
+            self.assertIn(b"/help/business-rules#rule-lifecycle", review.data)
+
+            help_page = client.get("/help/business-rules")
+            for anchor in ("before-after", "creating-rule", "composite", "operands", "operators", "rule-lifecycle"):
+                self.assertIn(f'id="{anchor}"'.encode(), help_page.data)
+
     def test_workspace_refresh_guard_is_loaded_on_every_authenticated_page(self):
         user = type("User", (), {"username": "tester", "roles": ("REQUESTER",)})()
         app = webapp.create_app(self.make_result(True), app_authenticator=lambda username, password: user)
