@@ -68,10 +68,10 @@ can suggest a type, but the configured type controls the future operand and
 operator vocabulary.
 
 Calendar and context saves create a new version. Each newly created rule
-version stores the current context version. The current implementation does
-not yet store the selected calendar version inside that context, so later
-calendar changes can still affect older rule evaluations; see the [current
-rules engine behavior](./RULES_ENGINE.md).
+version stores the current context version, and each context version stores the
+exact calendar version selected at that time. Later calendar changes create new
+versions and cannot affect older rule evaluations; see the [current rules
+engine behavior](./RULES_ENGINE.md).
 The configurable 30-business-day rehire threshold belongs to the rule
 condition (`right operand = 30`); the calendar determines which dates count as
 business days.

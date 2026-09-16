@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import date
 from pathlib import Path
 
-from iam_automation.application.business_calendar import configured_rule_calendar
+from iam_automation.application.business_calendar import RuleCalendarSettings, configured_rule_calendar
 from iam_automation.application.condition_evaluator import ConditionEvaluator, ConditionValidationError
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.infrastructure.sqlite.orm import (
@@ -94,6 +95,27 @@ class ConditionEvaluatorTests(unittest.TestCase):
                 }, {}),
                 True,
             )
+
+    def test_context_date_boundary_is_default_for_derived_operands(self):
+        condition = {
+            "left": {"kind": "derived", "function": "business_days_between", "arguments": [
+                {"kind": "literal", "value": "2026-01-05"},
+                {"kind": "literal", "value": "2026-01-05"},
+            ]},
+            "operator": "equals",
+            "right": {"kind": "literal", "value": 1},
+        }
+
+        self.assertTrue(ConditionEvaluator(RuleCalendarSettings(date_boundary="INCLUSIVE_BOTH")).matches(condition, {}))
+        self.assertFalse(ConditionEvaluator(RuleCalendarSettings()).matches(condition, {}))
+
+    def test_persisted_calendar_is_not_affected_by_legacy_environment_holidays(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            with patch.dict("os.environ", {"REHIRE_HOLIDAYS": "2026-01-05"}):
+                calendar = configured_rule_calendar(database)
+
+        self.assertNotIn(date(2026, 1, 5), calendar.holidays_between(date(2026, 1, 5), date(2026, 1, 5)))
 
 
 if __name__ == "__main__":

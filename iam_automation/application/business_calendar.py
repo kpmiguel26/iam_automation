@@ -110,12 +110,26 @@ def configured_rule_calendar(
             )
             if calendar is None:
                 return default
-            version = session.scalar(
-                select(RuleCalendarVersionModel).where(
-                    RuleCalendarVersionModel.calendar_id == calendar.calendar_id,
-                    RuleCalendarVersionModel.version == calendar.current_version,
+
+            # New context versions carry the exact immutable calendar version.
+            # The current-version lookup is retained only for pre-binding
+            # databases/rows and is eliminated by migration 0021 for normal
+            # runtime databases.
+            version = None
+            pinned_version_id = getattr(context_version, "default_calendar_version_id", None)
+            if pinned_version_id:
+                version = session.get(RuleCalendarVersionModel, pinned_version_id)
+                if version is None or version.calendar_id != calendar.calendar_id:
+                    # Never silently substitute a newer calendar when a pin is
+                    # invalid; deterministic fallback is safer than drift.
+                    return default
+            else:
+                version = session.scalar(
+                    select(RuleCalendarVersionModel).where(
+                        RuleCalendarVersionModel.calendar_id == calendar.calendar_id,
+                        RuleCalendarVersionModel.version == calendar.current_version,
+                    )
                 )
-            )
             if version is None:
                 return default
             try:
@@ -131,7 +145,11 @@ def configured_rule_calendar(
                     RuleCalendarHolidayModel.enabled.is_(True),
                 )
             ).all()
-            exact: set[date] = set(fallback_holidays)
+            # Once the database has a configured calendar, it is the complete
+            # source of truth. Do not merge the legacy environment fallback:
+            # otherwise identical SQLite snapshots can evaluate differently
+            # on hosts with different REHIRE_HOLIDAYS values.
+            exact: set[date] = set()
             recurring: set[tuple[int, int]] = set()
             for holiday in holiday_rows:
                 try:

@@ -224,10 +224,9 @@ holidays; and field metadata such as type, nullability, normalization and
 `rule_enabled`.
 
 When a rule is created, its version captures the current `context_version_id`.
-This allows part of the creation context to be reconstructed later, but the
-context currently stores `calendar_id`, not `calendar_version_id`. If the
-calendar changes later, an older rule may read the current calendar version.
-Complete reproducibility requires pinning the calendar version as well.
+Each context version now also captures the exact `calendar_version_id` used by
+that context. Later calendar edits create a new calendar version and cannot
+reinterpret an older rule or finding.
 
 The Nager.Date holiday import is presented as a proposal in the interface, but
 the current endpoint already persists a new calendar version with imported
@@ -282,8 +281,6 @@ side-effect-free preview and basic configuration authorization.
 
 | Priority | Finding | Impact |
 |---|---|---|
-| High | `RuleContextVersion.date_boundary` is loaded into `RuleCalendarSettings`, but `business_days_between` uses the `EXCLUSIVE_START_INCLUSIVE_END` default unless the operand includes `date_boundary`. | Selecting `INCLUSIVE_BOTH` in configuration currently does not change a derived condition unless the operand explicitly stores it. |
-| High | A rule is linked to `context_version_id`, but that version stores only `default_calendar_id`; the evaluator reads the current version of that calendar. | Calendar changes can reinterpret historical findings from older rules. |
 | Medium | `missing_data_behavior` and timezone are stored and versioned, but do not currently change general evaluation. | The screen can imply an applied policy while the values are still context metadata. |
 | Medium | `exists` means “the key exists,” not “the key has a non-empty value.” | An `exists` rule can match a present but empty column; use `missing` to detect an absent value. |
 | Medium | Rule versioning exists in the schema, but no edit flow creates new versions. | Changing a rule currently requires creating another rule or changing code. |
@@ -296,4 +293,3 @@ side-effect-free preview and basic configuration authorization.
 These gaps do not invalidate the current advisory workflow, but they must be
 fixed or explicitly accepted before presenting the engine as enforcement,
 automated decision-making or a production control.
-

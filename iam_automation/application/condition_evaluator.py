@@ -205,7 +205,9 @@ class ConditionEvaluator:
             end = self._as_date(self._resolve_operand(arguments[1], payload))
             if start is None or end is None:
                 return _MISSING
-            boundary = str(operand.get("date_boundary") or "EXCLUSIVE_START_INCLUSIVE_END").upper()
+            # An operand may override the context, but the configured context
+            # is the deterministic default for every derived date calculation.
+            boundary = str(operand.get("date_boundary") or self.calendar.date_boundary).upper()
             if boundary not in {"EXCLUSIVE_START_INCLUSIVE_END", "INCLUSIVE_BOTH"}:
                 raise ConditionValidationError(f"Unsupported date boundary: {boundary}.")
             return business_days_between(

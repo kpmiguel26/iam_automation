@@ -185,7 +185,7 @@ class RuleConfigurationService:
             raise ValueError("Choose a valid date boundary.")
         now = self._now()
         with orm_session(self.database_path) as session:
-            calendar, _ = self._current_calendar(session, calendar_id)
+            calendar, calendar_version = self._current_calendar(session, calendar_id)
             context = session.scalar(select(RuleContextModel).where(RuleContextModel.context_key == "DEFAULT"))
             if context is None:
                 context = RuleContextModel(context_id="context:default", context_key="DEFAULT", label="Default rule context", current_version=0, active=True, created_by=actor, created_at_utc=now, updated_at_utc=now)
@@ -194,7 +194,8 @@ class RuleConfigurationService:
             version_number = int(context.current_version or 0) + 1
             version = RuleContextVersionModel(
                 context_version_id=f"{context.context_id}:{version_number}", context_id=context.context_id, version=version_number,
-                default_calendar_id=calendar.calendar_id, timezone=timezone_name, missing_data_behavior=missing_data_behavior,
+                default_calendar_id=calendar.calendar_id, default_calendar_version_id=calendar_version.calendar_version_id,
+                timezone=timezone_name, missing_data_behavior=missing_data_behavior,
                 date_boundary=date_boundary, created_by=actor, created_at_utc=now,
             )
             session.add(version)

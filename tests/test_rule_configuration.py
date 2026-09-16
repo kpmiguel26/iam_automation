@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from iam_automation import webapp
+from iam_automation.application.business_calendar import configured_rule_calendar
 from iam_automation.application.rule_configuration_service import RuleConfigurationService
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN
@@ -58,6 +59,34 @@ class RuleConfigurationTests(unittest.TestCase):
             self.assertEqual(len(configuration["calendars"][0]["holidays"]), 2)
             self.assertEqual(configuration["context_version"].timezone, "America/Guatemala")
             self.assertEqual(configuration["context_version"].missing_data_behavior, "SKIP")
+            self.assertEqual(
+                configuration["context_version"].default_calendar_version_id,
+                configuration["calendars"][0]["version"].calendar_version_id,
+            )
+
+    def test_context_keeps_using_the_pinned_calendar_version_after_calendar_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            service = RuleConfigurationService(database)
+            calendar = service.configuration()["calendars"][0]["model"]
+            initial_context_version = service.configuration()["context_version"].context_version_id
+
+            service.save_calendar(
+                calendar_id=calendar.calendar_id,
+                label="Monday only",
+                timezone_name="UTC",
+                weekdays=["0"],
+                holidays="",
+                actor="admin",
+            )
+
+            pinned = service.configuration()["context_version"]
+            self.assertEqual(pinned.context_version_id, initial_context_version)
+            self.assertEqual(pinned.default_calendar_version_id, "calendar:standard:1")
+            self.assertEqual(
+                configured_rule_calendar(database, context_version_id=pinned.context_version_id).operating_weekdays,
+                frozenset({0, 1, 2, 3, 4}),
+            )
 
     def test_field_metadata_updates_type_and_rule_operators(self):
         with tempfile.TemporaryDirectory() as tmp:

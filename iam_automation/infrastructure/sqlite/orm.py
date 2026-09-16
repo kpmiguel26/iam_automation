@@ -418,6 +418,9 @@ class RuleContextVersionModel(Base):
     context_id: Mapped[str] = mapped_column(ForeignKey("rule_contexts.context_id"))
     version: Mapped[int] = mapped_column(Integer)
     default_calendar_id: Mapped[str] = mapped_column(ForeignKey("rule_calendars.calendar_id"))
+    default_calendar_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rule_calendar_versions.calendar_version_id"), nullable=True
+    )
     timezone: Mapped[str] = mapped_column(String, default="UTC")
     missing_data_behavior: Mapped[str] = mapped_column(String, default="FINDING")
     date_boundary: Mapped[str] = mapped_column(String, default="EXCLUSIVE_START_INCLUSIVE_END")
