@@ -265,6 +265,8 @@ class BusinessRuleService:
             right = operand("condition_right", index)
             if right.get("kind") == "literal" and operator in {"in", "between"}:
                 right["value"] = [item.strip() for item in str(right.get("value") or "").split(",") if item.strip()]
+                if operator == "between" and len(right["value"]) != 2:
+                    raise ValueError("Between needs two values: enter a minimum and a maximum separated by a comma.")
             rows.append({"left": left, "operator": operator, "right": right})
         if not rows:
             raise ValueError("Add at least one comparison to the condition.")
