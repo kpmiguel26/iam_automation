@@ -39,7 +39,6 @@ class PathResource:
 
 
 RESOURCES = [
-    PathResource("published_access_db_path", "Published Access database", "file", True, ".accdb"),
     PathResource("published_runtime_db_path", "Published runtime SQLite database", "file", True, ".sqlite"),
     PathResource("sharepoint_root_path", "SharePoint library root", "folder", True),
     PathResource("workspace_path", "Local workspace", "folder", True),
@@ -121,13 +120,16 @@ def resolve_path_settings(
 ) -> dict[str, str]:
     config_defaults = _config_defaults(config_path)
     env_defaults = _env_defaults()
+    # Keep the retired Access key resolvable for old settings files and
+    # launchers, but do not expose it as a required resource anymore.
+    path_keys = {resource.key for resource in RESOURCES} | {"published_access_db_path", "approved_users_path"}
     provided = {
         key: str((overrides or {}).get(key, "") or "").strip()
-        for key in {resource.key for resource in RESOURCES} | {"approved_users_path"}
+        for key in path_keys
         if str((overrides or {}).get(key, "") or "").strip()
     }
     resolved: dict[str, str] = {}
-    for key in {resource.key for resource in RESOURCES} | {"approved_users_path"}:
+    for key in path_keys:
         resolved[key] = provided.get(key) or env_defaults.get(key) or config_defaults.get(key) or ""
     return resolved
 

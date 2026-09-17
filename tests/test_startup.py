@@ -29,7 +29,6 @@ def make_sharepoint_root(base: Path, name: str = "OneDrive - Test/IAMAutomation"
     for folder in ("requests", "audit", "backups"):
         (root / folder).mkdir(parents=True, exist_ok=True)
     (root / "database").mkdir(parents=True, exist_ok=True)
-    (root / "database" / "iam_automation.accdb").write_bytes(b"access-placeholder")
     (root / "database" / "snapshots").mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(root / "database" / "snapshots" / "iam_runtime.sqlite")
     connection.execute("CREATE TABLE runtime_metadata (key TEXT PRIMARY KEY, value TEXT)")

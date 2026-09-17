@@ -1,7 +1,6 @@
 [paths]
 # Keep this sample file portable. Set IAM_SHAREPOINT_ROOT_PATH or select the
 # synchronized folder in the preflight panel. Paths are derived from that root.
-published_access_db_path = ""
 published_runtime_db_path = ""
 sharepoint_root_path = ""
 

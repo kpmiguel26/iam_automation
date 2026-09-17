@@ -215,6 +215,74 @@ class WebAppTests(unittest.TestCase):
             self.assertIn(b"Review history", history.data)
             self.assertIn(b"Filter file history", history.data)
 
+    def test_partial_source_import_does_not_block_next_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            settings = StartupSettings(
+                database.parent / "sharepoint",
+                database.parent / "database.accdb",
+                database.parent / "published.sqlite",
+                database,
+                database.parent / "workspace",
+                database.parent / "backups",
+                database.parent / "audit",
+            )
+            app = webapp.create_app(PreflightResult(StartupState.READY, True, "ready", settings))
+            client = app.test_client()
+            with client.session_transaction() as session:
+                session["iam_user"] = "directory.user"
+                session["iam_roles"] = ["REQUESTER"]
+
+            files_by_source = {
+                "ROSTER_LOCK": [{
+                    "source_system": "ROSTER_LOCK",
+                    "source_file": "roster.xlsx",
+                    "source_path": "roster.xlsx",
+                    "source_checksum": "roster-checksum",
+                    "record_count": 15,
+                    "staged_count": 1,
+                    "pending_count": 1,
+                    "linked_count": 14,
+                    "ambiguous_count": 0,
+                    "conflict_count": 0,
+                    "imported": False,
+                    "latest_at": "2026-09-17T21:28:20+00:00",
+                    "source_modified_at": "2026-07-31T20:08:53+00:00",
+                }],
+                "MASTER_ROSTER": [],
+                "RSR_SUPPLIER_WORKER_DETAILS": [],
+                "ACCESSNOW": [{
+                    "source_system": "ACCESSNOW",
+                    "source_file": "access.csv",
+                    "source_path": "access.csv",
+                    "source_checksum": "access-checksum",
+                    "record_count": 2,
+                    "staged_count": 2,
+                    "pending_count": 2,
+                    "linked_count": 0,
+                    "ambiguous_count": 0,
+                    "conflict_count": 0,
+                    "imported": False,
+                    "latest_at": "2026-09-17T21:31:00+00:00",
+                    "source_modified_at": "2026-09-17T21:31:00+00:00",
+                }],
+            }
+
+            with patch.object(EmployeeService, "list_source_systems", return_value=[]), patch.object(EmployeeService, "list_source_files", side_effect=lambda source: [dict(item) for item in files_by_source[source]]):
+                response = client.get("/employees/source-updates")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Imported with warnings", response.data)
+            self.assertIn(b"access.csv", response.data)
+            self.assertIn(b"Import file", response.data)
+            self.assertNotIn(b"Waiting for previous stage", response.data)
+
+            files_by_source["ROSTER_LOCK"][0]["staged_count"] = 15
+            with patch.object(EmployeeService, "list_source_systems", return_value=[]), patch.object(EmployeeService, "list_source_files", side_effect=lambda source: [dict(item) for item in files_by_source[source]]):
+                blocked_response = client.get("/employees/source-updates")
+
+            self.assertIn(b"Waiting for previous stage", blocked_response.data)
+
     def test_notification_pages_use_one_canonical_center(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")

@@ -232,12 +232,24 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
                     })
             files.sort(key=lambda item: (str(item.get("source_modified_at") or item.get("latest_at") or ""), str(item.get("source_file", "")).casefold()))
             imported = bool(files) and all(bool(item.get("imported")) for item in files)
-            stage_complete = not files or imported
+            # A row-level conflict must remain visible and retryable, but it
+            # must not stop later source systems after the rest of its file
+            # was processed. A file is considered progressed when at least
+            # one row is no longer STAGED; a file with every row still STAGED
+            # remains a true predecessor blocker.
+            file_progress = [
+                bool(file.get("imported"))
+                or int(file.get("record_count", 0) or 0) > int(file.get("staged_count", 0) or 0)
+                for file in files
+            ]
+            stage_can_advance = not files or all(file_progress)
+            partial = bool(files) and not imported and stage_can_advance
             item = grouped.get(source_system, {"source_system": source_system, "label": "Fieldglass" if source_system == "RSR_SUPPLIER_WORKER_DETAILS" else service._source_label(source_system), "file_count": 0, "record_count": 0, "pending_count": 0, "linked_count": 0})
             item = dict(item)
             item["files"] = files
             item["step"] = len(timeline) + 1
             item["imported"] = imported
+            item["partial"] = partial
             item["available"] = bool(files) and previous_complete and not imported
             item["blocked"] = bool(files) and not previous_complete
             item["timeline_status"] = "IMPORTED" if imported else "READY_TO_IMPORT" if item["available"] else "WAITING_FOR_FILE" if not files else "BLOCKED"
@@ -245,6 +257,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             for index, file in enumerate(files):
                 file["import_task"] = task_for_file(source_system, str(file["source_file"]))
                 file["is_latest"] = bool(files) and index == len(files) - 1
+                file["partial"] = bool(file_progress[index] and not file.get("imported"))
                 file["available"] = bool(item["available"] and next_file_index == index)
             if not include_imported:
                 # Keep the operational inbox focused on files that can still
@@ -254,7 +267,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             elif max_files is not None:
                 item["files"] = files[-max_files:]
             timeline.append(item)
-            previous_complete = previous_complete and stage_complete
+            previous_complete = previous_complete and stage_can_advance
         return timeline
 
     def authenticated(view):

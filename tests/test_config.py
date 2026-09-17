@@ -52,7 +52,6 @@ class ConfigTests(unittest.TestCase):
     def test_rejects_sharepoint_web_links(self):
         payload = config.validation_payload(
             {
-                "published_access_db_path": "https://tenant.sharepoint.com/sites/iam/iam.accdb",
                 "sharepoint_root_path": "https://tenant.sharepoint.com/sites/iam",
                 "workspace_path": "/tmp/IAMAutomation/workspace",
                 "backup_folder_path": "/tmp/backup",
@@ -60,7 +59,6 @@ class ConfigTests(unittest.TestCase):
             }
         )
         statuses = {item["key"]: item["status"] for item in payload["resources"]}
-        self.assertEqual(statuses["published_access_db_path"], "web_path")
         self.assertEqual(statuses["sharepoint_root_path"], "web_path")
         self.assertFalse(payload["ok"])
 
@@ -70,13 +68,10 @@ class ConfigTests(unittest.TestCase):
             workspace = root / "workspace"
             root.mkdir(parents=True)
             workspace.mkdir()
-            db = root / "iam.accdb"
-            db.write_text("", encoding="utf-8")
             runtime = root / "iam_runtime.sqlite"
             runtime.write_bytes(b"sqlite-placeholder")
             payload = config.validation_payload(
                 {
-                    "published_access_db_path": str(db),
                     "published_runtime_db_path": str(runtime),
                     "sharepoint_root_path": str(root),
                     "workspace_path": str(workspace),
@@ -96,13 +91,10 @@ class ConfigTests(unittest.TestCase):
             audit = root / "audit"
             for folder in (root, workspace, backup, audit):
                 folder.mkdir(parents=True)
-            db = root / "iam.accdb"
-            db.write_text("", encoding="utf-8")
             runtime = root / "iam_runtime.sqlite"
             runtime.write_bytes(b"sqlite-placeholder")
             payload = config.validation_payload(
                 {
-                    "published_access_db_path": str(db),
                     "published_runtime_db_path": str(runtime),
                     "sharepoint_root_path": str(root),
                     "workspace_path": str(workspace),

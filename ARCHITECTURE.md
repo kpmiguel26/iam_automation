@@ -6,7 +6,7 @@ The current delivery phase is a read-only review increment. The application may
 read the published runtime SQLite snapshot and display employee, source,
 history, discrepancy, duplicate and audit evidence. It must not change the
 canonical employee, merge workers, approve or apply employee changes, or
-publish a new runtime or Access snapshot as part of this phase.
+publish a new runtime snapshot as part of this phase.
 
 The repository contains write-capable workflow code from the broader target
 architecture. Those paths are future-phase capabilities and are not part of
@@ -18,12 +18,12 @@ deployment.
 
 IAM Automation uses a single-writer approval workflow. There is no central API, server, VM, persistent service, or distributed coordinator in the current infrastructure.
 
-Microsoft Access is treated as a versioned master snapshot published to SharePoint. It is not a live multi-user database edited directly through OneDrive.
+The published runtime SQLite file is the active snapshot for this phase. Microsoft Access is not a startup dependency or active application store; remaining Access code is legacy/future-phase tooling.
 
 ## Conceptual Flow
 
 1. The local PySide6 startup shell discovers and validates the OneDrive-synchronized SharePoint route.
-2. The startup shell verifies the published Access database and published runtime SQLite snapshot.
+2. The startup shell verifies the published runtime SQLite snapshot.
 3. The startup shell validates the runtime checksum and copies SQLite atomically to the ignored project-root `runtime.sqlite`.
 4. The startup shell records workstation traceability and completes separate IAM account authentication.
 5. A local Flask webapp starts on `127.0.0.1` with an ephemeral port and opens in the browser.
@@ -39,7 +39,7 @@ The startup shell is a local MVC component, not a central service. Its controlle
 
 For the current development and test phase, the preflight registers the current operating-system identity in the runtime SQLite and publishes it with backup/audit metadata. This removes setup friction across VDI, Windows, and macOS test machines. A strict approved-user hard gate is reserved for production hardening after the SharePoint/AD integration is available.
 
-The startup gate rejects web URLs, unrelated local folders, missing Access or runtime SQLite snapshots, invalid SQLite integrity/checksum, unreadable files, and workspaces located inside OneDrive. Missing operational folders are created idempotently after both database files are found; database files are never created or replaced by this step.
+The startup gate rejects web URLs, unrelated local folders, missing runtime SQLite snapshots, invalid SQLite integrity/checksum, unreadable files, and workspaces located inside OneDrive. Missing operational folders are created idempotently after the runtime snapshot is found; database files are never created or replaced by this step.
 
 ## Python Package Organization
 
@@ -67,9 +67,9 @@ for the implemented flow and remaining migration sequence.
 
 Client applications must not:
 
-- Modify the published Access database.
-- Replace the Access snapshot.
-- Publish Access master versions.
+- Modify the published runtime snapshot in place.
+- Replace the published snapshot outside an explicit controlled workflow.
+- Publish runtime snapshot versions without an explicit controlled workflow.
 - Apply approved changes.
 - Merge or update the canonical employee.
 - Create or execute change-role submissions.

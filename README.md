@@ -2,7 +2,7 @@
 
 This repository is the feasibility proof of concept for an internal IAM and employee-data automation application.
 
-The current milestone is not the full application. The current phase is **Read-only Employee & Evidence Review**. Microsoft Access and the published runtime SQLite are treated as versioned snapshots, not as live multi-user databases edited directly through OneDrive.
+The current milestone is not the full application. The current phase is **Read-only Employee & Evidence Review**. The published runtime SQLite is the only database required by the application; it is treated as a versioned snapshot, not as a live multi-user database edited directly through OneDrive. Legacy Access tooling is outside the active runtime path.
 
 ## Current scope — Read-only review phase
 
@@ -14,7 +14,7 @@ The current milestone is not the full application. The current phase is **Read-o
 - Detect or stage source observations for review without changing the canonical employee.
 
 Employee creation, updates, deactivation, role changes, approvals, merges,
-Access writes, runtime publication and Data Loader execution are future-phase
+runtime publication and Data Loader execution are future-phase
 capabilities. Existing workflow code for those capabilities is not part of
 the current read-only release acceptance.
 
@@ -24,7 +24,6 @@ the current read-only release acceptance.
 python -m pytest
 python scripts/validate_environment.py --config config/sample_config.toml
 python run_app.py
-python scripts/create_access_database.py "C:\\path\\to\\iam_automation.accdb"
 python scripts/sync_runtime_database.py "C:\\path\\to\\OneDrive - Organization\\IAMAutomation"
 python scripts/create_runtime_database.py --publish-root "C:\\path\\to\\OneDrive - Organization\\IAMAutomation"
 python scripts/submit_change_request.py --pending-folder /tmp/iam_requests/pending --username DOMAIN\\user --entity-id E12345 --expected-record-version 4 --payload-json "{\"manager_id\":\"M100\"}" --reason "Manager reassignment"
@@ -41,7 +40,7 @@ To create a versioned runnable source ZIP for another workstation, use the launc
 package_source.bat
 ```
 
-The archive is written to `dist/` with the project version, UTC build timestamp, and Git commit in its filename. It contains `PACKAGE_MANIFEST.json` with the build metadata. Local databases, Access files, credentials, virtual environments, logs, and generated SharePoint fixture data are intentionally excluded. Extract the ZIP and run the included `run.sh` or `run_windows.bat` from the extracted project folder.
+The archive is written to `dist/` with the project version, UTC build timestamp, and Git commit in its filename. It contains `PACKAGE_MANIFEST.json` with the build metadata. Local databases, legacy Access files, credentials, virtual environments, logs, and generated SharePoint fixture data are intentionally excluded. Extract the ZIP and run the included `run.sh` or `run_windows.bat` from the extracted project folder.
 
 On Windows, extract the package to a short local path such as `C:\IAMAutomation` instead of a deeply nested Desktop or Downloads folder. The ZIP uses the short top-level folder `iam_automation` to avoid Windows path-length failures while creating the virtual environment and installing PySide6.
 
@@ -89,23 +88,12 @@ On Windows, `run_windows_hidden.vbs` starts the same launcher without displaying
 
 The launchers validate runtime dependencies and compile the application before starting the control panel. They do not run the complete test suite on every startup. Run the tests explicitly with `IAM_RUN_TESTS=1 ./run.sh` on macOS/Linux, or set `IAM_RUN_TESTS=1` before running `run_windows.bat` on Windows. This keeps a restricted test environment or a socket-only test from preventing the local application from opening.
 
-The Access database initializer requires Windows with the Microsoft Access Database Engine and ODBC driver. On macOS, inspect the generated Access schema without creating a fake database file:
-
-```bash
-./.venv/bin/python scripts/create_access_database.py placeholder.accdb --show-schema
-```
-
-On Windows with the Access ODBC driver installed:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/Validate-IAMEnvironment.ps1
-python scripts/experiment_01_access_connectivity.py "C:\path\to\OneDrive - Organization\IAMAutomation\iam_automation.accdb"
-```
+The current launcher does not require Microsoft Access, an Access driver, or an `.accdb` file. The only published database validated during preflight is the runtime SQLite snapshot.
 
 The working SQLite copy is `runtime.sqlite` in the project root and is ignored by Git. It is refreshed from the published SharePoint snapshot at startup. An administrative publish requires an explicit `--publish` action and may include `--expected-checksum` to prevent overwriting a newer shared copy.
 
-For macOS development, Browse may point to any local folder containing the Access file and the published runtime snapshot. Production deployments should use the local OneDrive-synchronized SharePoint folder.
+For macOS development, Browse may point to any local folder containing the published runtime snapshot. Production deployments should use the local OneDrive-synchronized SharePoint folder.
 
 ## Key rule
 
-SharePoint or OneDrive sync is not a database server. Client applications must not write directly to the published `.accdb`. Ordinary users submit immutable request files; an authorized Administrator/Writer applies approved requests in controlled batches and publishes versioned Access snapshots.
+SharePoint or OneDrive sync is not a database server. The application reads the published SQLite snapshot and keeps the local working SQLite copy outside OneDrive. Ordinary users submit immutable request files; future controlled writers may publish a new SQLite snapshot through an explicit workflow.

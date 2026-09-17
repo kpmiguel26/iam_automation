@@ -28,7 +28,7 @@ from .application.workspace_refresh_service import record_published_source_check
 from .identity import CurrentUser
 from .identity import computer_name, windows_username
 from .identity_discovery import record_windows_traceability, traceability_path
-from .runtime_sync import RuntimeDatabaseError, find_published_access_db, find_published_runtime_db, project_runtime_path, sync_runtime_snapshot
+from .runtime_sync import RuntimeDatabaseError, find_published_runtime_db, project_runtime_path, sync_runtime_snapshot
 from .settings_store import load_user_settings, save_user_settings, user_settings_path
 from .sharepoint_discovery import DiscoveryCandidate, discover_candidates
 from .workspace_layout import ensure_sharepoint_structure
@@ -52,7 +52,9 @@ class StartupState(str, Enum):
 @dataclass(frozen=True)
 class StartupSettings:
     sharepoint_root_path: Path
-    published_access_db_path: Path
+    # Retained in its historical position so older integrations that create
+    # this dataclass positionally continue to work. It is not validated.
+    published_access_db_path: Path | None
     published_runtime_db_path: Path
     local_runtime_db_path: Path
     workspace_path: Path
@@ -64,7 +66,7 @@ class StartupSettings:
     def as_overrides(self) -> dict[str, str]:
         return {
             "sharepoint_root_path": str(self.sharepoint_root_path),
-            "published_access_db_path": str(self.published_access_db_path),
+            "published_access_db_path": str(self.published_access_db_path or ""),
             "published_runtime_db_path": str(self.published_runtime_db_path),
             "workspace_path": str(self.workspace_path),
             "backup_folder_path": str(self.backup_folder_path),
@@ -112,11 +114,10 @@ def settings_for_root(root: Path, *, config_path: Path | None = None, settings_p
     config_reference = config_path or config.DEFAULT_CONFIG_PATH
     config_base = config_reference.parents[1] if config_reference == config.DEFAULT_CONFIG_PATH else config_reference.parent
     approved = _path_from(user_paths, "approved_users_path") or _path_from(config_values, "approved_users_path", base=config_base)
-    access_database = find_published_access_db(root) or root / "database" / "iam_automation.accdb"
     runtime_database = find_published_runtime_db(root) or root / "database" / "snapshots" / "iam_runtime.sqlite"
     return StartupSettings(
         sharepoint_root_path=root,
-        published_access_db_path=access_database,
+        published_access_db_path=None,
         published_runtime_db_path=runtime_database,
         local_runtime_db_path=project_runtime_path(),
         workspace_path=workspace,
@@ -148,26 +149,26 @@ class StartupController:
             if root.is_dir():
                 settings = settings_for_root(root, config_path=self.config_path, settings_path=self.settings_path)
                 if settings:
-                    self.candidates = (DiscoveryCandidate(root, 1000, (settings.published_access_db_path,), tuple(item for item in ("database", "requests", "audit", "backups") if (root / item).is_dir())),)
+                    self.candidates = (DiscoveryCandidate(root, 1000, tuple(), tuple(item for item in ("database", "requests", "audit", "backups") if (root / item).is_dir()), (settings.published_runtime_db_path,)),)
                     self.state = StartupState.CANDIDATE_FOUND
                     self.settings = settings
                     return self._result(True, "SharePoint path found from configuration.")
         self.candidates = discover_candidates()
         if not self.candidates:
             self.state = StartupState.NOT_FOUND
-            return self._result(False, "No local OneDrive-synchronized SharePoint folder with both databases was found.")
+            return self._result(False, "No local OneDrive-synchronized SharePoint folder with a runtime SQLite database was found.")
         if len(self.candidates) > 1:
             self.state = StartupState.MULTIPLE_CANDIDATES
             return self._result(False, "Multiple SharePoint candidates were found. Select one to continue.")
         self.settings = settings_for_root(self.candidates[0].path, config_path=self.config_path, settings_path=self.settings_path)
         self.state = StartupState.CANDIDATE_FOUND if self.settings else StartupState.INVALID_PATH
-        return self._result(bool(self.settings), "SharePoint candidate found." if self.settings else "The selected candidate must contain both the Access database and runtime SQLite database.")
+        return self._result(bool(self.settings), "SharePoint candidate found." if self.settings else "The selected candidate must contain a runtime SQLite database.")
 
     def select_sharepoint_path(self, path: Path) -> PreflightResult:
         self.settings = settings_for_root(path, config_path=self.config_path, settings_path=self.settings_path)
         self.candidates = ()
         self.state = StartupState.CANDIDATE_FOUND if self.settings else StartupState.INVALID_PATH
-        return self._result(bool(self.settings), "Selected SharePoint path is ready for validation." if self.settings else "Selected path must contain exactly one Access database and one runtime SQLite database.")
+        return self._result(bool(self.settings), "Selected SharePoint path is ready for validation." if self.settings else "Selected path must contain a runtime SQLite database.")
 
     def validate_environment(self) -> PreflightResult:
         if not self.settings:
@@ -179,8 +180,6 @@ class StartupController:
         ensure_sharepoint_structure(self.settings.sharepoint_root_path)
         payload = config.validation_payload(self.settings.as_overrides(), config_path=self.config_path)
         resources = list(payload["resources"])
-        if not self.settings.published_access_db_path.stat().st_mode & 0o444:
-            resources.append({"key": "access_readability", "label": "Access database readability", "path": str(self.settings.published_access_db_path), "required": True, "status": "unreadable", "message": "Access database is not readable by the current process."})
         ok = bool(payload["ok"]) and all(item["status"] == "ok" for item in resources if item.get("required"))
         if ok:
             try:
@@ -205,7 +204,7 @@ class StartupController:
                 LOGGER.exception("Unexpected runtime SQLite synchronization failure")
                 resources.append({"key": "runtime_sync", "label": "Local runtime SQLite synchronization", "path": str(self.settings.local_runtime_db_path), "required": True, "status": "invalid", "message": f"Unexpected synchronization failure ({type(exc).__name__}): {exc}"})
                 ok = False
-        self.state = StartupState.READY if ok else (StartupState.ACCESS_UNAVAILABLE if self.settings.published_access_db_path.exists() is False else StartupState.INVALID_PATH)
+        self.state = StartupState.READY if ok else StartupState.INVALID_PATH
         if ok:
             save_user_settings({"paths": self.settings.as_overrides()}, self.settings_path)
         self.result = PreflightResult(self.state, ok, "Environment is ready." if ok else "Environment validation failed.", self.settings, tuple(resources), self.candidates)

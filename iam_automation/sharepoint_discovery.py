@@ -33,7 +33,7 @@ class DiscoveryCandidate:
 
     @property
     def is_usable(self) -> bool:
-        return self.path.is_dir() and len(self.access_databases) == 1 and len(self.runtime_databases) == 1 and bool(self.matched_markers)
+        return self.path.is_dir() and len(self.runtime_databases) == 1 and bool(self.matched_markers)
 
 
 def _candidate_for(path: Path) -> DiscoveryCandidate | None:
@@ -47,7 +47,7 @@ def _candidate_for(path: Path) -> DiscoveryCandidate | None:
         return None
     if not markers:
         return None
-    score = len(markers) * 10 + (50 if len(databases) == 1 else 0) + (50 if len(runtime_databases) == 1 else 0) - (25 if len(databases) > 1 else 0)
+    score = len(markers) * 10 + (50 if len(runtime_databases) == 1 else 0)
     return DiscoveryCandidate(path=path, score=score, access_databases=databases, matched_markers=markers, runtime_databases=runtime_databases)
 
 
