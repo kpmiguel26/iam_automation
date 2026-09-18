@@ -69,18 +69,6 @@ body { background: #f4f6f8; color: #172033; }
 .priority-notification-item small { color: #dbeafe; margin-top: .15rem; }
 .priority-notification-dot { background: #f7c948; border: 2px solid rgba(255,255,255,.7); border-radius: 50%; flex: 0 0 auto; height: .7rem; width: .7rem; }
 .priority-notification-arrow { color: #c8e8ff; font-size: 1.1rem; }
-.rehire-alert-section { background: #fff5f5; border: 1px solid #f1b5b5; border-left: 5px solid #c92a2a; border-radius: .65rem; box-shadow: 0 8px 20px rgba(139, 28, 28, .08); overflow: hidden; }
-.rehire-alert-heading { align-items: center; background: #c92a2a; color: #fff; display: flex; gap: 1rem; justify-content: space-between; padding: 1rem 1.2rem; }
-.rehire-alert-heading .eyebrow, .rehire-alert-heading .small { color: #ffe3e3; }
-.rehire-alert-count { align-items: center; background: #fff; border-radius: 999px; color: #b42318; display: inline-flex; flex: 0 0 auto; font-size: 1.1rem; font-weight: 800; height: 2.2rem; justify-content: center; min-width: 2.2rem; padding: 0 .55rem; }
-.rehire-alert-grid { display: grid; gap: .75rem; padding: .85rem; }
-.rehire-alert-card { align-items: flex-start; background: #fff; border: 1px solid #f2c2c2; border-radius: .5rem; display: flex; gap: .85rem; padding: 1rem; }
-.rehire-alert-icon { align-items: center; background: #c92a2a; border-radius: 50%; color: #fff; display: inline-flex; flex: 0 0 auto; font-weight: 800; height: 2rem; justify-content: center; width: 2rem; }
-.rehire-alert-body { flex: 1; min-width: 0; }
-.rehire-alert-body p { color: #6b1d1d; }
-.rehire-alert-badge { background: #c92a2a; color: #fff; }
-.rehire-alert-meta { color: #7f4a4a; font-size: .78rem; }
-.rehire-alert-button { box-shadow: 0 4px 10px rgba(201, 42, 42, .18); }
 .transaction-loading { align-items: center; background: rgba(8,25,58,.58); display: flex; inset: 0; justify-content: center; padding: 1rem; position: fixed; z-index: 2000; }
 .transaction-loading-card { align-items: center; background: #fff; border-radius: .7rem; box-shadow: 0 18px 55px rgba(0,0,0,.24); color: var(--kp-navy); display: flex; gap: 1rem; max-width: 460px; padding: 1.2rem 1.4rem; width: 100%; }
 .transaction-loading-card .spinner-border { color: var(--kp-teal); flex: 0 0 auto; }

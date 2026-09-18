@@ -44,8 +44,7 @@ class EmployeeResetTests(unittest.TestCase):
                 INSERT INTO worker_discrepancies(discrepancy_id, worker_id, source_system, source_record_key, field_name) VALUES ('discrepancy-1', 'worker-1', 'ROSTER_LOCK', '123', 'last_name');
                 INSERT INTO import_batches(batch_id, filename, source_type, created_by) VALUES ('batch-1', 'input.xlsx', 'ROSTER_LOCK', 'admin');
                 INSERT INTO ingestion_records(record_id, batch_id, source_system, source_file, source_checksum, row_number, source_record_key, normalized_json, payload_json) VALUES ('record-1', 'batch-1', 'ROSTER_LOCK', 'input.xlsx', 'checksum', 1, '123', '{}', '{}');
-                INSERT INTO dim_source(source_id, source_system, label) VALUES ('source-roster', 'ROSTER_LOCK', 'Roster Lock');
-                INSERT INTO fact_master_roster_employee(master_roster_fact_id, batch_id, source_id, source_record_key) VALUES ('source-fact-1', 'batch-1', 'source-roster', '123');
+                INSERT INTO fact_master_roster_employee(master_roster_fact_id, batch_id, source_id, source_record_key) VALUES ('source-fact-1', 'batch-1', (SELECT source_id FROM dim_source WHERE source_system = 'ROSTER_LOCK'), '123');
                 INSERT INTO fact_quarantine(quarantine_fact_id, finding_id, worker_id, batch_id, source_system, source_record_key, rule_id, rule_version_id) VALUES ('quarantine-fact-1', 'finding-1', 'worker-1', 'batch-1', 'ROSTER_LOCK', '123', 'rule-1', 'rule-1:1');
                 INSERT INTO business_rules(rule_id, name, description, status, current_version, created_by, created_at_utc, updated_at_utc) VALUES ('rule-1', 'Missing email', '', 'ACTIVE', 1, 'admin', 'now', 'now');
                 INSERT INTO business_rule_versions(rule_version_id, rule_id, version, phase, scope_json, condition_json, severity, status, created_by, created_at_utc) VALUES ('rule-1:1', 'rule-1', 1, 'BEFORE', '{}', '{}', 'WARNING', 'ACTIVE', 'admin', 'now');

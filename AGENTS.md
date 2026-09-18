@@ -142,3 +142,28 @@ Before handing off a change:
 
 Do not commit, push, reset, delete data or alter branches unless the user explicitly
 requests that repository operation.
+
+## 7. Reviewer-style change explanation
+
+Whenever Codex makes a code, configuration, schema, UI, test or documentation
+change, the handoff must explain the diff as a reviewer. Do not report only that
+the change is complete. Include, in concise form:
+
+- **Diff summary:** what files/components changed and the purpose of each coherent
+  change group.
+- **Architectural decisions:** which responsibility or boundary moved, why that
+  design was selected, and how compatibility or Phase 1 read-only constraints were
+  preserved.
+- **Assumptions:** every assumption introduced or retained, including defaults,
+  fallbacks, data ownership, configuration ownership and unresolved business
+  decisions. State explicitly when no assumption was introduced.
+- **Behavior changes:** what users, operators, routes, jobs, imports or evaluators
+  will do differently before versus after the diff, including intentional removals
+  or deprecations.
+- **Verification:** tests/checks run, their result, and any remaining risk or scope
+  not verified.
+
+Use reviewer language: call out possible regressions, compatibility implications,
+dead code or stale documentation when they are relevant. If the work is purely
+explanatory and produces no diff, say so instead of inventing implementation
+details.

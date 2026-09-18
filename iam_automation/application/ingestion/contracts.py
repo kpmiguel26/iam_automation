@@ -2,7 +2,66 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from typing import Any
 from typing import Protocol, runtime_checkable
+
+
+@dataclass(frozen=True)
+class FieldMapping:
+    """Governed mapping produced with a staged ingestion batch."""
+
+    mapping_id: str
+    source_field_key: str
+    field_id: str | None
+    field_key: str | None
+    target_kind: str
+    transform_name: str
+    mapping_version: int
+    active: bool = True
+
+
+@dataclass(frozen=True)
+class RecordMetadata:
+    """Lineage metadata that is safe to expose across engines."""
+
+    source_record_key: str = ""
+    row_number: int = 0
+    status: str = ""
+
+
+@dataclass(frozen=True)
+class BatchMetadata:
+    """Small, typed batch metadata contract; no arbitrary key/value bag."""
+
+    record_count: int = 0
+    schema_version: str = "1"
+
+
+@dataclass(frozen=True)
+class NormalizedRecord:
+    """Source-neutral normalized record consumed by downstream engines."""
+
+    record_id: str
+    source_id: str
+    fields: dict[str, Any]
+    metadata: RecordMetadata = field(default_factory=RecordMetadata)
+
+
+@dataclass(frozen=True)
+class IngestionBatch:
+    """Minimal hand-off from ingestion staging to downstream consumers.
+
+    The contract intentionally contains no file path, report name, reader,
+    normalizer or adapter type. Those concerns belong to the producer.
+    """
+
+    batch_id: str
+    source_id: str
+    status: str
+    records: tuple[NormalizedRecord, ...] = ()
+    field_mappings: tuple[FieldMapping, ...] = ()
+    metadata: BatchMetadata = field(default_factory=BatchMetadata)
 
 
 @runtime_checkable

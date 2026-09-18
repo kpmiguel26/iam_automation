@@ -6,7 +6,7 @@ from unittest.mock import patch
 from datetime import date
 from pathlib import Path
 
-from iam_automation.application.business_calendar import RuleCalendarSettings, configured_rule_calendar
+from iam_automation.application.business_calendar import CalendarConfigurationRequired, RuleCalendarSettings, configured_rule_calendar
 from iam_automation.application.condition_evaluator import ConditionEvaluator, ConditionValidationError
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.infrastructure.sqlite.orm import (
@@ -18,7 +18,13 @@ from iam_automation.infrastructure.sqlite.orm import (
 
 class ConditionEvaluatorTests(unittest.TestCase):
     def test_legacy_condition_shape_remains_supported(self):
-        evaluator = ConditionEvaluator()
+        evaluator = ConditionEvaluator(RuleCalendarSettings(
+            timezone="UTC",
+            date_boundary="EXCLUSIVE_START_INCLUSIVE_END",
+            operating_weekdays=frozenset({0, 1, 2, 3, 4}),
+            holiday_dates=frozenset(),
+            recurring_holidays=frozenset(),
+        ))
 
         self.assertTrue(evaluator.matches({"field": "status", "operator": "equals", "value": "TERMINATED"}, {"status": "TERMINATED"}))
         self.assertTrue(evaluator.matches({"field": "email", "operator": "missing"}, {"email": ""}))
@@ -59,7 +65,13 @@ class ConditionEvaluatorTests(unittest.TestCase):
             "operator": "between",
             "right": {"kind": "literal", "value": [1, 3]},
         }
-        evaluator = ConditionEvaluator()
+        evaluator = ConditionEvaluator(RuleCalendarSettings(
+            timezone="UTC",
+            date_boundary="EXCLUSIVE_START_INCLUSIVE_END",
+            operating_weekdays=frozenset({0, 1, 2, 3, 4}),
+            holiday_dates=frozenset(),
+            recurring_holidays=frozenset(),
+        ))
         self.assertTrue(evaluator.matches(condition, {}))
 
     def test_unknown_operator_is_rejected_for_operand_conditions(self):
@@ -106,8 +118,21 @@ class ConditionEvaluatorTests(unittest.TestCase):
             "right": {"kind": "literal", "value": 1},
         }
 
-        self.assertTrue(ConditionEvaluator(RuleCalendarSettings(date_boundary="INCLUSIVE_BOTH")).matches(condition, {}))
-        self.assertFalse(ConditionEvaluator(RuleCalendarSettings()).matches(condition, {}))
+        self.assertTrue(ConditionEvaluator(RuleCalendarSettings(
+            timezone="UTC", date_boundary="INCLUSIVE_BOTH",
+            operating_weekdays=frozenset({0, 1, 2, 3, 4}),
+            holiday_dates=frozenset(), recurring_holidays=frozenset(),
+        )).matches(condition, {}))
+        self.assertFalse(ConditionEvaluator(RuleCalendarSettings(
+            timezone="UTC", date_boundary="EXCLUSIVE_START_INCLUSIVE_END",
+            operating_weekdays=frozenset({0, 1, 2, 3, 4}),
+            holiday_dates=frozenset(), recurring_holidays=frozenset(),
+        )).matches(condition, {}))
+
+    def test_missing_calendar_is_an_actionable_configuration_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(CalendarConfigurationRequired):
+                configured_rule_calendar(Path(tmp) / "missing.sqlite")
 
     def test_persisted_calendar_is_not_affected_by_legacy_environment_holidays(self):
         with tempfile.TemporaryDirectory() as tmp:

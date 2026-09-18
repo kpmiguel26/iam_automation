@@ -233,7 +233,7 @@ class BusinessRuleServiceTests(unittest.TestCase):
                 ).one()
                 self.assertTrue(mapping.active)
 
-    def test_before_rule_is_evaluated_before_adapter_and_persisted_after_batch_creation(self):
+    def test_before_rule_is_evaluated_against_staged_batch_and_persisted_after_batch_creation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             database = initialize_runtime_database(root / "runtime.sqlite")
@@ -273,6 +273,26 @@ class BusinessRuleServiceTests(unittest.TestCase):
             self.assertEqual(service.list_rules()[0]["source_system"], "MASTER_ROSTER")
             self.assertIn("npn_login_id", service.available_fields("MASTER_ROSTER"))
             self.assertNotIn("vendor_employee_id", service.available_fields("MASTER_ROSTER"))
+
+    def test_new_rules_persist_catalog_ids_and_evaluate_without_legacy_scope_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            self._relational_batch(database)
+            service = BusinessRuleService(database)
+            rule_id = self._active_rule(service, source_system="MASTER_ROSTER")
+
+            with orm_session(database) as session:
+                version = session.query(BusinessRuleVersionModel).filter_by(rule_id=rule_id).one()
+                condition = json.loads(version.condition_json)
+                scope = json.loads(version.scope_json)
+                self.assertTrue(condition["field_id"])
+                self.assertTrue(scope["source_id"])
+                condition.pop("field")
+                scope.pop("source_system")
+                version.condition_json = json.dumps(condition, sort_keys=True)
+                version.scope_json = json.dumps(scope, sort_keys=True)
+
+            self.assertEqual(service.evaluate_batch("relational"), 2)
 
     def test_delete_rule_removes_versions_findings_and_quarantine_facts(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -321,6 +341,10 @@ class BusinessRuleServiceTests(unittest.TestCase):
             with orm_session(database) as session:
                 version = session.query(BusinessRuleVersionModel).filter_by(rule_id=rule_id).one()
                 self.assertEqual(version.context_version_id, "context:default:1")
+                condition = json.loads(version.condition_json)
+                self.assertTrue(condition["all"][0]["left"]["field_id"])
+                condition["all"][0]["left"].pop("field")
+                version.condition_json = json.dumps(condition, sort_keys=True)
             service.set_status(rule_id, "ACTIVE")
             self.assertEqual(service.evaluate_batch("relational"), 2)
             self.assertEqual(service.list_rules()[0]["condition_display"], "Status equals 'TERMINATED'")

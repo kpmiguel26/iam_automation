@@ -1,7 +1,7 @@
 """
 File: iam_automation/application/business_calendar.py
-Purpose: Business-day rules used by policy calculations.
-Responsibilities: Exposes or coordinates: configured_rehire_holidays, business_days_between.
+Purpose: User-configured calendar rules used by policy calculations.
+Responsibilities: Loads the selected calendar/context and exposes business-day calculations.
 Dependencies: Python standard library and local project modules, as applicable.
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
 Author / implementation: Miguel Fernandez.
@@ -14,9 +14,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 from __future__ import annotations
 
 import json
-import os
-from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import select
@@ -30,64 +28,23 @@ from ..infrastructure.sqlite.orm import (
     RuleContextVersionModel,
     orm_session,
 )
-
-
-@dataclass(frozen=True)
-class RuleCalendarSettings:
-    """Immutable calendar settings consumed by rule evaluation."""
-
-    timezone: str = "UTC"
-    date_boundary: str = "EXCLUSIVE_START_INCLUSIVE_END"
-    operating_weekdays: frozenset[int] = frozenset({0, 1, 2, 3, 4})
-    holiday_dates: frozenset[date] = frozenset()
-    recurring_holidays: frozenset[tuple[int, int]] = frozenset()
-
-    def holidays_between(self, start: date, end: date) -> frozenset[date]:
-        """Expand recurring holidays only for the dates being evaluated."""
-        holidays = {item for item in self.holiday_dates if start <= item <= end}
-        for month, day in self.recurring_holidays:
-            for year in range(start.year, end.year + 1):
-                try:
-                    holiday = date(year, month, day)
-                except ValueError:
-                    continue
-                if start <= holiday <= end:
-                    holidays.add(holiday)
-        return frozenset(holidays)
-
-
-def configured_rehire_holidays() -> frozenset[date]:
-    """Return configured rehire holidays without assuming an operating region.
-
-    ``REHIRE_HOLIDAYS`` is an optional comma-separated list of ISO dates. Invalid
-    entries are ignored so a malformed optional setting cannot stop ingestion.
-    """
-    holidays: set[date] = set()
-    for value in os.getenv("REHIRE_HOLIDAYS", "").split(","):
-        value = value.strip()
-        if not value:
-            continue
-        try:
-            holidays.add(date.fromisoformat(value))
-        except ValueError:
-            continue
-    return frozenset(holidays)
+from ..domain.rules.calendar import CalendarConfigurationRequired, RuleCalendarSettings, business_days_between
 
 
 def configured_rule_calendar(
     database_path: Path | None = None,
     context_version_id: str | None = None,
 ) -> RuleCalendarSettings:
-    """Load the active local rule calendar, preserving the legacy env setting.
+    """Load the explicitly selected calendar and context version from SQLite.
 
-    The environment variable remains a compatibility fallback for installations
-    that have not yet created the configuration tables. Database holidays are
-    local metadata only; no source evidence is changed by this lookup.
+    Rule evaluation is intentionally agnostic: missing configuration is an
+    actionable user error, never an invitation to infer UTC, weekdays or
+    holidays from process defaults.
     """
-    fallback_holidays = configured_rehire_holidays()
-    default = RuleCalendarSettings(holiday_dates=fallback_holidays)
     if database_path is None or not Path(database_path).exists():
-        return default
+        raise CalendarConfigurationRequired(
+            "No rule calendar is configured. Ask an administrator to configure and activate a calendar before evaluating rules."
+        )
 
     try:
         with orm_session(Path(database_path)) as session:
@@ -95,7 +52,6 @@ def configured_rule_calendar(
                 RuleContextModel.context_key == "DEFAULT",
                 RuleContextModel.active.is_(True),
             ))
-            calendar_id = None
             context_version = session.get(RuleContextVersionModel, context_version_id) if context_version_id else None
             if context_version is None and context is not None:
                 context_version = session.scalar(
@@ -104,12 +60,20 @@ def configured_rule_calendar(
                         RuleContextVersionModel.version == context.current_version,
                     )
                 )
-            calendar_id = context_version.default_calendar_id if context_version is not None else None
-            calendar = session.get(RuleCalendarModel, calendar_id) if calendar_id else session.scalar(
-                select(RuleCalendarModel).where(RuleCalendarModel.active.is_(True)).order_by(RuleCalendarModel.calendar_key.asc())
-            )
+            if context_version is None:
+                raise CalendarConfigurationRequired(
+                    "No active rule-calendar context is configured. Ask an administrator to configure the calendar context before evaluating rules."
+                )
+            calendar_id = context_version.default_calendar_id
+            if not calendar_id:
+                raise CalendarConfigurationRequired(
+                    "The active rule context has no selected calendar. Ask an administrator to select and save a calendar before evaluating rules."
+                )
+            calendar = session.get(RuleCalendarModel, calendar_id)
             if calendar is None:
-                return default
+                raise CalendarConfigurationRequired(
+                    "The selected rule calendar is unavailable. Ask an administrator to configure and activate a valid calendar."
+                )
 
             # New context versions carry the exact immutable calendar version.
             # The current-version lookup is retained only for pre-binding
@@ -120,24 +84,37 @@ def configured_rule_calendar(
             if pinned_version_id:
                 version = session.get(RuleCalendarVersionModel, pinned_version_id)
                 if version is None or version.calendar_id != calendar.calendar_id:
-                    # Never silently substitute a newer calendar when a pin is
-                    # invalid; deterministic fallback is safer than drift.
-                    return default
-            else:
-                version = session.scalar(
-                    select(RuleCalendarVersionModel).where(
-                        RuleCalendarVersionModel.calendar_id == calendar.calendar_id,
-                        RuleCalendarVersionModel.version == calendar.current_version,
+                    raise CalendarConfigurationRequired(
+                        "The selected rule calendar version is unavailable. Ask an administrator to save the calendar context again."
                     )
+            else:
+                raise CalendarConfigurationRequired(
+                    "The rule context has no pinned calendar version. Ask an administrator to save the calendar context before evaluating rules."
                 )
             if version is None:
-                return default
+                raise CalendarConfigurationRequired(
+                    "The selected rule calendar has no configured version. Ask an administrator to save the calendar before evaluating rules."
+                )
             try:
                 weekdays = frozenset(int(item) for item in json.loads(version.operating_weekdays_json or "[]"))
             except (TypeError, ValueError, json.JSONDecodeError):
-                weekdays = default.operating_weekdays
+                raise CalendarConfigurationRequired(
+                    "The selected rule calendar has invalid operating days. Ask an administrator to configure the calendar again."
+                )
             if not weekdays or not weekdays.issubset(set(range(7))):
-                weekdays = default.operating_weekdays
+                raise CalendarConfigurationRequired(
+                    "The selected rule calendar has invalid operating days. Ask an administrator to configure the calendar again."
+                )
+            timezone_name = str(version.timezone or "").strip()
+            if not timezone_name:
+                raise CalendarConfigurationRequired(
+                    "The selected rule calendar has no timezone. Ask an administrator to configure the calendar again."
+                )
+            date_boundary = str(context_version.date_boundary or "").strip().upper()
+            if date_boundary not in {"EXCLUSIVE_START_INCLUSIVE_END", "INCLUSIVE_BOTH"}:
+                raise CalendarConfigurationRequired(
+                    "The rule context has no valid date-boundary decision. Ask an administrator to configure the calendar context again."
+                )
 
             holiday_rows = session.scalars(
                 select(RuleCalendarHolidayModel).where(
@@ -146,9 +123,8 @@ def configured_rule_calendar(
                 )
             ).all()
             # Once the database has a configured calendar, it is the complete
-            # source of truth. Do not merge the legacy environment fallback:
-            # otherwise identical SQLite snapshots can evaluate differently
-            # on hosts with different REHIRE_HOLIDAYS values.
+            # source of truth. No process environment or host defaults are
+            # merged into the selected version.
             exact: set[date] = set()
             recurring: set[tuple[int, int]] = set()
             for holiday in holiday_rows:
@@ -166,37 +142,16 @@ def configured_rule_calendar(
                     except ValueError:
                         pass
             return RuleCalendarSettings(
-                timezone=str(version.timezone or "UTC"),
-                date_boundary=str(context_version.date_boundary if context_version is not None else default.date_boundary),
+                timezone=timezone_name,
+                date_boundary=date_boundary,
                 operating_weekdays=weekdays,
                 holiday_dates=frozenset(exact),
                 recurring_holidays=frozenset(recurring),
             )
-    except (OSError, RuntimeError, SQLAlchemyError):
-        # A rule evaluation must remain available on a legacy database. The
-        # configured env fallback is deterministic and keeps old deployments
-        # working while migrations are applied.
-        return default
-
-
-def business_days_between(
-    start: date,
-    end: date,
-    holidays: frozenset[date] = frozenset(),
-    *,
-    operating_weekdays: frozenset[int] = frozenset({0, 1, 2, 3, 4}),
-    start_inclusive: bool = False,
-) -> int:
-    """Count eligible business days after ``start`` through ``end``."""
-    if end <= start:
-        if end < start:
-            return -1
-        return 1 if start_inclusive and start.weekday() in operating_weekdays and start not in holidays else 0
-    current = start if start_inclusive else start + timedelta(days=1)
-    total = 0
-    while current <= end:
-        if current.weekday() in operating_weekdays and current not in holidays:
-            total += 1
-        current += timedelta(days=1)
-    return total
+    except CalendarConfigurationRequired:
+        raise
+    except (OSError, RuntimeError, SQLAlchemyError) as exc:
+        raise CalendarConfigurationRequired(
+            "The rule calendar could not be loaded. Ask an administrator to verify and save the calendar configuration."
+        ) from exc
 #endfile

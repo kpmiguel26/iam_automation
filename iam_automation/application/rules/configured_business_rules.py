@@ -3,19 +3,28 @@
 from __future__ import annotations
 
 from .base import PipelineRule, RuleContext, RulePhase, RuleResult
-from ..business_rule_service import BusinessRuleService
+from .service import BusinessRuleService
+from ...domain.rules.calendar import CalendarConfigurationRequired
 
 
 class ConfiguredBusinessRulesBeforeImport(PipelineRule):
-    """Evaluate configured BEFORE rules against normalized source rows."""
+    """Evaluate configured BEFORE rules against a staged database batch."""
 
     key = "configured-business-rules-before"
     phase = RulePhase.BEFORE
 
     def evaluate(self, context: RuleContext) -> RuleResult:
-        if context.path is None:
-            return RuleResult.success(self.key, self.phase, message="No source path was provided for preflight evaluation.")
-        details = BusinessRuleService(self.database_path).preflight_file(context.source_system, context.path)
+        if not context.batch_id:
+            return RuleResult.success(self.key, self.phase, message="No staged import batch was produced for preflight evaluation.")
+        try:
+            details = BusinessRuleService(self.database_path).preflight_batch(context.batch_id)
+        except CalendarConfigurationRequired as exc:
+            return RuleResult.failure(
+                self.key,
+                self.phase,
+                message=str(exc),
+                details={"calendar_configuration_required": True},
+            )
         matches = details.get("matches", [])
         result_type = RuleResult.failure if matches else RuleResult.success
         return result_type(
@@ -36,8 +45,16 @@ class ConfiguredBusinessRulesAfterImport(PipelineRule):
         if not context.batch_id:
             return RuleResult.success(self.key, self.phase, message="No import batch was produced.")
         service = BusinessRuleService(self.database_path)
-        before_created = service.persist_before_findings(context.batch_id, context.metadata.get("before_rule_results", ()))
-        after_created = service.evaluate_batch(context.batch_id)
+        try:
+            before_created = service.persist_before_findings(context.batch_id, context.before_rule_results)
+            after_created = service.evaluate_batch(context.batch_id)
+        except CalendarConfigurationRequired as exc:
+            return RuleResult.failure(
+                self.key,
+                self.phase,
+                message=str(exc),
+                details={"batch_id": context.batch_id, "calendar_configuration_required": True},
+            )
         return RuleResult.success(
             self.key,
             self.phase,

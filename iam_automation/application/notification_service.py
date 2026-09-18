@@ -10,7 +10,6 @@ shared_notification_store.
 from __future__ import annotations
 
 import hashlib
-import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -24,7 +23,6 @@ from .local_notification_store import LocalNotificationStore
 from .shared_notification_store import SharedNotificationStore
 
 
-REHIRE_NOTIFICATION_LOCK = threading.RLock()
 GLOBAL_NOTIFICATION_TYPES = frozenset({"DATABASE_SNAPSHOT_PUBLISHED"})
 GLOBAL_NOTIFICATION_THROTTLE_SECONDS = 5 * 60
 
@@ -208,44 +206,6 @@ class NotificationService:
                 notification_id=notification_id,
             )
         return len(recipients)
-
-    def notify_rehire_alerts(self, alerts: list[dict[str, object]]) -> int:
-        """Reconcile critical rehire notifications in the local store."""
-        role_names = ("REVIEWER", "APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR", "ADMINISTRATOR")
-        with REHIRE_NOTIFICATION_LOCK:
-            unique_alerts = {str(alert["alert_id"]): alert for alert in alerts}
-            active_alert_ids = set(unique_alerts)
-            now = datetime.now(timezone.utc).isoformat()
-            for item in self.local_store.list_all(notification_type="REHIRE_30_DAY_ALERT"):
-                if str(item.get("status")) in {"UNREAD", "READ"} and str(item.get("entity_id")) not in active_alert_ids:
-                    self.local_store.set_status(str(item.get("recipient_username", "")), str(item.get("notification_id", "")), "EXPIRED")
-            if not unique_alerts:
-                return 0
-            recipients = self._recipients(role_names)
-            created = 0
-            for alert_id, alert in unique_alerts.items():
-                remaining = int(alert.get("business_days_remaining", 0))
-                message = (
-                    f"{alert.get('worker_name', 'Employee')} appears in Roster Lock while AccessNow shows "
-                    f"{str(alert.get('status', 'TERMINATED')).lower()}. The 30-business-day rehire hold "
-                    f"has not elapsed ({remaining} business day(s) remaining)."
-                )
-                for username in recipients:
-                    notification_id = hashlib.sha256(f"rehire-alert:{username.lower()}:{alert_id}".encode("utf-8")).hexdigest()
-                    created += int(self.local_store.upsert(
-                        notification_id=notification_id,
-                        recipient_username=username,
-                        notification_type="REHIRE_30_DAY_ALERT",
-                        severity="CRITICAL",
-                        title="Critical 30-day rehire alert",
-                        message=message,
-                        entity_type="ingestion_record",
-                        entity_id=alert_id,
-                        target_route="/employees/source-updates",
-                        created_at_utc=now,
-                        reactivate_expired=True,
-                    ))
-            return created
 
     def mark_read(self, username: str, notification_id: str) -> None:
         if self.local_store.mark_read(username, notification_id):

@@ -24,11 +24,9 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
     <div class="employee-header-actions">
       <a class="btn btn-outline-danger d-inline-flex align-items-center gap-2" href="{{ url_for('employees.canonical_duplicates') }}">Canonical duplicates</a>
       <a class="btn {% if pending_source_updates %}btn-warning source-update-alert{% else %}btn-outline-primary{% endif %} d-inline-flex align-items-center gap-2" href="{{ url_for('employees.source_updates_overview') }}" title="{{ pending_source_updates }} source record(s) waiting for individual review"><span class="shield-mark" aria-hidden="true">&#10003;</span>Updates{% if pending_source_updates %}<span class="badge rounded-pill text-bg-danger">{{ pending_source_updates }}</span>{% endif %}</a>
-      {% if rehire_alert_count %}<a class="btn btn-danger rehire-alert-button d-inline-flex align-items-center gap-2" href="{{ url_for('employees.source_updates_overview', source='ROSTER_LOCK') }}" title="{{ rehire_alert_count }} critical rehire alert(s)"><span aria-hidden="true">!</span>Alerts<span class="badge rounded-pill bg-white text-danger">{{ rehire_alert_count }}</span></a>{% endif %}
       <span class="status-pill status-active"><span></span>{% if has_query %}{{ total_workers }} shown{% else %}On-demand · no data loaded{% endif %}</span>
     </div>
   </div>
-
   <section class="surface employee-search-panel mt-4" aria-label="Employee directory search">
     <div class="employee-search-panel-header">
       <div>

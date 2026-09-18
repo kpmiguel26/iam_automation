@@ -5,21 +5,68 @@
 
 ## Phase-one boundary
 
-The import pipeline reads, normalizes, stages and persists source data in
-SQLite. Business rules execute only after that transaction has committed. The
-evaluator creates durable `RuleFinding` records and advisory alerts; it does
-not reject the file, quarantine a row, change an employee, approve a request or
+The ingestion layer reads and normalizes source data, then stages and persists
+it in SQLite. Business rules query that staged evidence in `BEFORE` and query
+committed facts in `AFTER`. The evaluator creates durable `RuleFinding` records
+and advisory alerts; it does not parse a source file, select a source adapter,
+reject the file, quarantine a row, change an employee, approve a request or
 publish downstream changes.
 
 ```text
-Source file -> import/stage -> SQLite commit -> rule evaluation -> findings
-                                                        |-> Overview
-                                                        |-> Dashboard
-                                                        |-> human review
+Source adapter / future ingestion engine -> SQLite staging -> BEFORE query
+                                                        -> AFTER evaluation -> findings
+                                                                                |-> Overview
+                                                                                |-> Dashboard
+                                                                                |-> human review
 ```
 
 An evaluator failure is observable and retriable, but cannot turn a successful
 import into a failed import.
+
+## Engine boundary contract
+
+The shared hand-off is defined in
+`application/ingestion/contracts.py`. It is intentionally smaller than either
+engine:
+
+```python
+@dataclass(frozen=True)
+class IngestionBatch:
+    batch_id: str
+    source_id: str
+    status: str
+    records: tuple[NormalizedRecord, ...]
+    field_mappings: tuple[FieldMapping, ...]
+    metadata: BatchMetadata
+
+@dataclass(frozen=True)
+class NormalizedRecord:
+    record_id: str
+    source_id: str
+    fields: dict[str, Any]
+    metadata: RecordMetadata
+```
+
+The ingestion side produces the batch, normalized records and governed field
+mappings. The Rules Engine consumes `batch_id`, normalized records and typed
+metadata. Batch and record metadata are closed dataclasses; they are not an
+arbitrary key/value bag. The contract contains no file path, report label,
+reader, normalizer, adapter result or promotion behavior.
+
+The current `SqliteEvidenceRepository` materializes this contract from the
+existing tables as a compatibility bridge. New rule versions persist stable
+`source_id` and `field_id` values, while historical versions may still carry
+legacy source labels and field keys. The Rules Engine resolves those legacy
+values only at its catalog boundary; this compatibility path does not enter
+the hand-off and does not move source-specific logic into the rules domain.
+
+The work is intentionally sequenced as:
+
+1. Contract stabilization: `dim_source`, `dim_field`,
+   `source_field_mapping`, `import_batches` and `ingestion_records`.
+2. Rules Engine: consume the generic contract and remain file/adapter agnostic.
+3. Ingestion Engine: later own discovery, adapters, mapping UI, normalization
+   and staging.
 
 Rule configuration and findings are local SQLite changes until the existing
 controlled publication workflow publishes the runtime snapshot. They must not

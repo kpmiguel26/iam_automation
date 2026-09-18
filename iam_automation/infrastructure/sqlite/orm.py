@@ -374,8 +374,8 @@ class RuleCalendarVersionModel(Base):
     calendar_version_id: Mapped[str] = mapped_column(String, primary_key=True)
     calendar_id: Mapped[str] = mapped_column(ForeignKey("rule_calendars.calendar_id"))
     version: Mapped[int] = mapped_column(Integer)
-    timezone: Mapped[str] = mapped_column(String, default="UTC")
-    operating_weekdays_json: Mapped[str] = mapped_column(Text, default="[0,1,2,3,4]")
+    timezone: Mapped[str] = mapped_column(String)
+    operating_weekdays_json: Mapped[str] = mapped_column(Text)
     created_by: Mapped[str] = mapped_column(String, default="system")
     created_at_utc: Mapped[str] = mapped_column(String, default="")
 
@@ -421,9 +421,9 @@ class RuleContextVersionModel(Base):
     default_calendar_version_id: Mapped[str | None] = mapped_column(
         ForeignKey("rule_calendar_versions.calendar_version_id"), nullable=True
     )
-    timezone: Mapped[str] = mapped_column(String, default="UTC")
+    timezone: Mapped[str] = mapped_column(String)
     missing_data_behavior: Mapped[str] = mapped_column(String, default="FINDING")
-    date_boundary: Mapped[str] = mapped_column(String, default="EXCLUSIVE_START_INCLUSIVE_END")
+    date_boundary: Mapped[str] = mapped_column(String)
     created_by: Mapped[str] = mapped_column(String, default="system")
     created_at_utc: Mapped[str] = mapped_column(String, default="")
 

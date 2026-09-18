@@ -347,9 +347,9 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                 if section == "context":
                     result = rule_configuration.save_context(
                         calendar_id=request.form.get("calendar_id", "").strip(),
-                        timezone_name=request.form.get("timezone", "UTC"),
-                        missing_data_behavior=request.form.get("missing_data_behavior", "FINDING"),
-                        date_boundary=request.form.get("date_boundary", "EXCLUSIVE_START_INCLUSIVE_END"),
+                        timezone_name=request.form.get("timezone", ""),
+                        missing_data_behavior=request.form.get("missing_data_behavior", ""),
+                        date_boundary=request.form.get("date_boundary", ""),
                         actor=actor,
                     )
                     record_audit(audit_path, actor, "RULE_CONTEXT_UPDATED", "rule_context", "context:default", new_values=result)
@@ -379,7 +379,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                     result = rule_configuration.save_calendar(
                         calendar_id=request.form.get("calendar_id", "").strip(),
                         label=request.form.get("label", ""),
-                        timezone_name=request.form.get("timezone", "UTC"),
+                        timezone_name=request.form.get("timezone", ""),
                         weekdays=request.form.getlist("weekdays"),
                         holidays=request.form.get("holidays", ""),
                         actor=actor,

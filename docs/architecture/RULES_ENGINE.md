@@ -2,7 +2,10 @@
 
 **Review date:** 2026-09-14
 **Status:** active, advisory-only / phase 1
-**Primary code:** `iam_automation/application/business_rule_service.py`
+**Primary code:** `iam_automation/application/rules/service.py`
+
+`application/business_rule_service.py` remains a compatibility facade for
+existing callers during the package reorganization.
 
 This document describes the current rules engine based on the implementation
 and its tests. Business architecture documents may include future capabilities;
@@ -24,22 +27,38 @@ A rule match:
 Rule quarantine is a review surface. It must not be confused with the invalid
 row quarantine produced by ingestion adapters.
 
+## 1.1 Engine contract
+
+Rules consume the generic `IngestionBatch` contract from
+`application/ingestion/contracts.py`: a `batch_id`, `source_id`, lifecycle
+status, normalized records, field mappings and metadata. A normalized record
+contains only its `record_id`, `source_id`, normalized `fields` and generic
+typed metadata. The Rules Engine receives no file path, report name, reader,
+normalizer, adapter object or adapter result. Metadata is represented by the
+closed `BatchMetadata` and `RecordMetadata` contracts, not an open dictionary.
+
+`SqliteEvidenceRepository` is the current persistence bridge that materializes
+that contract from `import_batches`, `ingestion_records` and governed source
+mapping/fact tables. It is replaceable when the future ingestion engine owns
+the producer side of the contract. New rule versions persist `source_id` and
+`field_id`; historical versions still resolve their legacy catalog keys
+through `dim_source`/`dim_field` at the Rules Engine boundary. This keeps
+catalog identity stable without putting source-specific details into the
+normalized-record contract.
+
 ## 2. Execution flow
 
 ```text
-Source file/folder
+Ingestion adapter / future ingestion engine
         |
         v
-BEFORE: normalized rows in memory
+SQLite staging: normalized ingestion records + source facts
         |
         v
-Source adapter
+BEFORE: database query over the staged batch
         |
         v
-Import batch + source facts committed to SQLite
-        |
-        v
-AFTER: persisted facts
+AFTER: persisted facts and cross-source evidence
         |
         v
 rule_findings + fact_quarantine
@@ -55,9 +74,11 @@ rules applicable to the current phase and source.
 
 ### BEFORE
 
-`ConfiguredBusinessRulesBeforeImport` reads and normalizes the source file
-before calling the adapter. It returns matches in the rule result; it cannot
-create a finding yet because `record_id` and `batch_id` do not exist.
+`ConfiguredBusinessRulesBeforeImport` queries the staged batch in SQLite before
+the AFTER phase. It reads `ingestion_records` and the relational source facts;
+it does not know the file format, path, report reader or source adapter. This
+keeps the rule engine compatible with a future architecture-agnostic ingestion
+engine.
 
 ### AFTER
 
@@ -74,7 +95,12 @@ phase one.
 
 ## 3. Sources and scope
 
-Configured rules recognize these sources:
+Configured rules scope records using the `source_system` value stored with each
+ingestion record. The evaluator does not select a parser or read a report file;
+the ingestion layer owns that responsibility. Source scope and available fields
+are governed by `dim_source`, `dim_field` and `source_field_mapping`, so the
+list below is the current seeded configuration rather than a rule-engine
+constant:
 
 | Code | Source | Scope behavior |
 |---|---|---|
@@ -233,9 +259,10 @@ the current endpoint already persists a new calendar version with imported
 rows enabled. Reviewing and saving the page creates another version. This must
 be fixed or explicitly accepted before using the import as an approval flow.
 
-The field catalog is populated from governed fields and headers observed in
-reports. The service validates that a field is active and rule-enabled, but
-the current validation does not enforce the type-specific operators in
+The field catalog is populated from governed fields and source mappings. The
+ingestion writer records mappings for normalized headers it observes, while
+administrators control whether a field is active and `rule_enabled`. The
+current validation does not enforce the type-specific operators in
 `allowed_operators_json` when saving a condition.
 
 ## 8. Interface operation
@@ -263,12 +290,13 @@ it does not write to an authoritative source.
 | Pipeline rule contract | `application/rules/base.py` |
 | Discovery and execution | `application/rules/registry.py` |
 | Configured-rule bridge | `application/rules/configured_business_rules.py` |
-| Rule, finding and quarantine service | `application/business_rule_service.py` |
+| Rule, finding and quarantine service | `application/rules/service.py` (legacy facade: `application/business_rule_service.py`) |
+| Rule definition persistence | `application/rules/repositories/rule_repository.py` |
 | DSL evaluator | `application/condition_evaluator.py` |
 | Calendar and business days | `application/business_calendar.py` |
-| Context and field configuration | `application/rule_configuration_service.py` |
+| Context and field configuration | `application/rules/configuration.py` (legacy facade: `application/rule_configuration_service.py`) |
 | ORM persistence | `infrastructure/sqlite/orm.py` |
-| Migrations | `database/alembic/versions/0011` and `0017`–`0020` |
+| Catalog and migrations | `application/rules/catalog.py`; `database/alembic/versions/0011`, `0017`–`0022` |
 
 Focused tests verified on 2026-09-14: `test_condition_evaluator`,
 `test_business_rule_service`, `test_pipeline_rules` and

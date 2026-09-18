@@ -92,24 +92,26 @@ class RuleConfigurationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
             with orm_session(database) as session:
-                session.add(DimFieldModel(field_id="field:termination", field_key="termination_date", label="Termination date"))
+                field = session.query(DimFieldModel).filter_by(field_key="termination_date").one()
+                field.label = "Termination date"
+                field_id = field.field_id
 
             result = RuleConfigurationService(database).update_field(
-                field_id="field:termination",
+                field_id=field_id,
                 data_type="DATE",
                 nullable=False,
                 rule_enabled=True,
                 normalization_name="parse_date",
                 actor="admin",
             )
-            item = next(item for item in RuleConfigurationService(database).configuration()["fields"] if item["model"].field_id == "field:termination")
+            item = next(item for item in RuleConfigurationService(database).configuration()["fields"] if item["model"].field_id == field_id)
 
             self.assertEqual(result["version"], 2)
             self.assertEqual(item["data_type"], "DATE")
             self.assertIn("between", item["operators"])
             self.assertFalse(item["model"].nullable)
 
-    @patch("iam_automation.application.rule_configuration_service.fetch_public_holidays")
+    @patch("iam_automation.application.rules.configuration.fetch_public_holidays")
     def test_imported_holidays_are_added_and_can_be_disabled(self, fetch_holidays):
         fetch_holidays.return_value = [{
             "date": "2026-07-04", "label": "Independence Day", "source": "NAGER_DATE",

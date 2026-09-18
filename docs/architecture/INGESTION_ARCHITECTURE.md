@@ -54,7 +54,8 @@ file path
   → StarSchemaWriter (fact_source_snapshot + fact_worker_field)
   → commit
   → clear valid-row legacy JSON
-  → post-commit rules, review, matching or approved promotion
+  → BEFORE rules query the staged batch
+  → AFTER rules, review, matching or approved promotion
 ```
 
 `AccessNow` reads a folder and merges active and termination reports before the
@@ -91,8 +92,10 @@ transition behavior and must be resolved before retention cleanup.
 1. Repair and test the watcher dispatch path. The current `scan_once` contains
    an early return that prevents its historical processing and notification
    branch from running.
-2. Move source payload reads in employee projection, rehire alerts, reports
-   and history to `StarSchemaWriter.payload_for_record` or relational queries.
+2. Move source payload reads in employee projection, configurable rule
+   findings, reports and history to `StarSchemaWriter.payload_for_record` or
+   relational queries. The deprecated rehire-alert path is not a runtime
+   consumer.
 3. Extract a shared `IngestionBatchService`/unit-of-work boundary so each
    source service does not construct the same batch and fact transaction.
 4. Move RSR and AccessNow matching, discrepancy creation and approved apply
@@ -104,7 +107,8 @@ transition behavior and must be resolved before retention cleanup.
 7. Define complete-snapshot versus delta retention, then make cleanup atomic
    and remove legacy JSON only after every consumer is relational.
 
-The full regression suite still has five known watcher failures caused by the
-existing early-return behavior. Direct ingestion, rule, report and relational
-transition tests are the acceptance checks for the refactoring increments
-until that watcher path is repaired.
+The explicit staging-to-promotion lifecycle is still a next ingestion-engine
+step: current adapters persist staged evidence and completion markers in their
+own transaction, while canonical/approved promotion remains a separate
+workflow for sources that support it. Rules do not block either operation in
+Phase 1.

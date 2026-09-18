@@ -30,7 +30,7 @@ class MigrationTests(unittest.TestCase):
             first = applied_migrations(database)
             second = apply_pending_migrations(database, actor="test")
 
-            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps", "v009_local_notification_store", "v010_accessnow_match_indexes", "v011_business_rules", "v012_compact_employee_fields", "v013_star_schema", "v014_worker_field_history", "v015_source_separated_write_model", "v016_allow_fact_linking", "v017_rule_execution_phase", "v018_fact_quarantine", "v019_rule_configuration", "v020_rule_context_binding", "v021_pin_rule_calendar_version"))
+            self.assertEqual(first, ("v001_initial_schema", "v002_notification_indexes", "v003_ingestion_records", "v004_worker_domain", "v005_rsr_worker_details", "v006_worker_history", "v007_source_observations", "v008_source_file_timestamps", "v009_local_notification_store", "v010_accessnow_match_indexes", "v011_business_rules", "v012_compact_employee_fields", "v013_star_schema", "v014_worker_field_history", "v015_source_separated_write_model", "v016_allow_fact_linking", "v017_rule_execution_phase", "v018_fact_quarantine", "v019_rule_configuration", "v020_rule_context_binding", "v021_pin_rule_calendar_version", "v022_source_rule_catalog"))
             self.assertEqual(second, ())
             connection = sqlite3.connect(database)
             try:
@@ -95,8 +95,8 @@ class MigrationTests(unittest.TestCase):
             self.assertIn("context_version_id", rule_version_columns)
             self.assertIn("default_calendar_version_id", context_version_columns)
             self.assertEqual(pinned_calendar_version, "calendar:standard:1")
-            self.assertEqual(alembic_revision, "0021_pin_rule_calendar_version")
-            self.assertEqual(current_database_revision(database), "0021_pin_rule_calendar_version")
+            self.assertEqual(alembic_revision, "0022_source_rule_catalog")
+            self.assertEqual(current_database_revision(database), "0022_source_rule_catalog")
 
     def test_calendar_binding_migration_pins_legacy_rule_versions(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -119,7 +119,7 @@ class MigrationTests(unittest.TestCase):
             finally:
                 connection.close()
 
-            self.assertEqual(apply_pending_migrations(database), ("v021_pin_rule_calendar_version",))
+            self.assertEqual(apply_pending_migrations(database), ("v021_pin_rule_calendar_version", "v022_source_rule_catalog"))
             with orm_session(database) as session:
                 version = session.get(BusinessRuleVersionModel, "legacy-rule:1")
                 self.assertEqual(version.context_version_id, "context:default:1")

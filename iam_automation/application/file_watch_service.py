@@ -2,7 +2,7 @@
 File: iam_automation/application/file_watch_service.py
 Purpose: Implements the application service for file watch service workflows.
 Responsibilities: Exposes or coordinates: FileObservation, watcher_health_path, load_watcher_health, FileWatchService, FileWatcher.
-Dependencies: sqlalchemy, infrastructure, change_request, identity, employee_service
+Dependencies: sqlalchemy, infrastructure, change_request, identity
 Inputs/outputs: Inputs: application arguments, configured paths, and persisted runtime data. Outputs: domain results, state changes, or operational records.
 Author / implementation: Miguel Fernandez.
 Developed for: Kaiser Permanente NSES GWFM.
@@ -27,7 +27,6 @@ from sqlalchemy import select
 
 from ..infrastructure.sqlite.orm import AppUserModel, FileObservationModel, UserRoleModel, orm_session
 from ..change_request import load_request_file
-from .employee_service import EmployeeService
 from .notification_service import NotificationService
 from .workspace_refresh_service import WORKSPACE_IO_LOCK, local_runtime_checksum_path, record_local_runtime_checksum
 from .ingestion.common import read_stable_bytes
@@ -236,9 +235,8 @@ class FileWatchService:
                     notification_id=notification["notification_id"],
                 )
             # The explicit Source Updates import action owns ingestion and the
-            # BEFORE/AFTER rule boundary. The watcher only coordinates
-            # discovery notifications here.
-            self.notifications.notify_rehire_alerts(EmployeeService(self.database_path).rehire_alerts())
+            # BEFORE/AFTER configurable-rule boundary. The watcher only
+            # coordinates discovery notifications here.
             if watcher_started_clean:
                 record_local_runtime_checksum(self.database_path)
             return len(successful_observations)

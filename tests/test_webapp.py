@@ -88,7 +88,8 @@ class WebAppTests(unittest.TestCase):
         for anchor in ("what-it-does", "before-after", "creating-rule", "operands", "operators", "composite", "business-days", "rule-lifecycle", "finding-lifecycle", "troubleshooting"):
             self.assertIn(f'id="{anchor}"'.encode(), response.data)
         self.assertIn(b"advisory-only", response.data)
-        self.assertIn(b"30-business-day rehire review", response.data)
+        self.assertIn(b"Example: rehire review window", response.data)
+        self.assertIn(b"user must decide and configure", response.data)
         self.assertIn(b"Rules do not block imports", response.data)
 
     def test_business_rules_contextual_help_links_point_to_help_anchors(self):
@@ -175,7 +176,6 @@ class WebAppTests(unittest.TestCase):
             blocked_query = {"side_effect": AssertionError("empty directory request must not load employee rows")}
             with patch.object(EmployeeService, "filter_values", return_value=(["ACTIVE"], ["Vendor A"], ["ACCESSNOW"])), \
                 patch.object(EmployeeService, "list_workers_page", **blocked_query), \
-                patch.object(EmployeeService, "rehire_alerts", return_value=[]), \
                 patch.object(EmployeeService, "pending_source_update_count", return_value=0):
                 response = client.get("/employees")
                 self.assertEqual(response.status_code, 200)

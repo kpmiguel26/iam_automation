@@ -39,7 +39,6 @@ from .worker_history_service import record_worker_version, version_dict
 from .employee_field_projection_service import EmployeeFieldProjectionService
 from .publication_state import mark_publication_pending
 from .source_reconciliation import ensure_source_identifiers, find_worker_matches, reconcile_worker_status_in_session, source_identifiers
-from .rehire_alert_service import RehireAlertService
 from ..infrastructure.sqlite.star_schema_writer import StarSchemaWriter
 
 
@@ -395,18 +394,6 @@ class EmployeeService:
                 IngestionRecordModel.status.in_(("STAGED", "MATCHED", "CONFLICT", "UNMATCHED", "AMBIGUOUS")),
                 IngestionRecordModel.observation_state.not_in(("CURRENT", "SUPERSEDED", "RESOLVED")),
             )) or 0)
-
-    def rehire_alerts(self, source_file: str = "") -> list[dict[str, object]]:
-        return RehireAlertService(self.database_path).list_alerts(source_file)
-
-    def rehire_alert_count(self) -> int:
-        return RehireAlertService(self.database_path).count()
-
-    def rehire_alerts_for_worker(self, worker_id: str) -> list[dict[str, object]]:
-        return RehireAlertService(self.database_path).list_for_worker(worker_id)
-
-    def resolve_rehire_alert(self, record_id: str, actor: str, reason: str) -> dict[str, str]:
-        return RehireAlertService(self.database_path).archive(record_id, actor, reason)
 
     @staticmethod
     def _source_label(source_system: str) -> str:

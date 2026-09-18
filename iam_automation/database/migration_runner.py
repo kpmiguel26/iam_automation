@@ -43,6 +43,7 @@ _REVISION_TO_LEGACY_VERSION = {
     "0019_rule_configuration": "v019_rule_configuration",
     "0020_rule_context_binding": "v020_rule_context_binding",
     "0021_pin_rule_calendar_version": "v021_pin_rule_calendar_version",
+    "0022_source_rule_catalog": "v022_source_rule_catalog",
 }
 _LEGACY_TO_REVISION = {value: key for key, value in _REVISION_TO_LEGACY_VERSION.items()}
 
@@ -119,6 +120,8 @@ def _legacy_version_for_revision(revision: str | None) -> tuple[str, ...]:
         return (*_legacy_version_for_revision("0019_rule_configuration"), "v020_rule_context_binding")
     if revision == "0021_pin_rule_calendar_version":
         return (*_legacy_version_for_revision("0020_rule_context_binding"), "v021_pin_rule_calendar_version")
+    if revision == "0022_source_rule_catalog":
+        return (*_legacy_version_for_revision("0021_pin_rule_calendar_version"), "v022_source_rule_catalog")
     if revision == "0001_baseline":
         return ("v001_initial_schema",)
     return ()

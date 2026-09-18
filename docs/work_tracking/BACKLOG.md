@@ -1,5 +1,77 @@
 # Implementation Backlog
 
+## 2026-09-18 Presentation meeting — Quarantine and rules follow-up
+
+Source: [`quarantine rules meeting notes`](../quarantine-rules/meeting%209-18-2026.md).
+
+The team confirmed that Phase One is a functional MVP with a read-only IAM
+automation boundary. Findings remain advisory evidence for human review; no
+authoritative employee changes, approvals or blocking imports are introduced.
+
+### Decisions and operating agreements
+
+- [ ] Limit termination history retained in the standardized dataset to the
+  last three years, preserving repeat-hire context and documenting the
+  retention rule.
+- [ ] Replace recurring demos with weekly written updates and a one-hour
+  Monday working session.
+- [ ] Standardize user-facing timestamps on Pacific Time where applicable and
+  always display the timezone explicitly, including UTC when used.
+- [ ] Confirm Access Now regulatory closure dates and incorporate them into the
+  active operating-calendar configuration.
+- [x] Require an explicitly selected and pinned calendar/context version for
+  rule evaluation; do not infer timezone, operating weekdays or holidays from
+  UTC, host settings or environment variables.
+- [x] Show an actionable configuration message when the calendar is missing or
+  invalid while preserving the non-blocking Phase One import boundary.
+- [x] Treat operating weekdays, date-boundary convention and interval inclusion
+  as versioned business decisions loaded from the configured calendar/context;
+  changing them requires a new configuration version, not code changes.
+- [x] Retire the legacy `RehireAlertService` path from runtime. Rehire logic,
+  notifications and archive actions must come from user-created Business Rules;
+  retain the old service only as historical documentation.
+
+### Implementation backlog from the meeting
+
+- [ ] Continue Phase Three factorization of the rules engine into separate
+  services, configuration, execution, query and related modules; preserve the
+  current operators and business-days-between calculation.
+- [ ] Publish an external SOP for the Excel-like semantic rule language and
+  provide user training; training is currently blocked until the rule language
+  is learned and stabilized.
+- [ ] Complete the editable Excel-like rule configuration/wizard, including
+  multiple comparisons, user-defined calculated values and database-backed
+  rule definitions.
+- [ ] Fix data export so separate fields remain separate, including the email
+  values currently merged during export.
+- [ ] Verify the agnostic ingestion flow for report mapping, normalized data,
+  identity matching, canonical analytical identity and cross-source
+  reconciliation.
+- [x] Remove source-file readers and normalizers from Rules Engine execution;
+  `BEFORE` consumes staged database evidence by `batch_id`.
+- [x] Introduce a source-neutral `EvidenceRepository` and reconstruct rule
+  payloads from generic ingestion/star-schema tables.
+- [x] Move rule source and field choices to the DB-backed catalog
+  (`dim_source`, `dim_field`, `source_field_mapping`) with migration `0022`.
+- [x] Close metadata and adapter-result escape hatches at the engine boundary;
+  use typed metadata and explicit mapping/source identifiers.
+- [x] Persist new rule scopes and field operands with stable
+  `source_id`/`field_id` values while retaining a compatibility fallback for
+  historical versions.
+- [ ] Backfill historical rule versions to stable catalog IDs after confirming
+  the retained legacy keys are no longer needed for external consumers.
+- [ ] Split ingestion into an explicit generic `stage → BEFORE → promote`
+  lifecycle; current adapters still own completion markers and source-fact
+  writes in their own transactions.
+
+### Follow-up ownership
+
+- [ ] Miguel — send a weekly written summary covering agnostic architecture and
+  rules-documentation progress.
+- [ ] Miguel — provide rule-language training after the SOP/rule language is
+  ready.
+- [ ] Sofia — send the meeting follow-up email later today.
+
 ## 2026-09-10 Phase 1 review closure and next work session
 
 Management and leadership reviewed the current increment and approved

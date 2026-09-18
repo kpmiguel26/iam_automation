@@ -312,10 +312,8 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             workers, total_workers = [], 0
             page_count = 1
             # Keep the directory on-demand, but load lightweight review
-            # counters so the Updates/Alerts actions never look stale.
+            # counters so the Updates action does not look stale.
             pending_source_updates = pending_source_update_count()
-            rehire_alerts = service.rehire_alerts()
-            NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
         else:
             page_size = None if show_all else 25
             workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size)
@@ -323,10 +321,8 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             page = min(page, page_count)
             if page != requested_page:
                 workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size)
-            rehire_alerts = service.rehire_alerts()
-            NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
             pending_source_updates = pending_source_update_count()
-        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "updated": updated, "sort": sort, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=pending_source_updates, rehire_alert_count=len(rehire_alerts))
+        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "updated": updated, "sort": sort, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=pending_source_updates)
 
     @blueprint.get("/source-updates")
     @authenticated
@@ -356,8 +352,6 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         if file_summary and page != requested_page and not load_all:
             records, total_records = service.list_source_records(source_system, source_file, page=page, per_page=50, result_order=result_order, load_all=load_all)
         duplicate_summary = service.source_duplicate_summary(source_file=source_file) if mode == "duplicates" else None
-        rehire_alerts = service.rehire_alerts(source_file if source_system == "ROSTER_LOCK" else "")
-        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
         if files and view == "ATTENTION":
             files = [item for item in files if not item.get("imported") or int(item.get("pending_count", 0) or 0) > 0 or int(item.get("ambiguous_count", 0) or 0) > 0 or int(item.get("conflict_count", 0) or 0) > 0]
         elif files and view == "RECENT_FILES":
@@ -377,7 +371,6 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             result_order=result_order,
             load_all=load_all,
             duplicate_summary=duplicate_summary,
-            rehire_alerts=rehire_alerts,
             view=view,
             source_timeline=source_timeline(include_imported=view == "RECENT_FILES", max_files=25 if view == "RECENT_FILES" else None),
             watcher_health=load_watcher_health(database_path),
@@ -563,20 +556,6 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         except (OSError, ValueError, PermissionError) as exc:
             return redirect(url_for("employees.source_updates_overview", all_people="1", notice=str(exc), notice_type="danger"))
 
-    @blueprint.post("/source-updates/rehire-alert/<record_id>/resolve")
-    @authenticated
-    def resolve_rehire_alert(record_id: str):
-        current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
-        if not current_user.can_decide_requests:
-            return redirect(url_for("employees.source_updates_overview", error="Only an administrator can archive a rehire alert.", notice_type="danger"))
-        try:
-            reason = request.form.get("reason", "").strip()
-            result = service.resolve_rehire_alert(record_id, current_user.username, reason)
-            record_audit(audit_path, current_user.username, "REHIRE_ALERT_ARCHIVED", "ingestion_record", record_id, new_values={"result": result, "reason": reason})
-            return redirect(url_for("employees.source_updates_overview", notice="Rehire alert archived. Source evidence and employee status were not changed.", notice_type="success"))
-        except (OSError, ValueError, PermissionError) as exc:
-            return redirect(url_for("employees.source_updates_overview", error=str(exc), notice_type="danger"))
-
     @blueprint.get("/source-updates/duplicate/<record_id>")
     @authenticated
     def duplicate_review(record_id: str):
@@ -633,9 +612,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         if preview is None:
             return render_template("errors/404.html"), 404
         current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
-        rehire_alerts = [item for item in service.rehire_alerts() if str(item.get("worker_id", "")) == worker_id]
-        NotificationService(database_path).notify_rehire_alerts(rehire_alerts)
-        return render_template("employees/source_updates.html", preview=preview, rehire_alerts=rehire_alerts, can_apply=current_user.can_decide_requests, message=request.args.get("notice"), error=request.args.get("error"))
+        return render_template("employees/source_updates.html", preview=preview, can_apply=current_user.can_decide_requests, message=request.args.get("notice"), error=request.args.get("error"))
 
     @blueprint.post("/source-updates/<worker_id>/apply")
     @authenticated
@@ -643,8 +620,6 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         current_user = CurrentUser(str(session["iam_user"]), "local-web", tuple(session.get("iam_roles", ())))
         if not current_user.can_decide_requests:
             return redirect(url_for("employees.source_updates", worker_id=worker_id, error="Only an administrator can apply source changes directly.", notice_type="danger"))
-        if service.rehire_alerts_for_worker(worker_id):
-            return redirect(url_for("employees.source_updates", worker_id=worker_id, error="Critical rehire alert: this employee is still within the 30-business-day rehire hold and cannot be applied.", notice_type="danger"))
         preview = service.source_update_preview(worker_id)
         if preview is None:
             return render_template("errors/404.html"), 404

@@ -20,19 +20,17 @@ class RulePhase(str, Enum):
 class RuleContext:
     """Stable input passed to every pipeline rule.
 
-    ``result`` and ``batch_id`` are populated for ``AFTER`` rules.  A before
-    rule can inspect the source path and metadata without depending on an
-    adapter implementation.
+    ``batch_id`` is populated after the ingestion service has staged normalized
+    evidence. A ``BEFORE`` rule queries that staged batch before ``AFTER``
+    rules publish findings; it does not receive an adapter result or parse
+    source files.
     """
 
     phase: RulePhase
-    source_system: str
     database_path: Path
-    path: Path | None = None
     actor: str = "system"
     batch_id: str | None = None
-    result: object | None = None
-    metadata: Mapping[str, Any] = field(default_factory=dict)
+    before_rule_results: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -74,13 +72,13 @@ class PipelineRule(ABC):
 
     key: str
     phase: RulePhase
-    source_systems: frozenset[str] = frozenset()
 
     def __init__(self, database_path: Path):
         self.database_path = database_path
 
     def applies_to(self, context: RuleContext) -> bool:
-        return not self.source_systems or context.source_system in self.source_systems
+        """Return whether this generic pipeline rule applies to the batch."""
+        return True
 
     @abstractmethod
     def evaluate(self, context: RuleContext) -> RuleResult:

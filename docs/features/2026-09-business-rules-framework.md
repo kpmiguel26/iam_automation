@@ -50,7 +50,8 @@ presence/missing values, status and process/source type.
 1. Define schema, status vocabulary, rule condition DSL and migration.
 2. Implement repository/service with versioning, audit and authorization.
 3. Implement admin pages for rules, field policy and alert definitions.
-4. Adapt existing rehire evaluation behind the rule service.
+4. Retire code-owned rehire evaluation; express any approved rehire policy as
+   a user-created rule recipe with versioned calendar and evidence.
 5. Add no-rehire as evidence/finding only until business ownership is approved.
 6. Integrate post-import evaluation and Overview/Dashboard alert views; keep search as a read-only consumer of existing findings.
 7. Add fixtures, regression tests and UAT evidence.

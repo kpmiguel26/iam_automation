@@ -14,12 +14,10 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 from __future__ import annotations
 
 import json
-import os
 import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
-from unittest.mock import patch
 
 from sqlalchemy import select
 
@@ -30,9 +28,6 @@ from iam_automation.infrastructure.sqlite.orm import ImportBatchModel, Ingestion
 from iam_automation.application.source_reconciliation import ensure_source_identifiers, find_worker_matches
 from iam_automation.application.source_date import parse_source_date
 from iam_automation.application.status_catalog import normalize_accessnow_status
-from iam_automation.application.notification_service import NotificationService
-from iam_automation.application.rehire_alert_service import RehireAlertService
-from iam_automation.application.user_service import UserService
 
 
 class SourceUpdatesTests(unittest.TestCase):
@@ -63,22 +58,6 @@ class SourceUpdatesTests(unittest.TestCase):
     def test_status_catalog_normalizes_accessnow_aliases(self):
         self.assertEqual(normalize_accessnow_status("termination"), "TERMINATED")
         self.assertEqual(normalize_accessnow_status("disabled"), "DEACTIVATED")
-
-    def test_rehire_alert_matching_uses_worker_and_source_keys(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
-            UserService(database).create_user("admin", "Admin", "secret", ["APPLICATION_ADMIN"])
-            access = self._record("access", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00")
-            access.matched_worker_id = "worker-1"
-            access.normalized_json = json.dumps({"accessnow_employee_id": "A-100", "accessnow_status": "TERMINATED", "terminated_date": "2026-08-03"})
-            roster = self._record("roster", "ROSTER_LOCK", "roster.xlsx", "A-100", "2026-08-10T00:00:00+00:00")
-            roster.matched_worker_id = "worker-1"
-            roster.normalized_json = json.dumps({"vendor_employee_id": "A-100", "onboarding_date": "2026-08-10"})
-            with orm_session(database) as session:
-                session.add(WorkerModel(worker_id="worker-1", display_name="Ada Lovelace", status="TERMINATED"))
-                session.add_all([access, roster])
-
-            self.assertEqual(len(EmployeeService(database).rehire_alerts()), 1)
 
     def test_accessnow_status_normalization_preserves_deactivated(self):
         self.assertEqual(AccessNowIngestionService._normalize({"Employee Status": "DEACTIVATED"})["accessnow_status"], "DEACTIVATED")
@@ -474,62 +453,6 @@ class SourceUpdatesTests(unittest.TestCase):
             with orm_session(database) as session:
                 self.assertEqual(session.query(WorkerModel).count(), 1)
                 self.assertEqual(session.query(IngestionRecordModel).filter(IngestionRecordModel.matched_worker_id.is_not(None)).count(), 3)
-
-    def test_roster_lock_raises_rehire_alert_for_recent_accessnow_termination(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
-            UserService(database).create_user("admin", "Admin", "secret", ["APPLICATION_ADMIN"])
-            access = self._record("access", "ACCESSNOW", "access.csv", "A-100", "2026-08-01T00:00:00+00:00")
-            access.matched_worker_id = "worker-1"
-            access.status = "APPLIED"
-            access.normalized_json = json.dumps({"accessnow_employee_id": "A-100", "first_name": "Ada", "last_name": "Lovelace", "accessnow_status": "TERMINATED", "terminated_date": "8/3/2026 6:7:0 AM PDT"})
-            roster = self._record("roster", "ROSTER_LOCK", "roster.xlsx", "A-100", "2026-08-10T00:00:00+00:00")
-            roster.matched_worker_id = "worker-1"
-            roster.normalized_json = json.dumps({"vendor_employee_id": "A-100", "first_name": "Ada", "last_name": "Lovelace", "onboarding_date": "2026-08-10"})
-            with orm_session(database) as session:
-                session.add(WorkerModel(worker_id="worker-1", first_name="Ada", last_name="Lovelace", display_name="Ada Lovelace", status="TERMINATED"))
-                session.add_all([access, roster])
-
-            alerts = EmployeeService(database).rehire_alerts()
-
-            self.assertEqual(len(alerts), 1)
-            self.assertEqual(alerts[0]["status"], "TERMINATED")
-            self.assertEqual(alerts[0]["business_days_elapsed"], 5)
-            self.assertEqual(alerts[0]["business_days_remaining"], 25)
-            self.assertEqual(NotificationService(database).notify_rehire_alerts(alerts), 1)
-
-            result = EmployeeService(database).resolve_rehire_alert("roster", "admin", "Reviewed by management")
-            self.assertEqual(result["status"], "RESOLVED")
-            self.assertEqual(EmployeeService(database).rehire_alerts(), [])
-            NotificationService(database).notify_rehire_alerts([])
-            notifications = NotificationService(database).list_for_user("admin")
-            self.assertEqual(len(notifications), 1)
-            self.assertEqual(notifications[0].status, "EXPIRED")
-            with orm_session(database) as session:
-                self.assertEqual(session.get(WorkerModel, "worker-1").status, "TERMINATED")
-                self.assertEqual(session.get(IngestionRecordModel, "roster").observation_state, "RESOLVED")
-
-    def test_rehire_business_days_exclude_configured_holidays(self):
-        with patch.dict(os.environ, {"REHIRE_HOLIDAYS": "2026-07-06"}):
-            elapsed = RehireAlertService._business_days_between(date(2026, 7, 3), date(2026, 7, 7))
-
-        self.assertEqual(elapsed, 1)
-
-    def test_rehire_alert_is_not_emitted_outside_the_configured_window(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
-            access = self._record("access-outside", "ACCESSNOW", "access.csv", "A-100", "2026-07-01T00:00:00+00:00")
-            access.matched_worker_id = "worker-1"
-            access.status = "APPLIED"
-            access.normalized_json = json.dumps({"accessnow_employee_id": "A-100", "accessnow_status": "TERMINATED", "terminated_date": "2026-07-01"})
-            roster = self._record("roster-outside", "ROSTER_LOCK", "roster.xlsx", "A-100", "2026-08-20T00:00:00+00:00")
-            roster.matched_worker_id = "worker-1"
-            roster.normalized_json = json.dumps({"vendor_employee_id": "A-100", "onboarding_date": "2026-08-20"})
-            with orm_session(database) as session:
-                session.add(WorkerModel(worker_id="worker-1", display_name="Ada Lovelace", status="TERMINATED"))
-                session.add_all([access, roster])
-
-            self.assertEqual(EmployeeService(database).rehire_alerts(), [])
 
 
 if __name__ == "__main__":

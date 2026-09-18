@@ -22,7 +22,7 @@ class _BeforeRule(PipelineRule):
     calls: list[str] = []
 
     def evaluate(self, context: RuleContext) -> RuleResult:
-        self.calls.append(f"before:{context.source_system}")
+        self.calls.append(f"before:{context.batch_id}")
         return RuleResult.success(self.key, self.phase)
 
 
@@ -74,7 +74,7 @@ class PipelineRuleTests(unittest.TestCase):
             result = orchestrator.ingest_file("TEST", Path(tmp) / "source.xlsx", actor="tester")
 
             self.assertEqual(result.batch_id, "batch-1")
-            self.assertEqual(_BeforeRule.calls, ["before:TEST"])
+            self.assertEqual(_BeforeRule.calls, ["before:batch-1"])
             self.assertEqual(_AfterRule.calls, ["after:batch-1"])
             self.assertEqual([item.phase for item in orchestrator.last_rule_results], [RulePhase.BEFORE, RulePhase.AFTER])
 

@@ -47,40 +47,29 @@ class IngestionOrchestrator:
         factory = self._factories.get(normalized_source)
         if factory is None:
             raise ValueError(f"No file ingestion adapter is registered for {source_system!r}.")
-        self.last_before_rule_results = self.rule_registry.run(
-            RuleContext(
-                phase=RulePhase.BEFORE,
-                source_system=normalized_source,
-                database_path=self.database_path,
-                path=path,
-                actor=actor,
-            )
-        )
         adapter = factory()
         if normalized_source == "ROSTER_LOCK":
             result = adapter.ingest_file(path)
         else:
             result = adapter.ingest_file(path, actor=actor)
-        self._run_after_rules(normalized_source, path, actor, result)
+        self._run_rules_after_staging(actor, str(getattr(result, "batch_id", "")) or None)
         return result
 
     def ingest_accessnow(self, folder: Path, *, actor: str = "workspace-watcher") -> Any:
         """Stage the AccessNow active and termination reports as one view."""
+        result = AccessNowIngestionService(self.database_path).ingest_folder(folder)
+        self._run_rules_after_staging(actor, str(getattr(result, "batch_id", "")) or None)
+        return result
+
+    def _run_rules_after_staging(self, actor: str, batch_id: str | None) -> None:
         self.last_before_rule_results = self.rule_registry.run(
             RuleContext(
                 phase=RulePhase.BEFORE,
-                source_system="ACCESSNOW",
                 database_path=self.database_path,
-                path=folder,
                 actor=actor,
+                batch_id=batch_id,
             )
         )
-        result = AccessNowIngestionService(self.database_path).ingest_folder(folder)
-        self._run_after_rules("ACCESSNOW", folder, actor, result)
-        return result
-
-    def _run_after_rules(self, source_system: str, path: Path, actor: str, result: object) -> None:
-        batch_id = getattr(result, "batch_id", None)
         before_rule_results = [
             {"rule_key": item.rule_key, "passed": item.passed, "details": dict(item.details)}
             for item in self.last_before_rule_results
@@ -88,13 +77,10 @@ class IngestionOrchestrator:
         self.last_after_rule_results = self.rule_registry.run(
             RuleContext(
                 phase=RulePhase.AFTER,
-                source_system=source_system,
                 database_path=self.database_path,
-                path=path,
                 actor=actor,
-                batch_id=str(batch_id) if batch_id else None,
-                result=result,
-                metadata={"before_rule_results": before_rule_results},
+                batch_id=batch_id,
+                before_rule_results=tuple(before_rule_results),
             )
         )
         self.last_rule_results = self.last_before_rule_results + self.last_after_rule_results
