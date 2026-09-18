@@ -60,6 +60,28 @@ Work date: 2026-09-18
   `application/rules/repositories/rule_repository.py`; the application
   service remains responsible for configuration, orchestration and
   presentation behavior.
+- [x] Extracted finding creation and quarantine projection into
+  `application/rules/repositories/finding_repository.py` without changing
+  the advisory transaction boundary.
+- [x] Extracted the enriched quarantine read model into
+  `application/rules/repositories/quarantine_repository.py`; status, severity
+  and rule filters remain unchanged.
+- [x] Enforced the typed `BatchMetadata` and `RecordMetadata` contract at
+  runtime so arbitrary metadata dictionaries cannot cross the engine boundary.
+- [x] Restricted `RuleResult.details` to JSON-like contract values so adapter
+  instances, paths and other implementation objects cannot cross the pipeline
+  boundary.
+- [x] Preserved typed `RuleResult` instances across BEFORE-to-AFTER execution;
+  the pipeline no longer converts them into open dictionaries.
+- [x] Removed the unused legacy linked-source payload helper from the Rules
+  service; evidence reconstruction now has one owner: `EvidenceRepository`.
+- [x] Correlated BEFORE matches by the contract `record_id` within the
+  `batch_id`; persistence no longer resolves records through source labels.
+- [x] Moved source/field identity translation into
+  `RuleCatalogRepository`; the Rules service keeps only compatibility facades
+  around the governed ID resolver.
+- [x] Added an integration contract test with a generic batch producer and
+  evidence repository; Rules consume `IngestionBatch` without adapter types.
 
 Next implementation step: introduce an explicit staging-to-promotion boundary
 in the ingestion engine. The current adapters already persist normalized

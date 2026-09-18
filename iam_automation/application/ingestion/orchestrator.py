@@ -70,17 +70,13 @@ class IngestionOrchestrator:
                 batch_id=batch_id,
             )
         )
-        before_rule_results = [
-            {"rule_key": item.rule_key, "passed": item.passed, "details": dict(item.details)}
-            for item in self.last_before_rule_results
-        ]
         self.last_after_rule_results = self.rule_registry.run(
             RuleContext(
                 phase=RulePhase.AFTER,
                 database_path=self.database_path,
                 actor=actor,
                 batch_id=batch_id,
-                before_rule_results=tuple(before_rule_results),
+                before_rule_results=self.last_before_rule_results,
             )
         )
         self.last_rule_results = self.last_before_rule_results + self.last_after_rule_results

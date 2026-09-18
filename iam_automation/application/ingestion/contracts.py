@@ -47,6 +47,10 @@ class NormalizedRecord:
     fields: dict[str, Any]
     metadata: RecordMetadata = field(default_factory=RecordMetadata)
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.metadata, RecordMetadata):
+            raise TypeError("NormalizedRecord.metadata must be RecordMetadata.")
+
 
 @dataclass(frozen=True)
 class IngestionBatch:
@@ -62,6 +66,18 @@ class IngestionBatch:
     records: tuple[NormalizedRecord, ...] = ()
     field_mappings: tuple[FieldMapping, ...] = ()
     metadata: BatchMetadata = field(default_factory=BatchMetadata)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.metadata, BatchMetadata):
+            raise TypeError("IngestionBatch.metadata must be BatchMetadata.")
+        if not isinstance(self.records, tuple) or not all(
+            isinstance(record, NormalizedRecord) for record in self.records
+        ):
+            raise TypeError("IngestionBatch.records must be a tuple of NormalizedRecord.")
+        if not isinstance(self.field_mappings, tuple) or not all(
+            isinstance(mapping, FieldMapping) for mapping in self.field_mappings
+        ):
+            raise TypeError("IngestionBatch.field_mappings must be a tuple of FieldMapping.")
 
 
 @runtime_checkable

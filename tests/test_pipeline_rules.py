@@ -112,6 +112,14 @@ class PipelineRuleTests(unittest.TestCase):
             self.assertFalse(orchestrator.last_after_rule_results[0].passed)
             self.assertEqual(orchestrator.last_after_rule_results[0].details["exception"], "RuntimeError")
 
+    def test_rule_result_rejects_adapter_objects_in_details(self):
+        with self.assertRaises(TypeError):
+            RuleResult.success(
+                "test-result",
+                RulePhase.AFTER,
+                details={"adapter_result": _FakeResult()},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

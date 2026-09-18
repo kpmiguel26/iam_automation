@@ -131,6 +131,12 @@ current record's flat payload.
 | `rule_calendars` / `rule_calendar_versions` / `rule_calendar_holidays` | Operating days and enabled holidays. |
 | `dim_field` / `source_field_mapping` | Governed field catalog and source-to-field relationship. |
 
+The application boundary keeps persistence responsibilities separated: rule
+definitions live in `application/rules/repositories/rule_repository.py`,
+finding creation and status updates in `finding_repository.py`, and the
+enriched operational read model in `quarantine_repository.py`. The service
+coordinates these repositories but does not own their query construction.
+
 Each finding keeps a copy of its evidence in `evidence_json`, including the
 `record_id`, source and payload reconstructed from source facts. After the
 star-schema migration, JSON fields on valid records are cleared; the engine
@@ -292,6 +298,7 @@ it does not write to an authoritative source.
 | Configured-rule bridge | `application/rules/configured_business_rules.py` |
 | Rule, finding and quarantine service | `application/rules/service.py` (legacy facade: `application/business_rule_service.py`) |
 | Rule definition persistence | `application/rules/repositories/rule_repository.py` |
+| Finding persistence and quarantine projection | `application/rules/repositories/finding_repository.py` |
 | DSL evaluator | `application/condition_evaluator.py` |
 | Calendar and business days | `application/business_calendar.py` |
 | Context and field configuration | `application/rules/configuration.py` (legacy facade: `application/rule_configuration_service.py`) |

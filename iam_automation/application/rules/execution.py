@@ -23,6 +23,7 @@ from ...infrastructure.sqlite.orm import (
     RuleFindingModel,
     orm_session,
 )
+from .base import RuleResult
 from .evidence import EvidenceRepository, SqliteEvidenceRepository
 
 
@@ -219,12 +220,12 @@ class RuleExecutionService:
                         })
         return {"batch_id": batch_id, "evaluated_rows": len(batch.records), "matches": matches}
 
-    def persist_before_findings(self, batch_id: str, before_results: list[dict] | tuple[dict, ...] = ()) -> int:
+    def persist_before_findings(self, batch_id: str, before_results: tuple[RuleResult, ...] = ()) -> int:
         """Persist advisory BEFORE matches after the adapter creates records."""
         matches = [
             match
             for result in before_results or ()
-            for match in (result.get("details") or {}).get("matches", [])
+            for match in (result.details or {}).get("matches", [])
             if isinstance(match, dict)
         ]
         if not matches:
@@ -234,23 +235,14 @@ class RuleExecutionService:
         with orm_session(self.database_path) as session:
             if session.get(ImportBatchModel, batch_id) is None:
                 return 0
-            records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.batch_id == batch_id)).all()
-            record_index = {(record.source_system, record.source_record_key, record.row_number): record for record in records}
-            fallback_index = {(record.source_system, record.source_record_key): record for record in records}
-            source_ids = {str(match.get("source_id") or "") for match in matches if match.get("source_id")}
-            source_system_by_id = {
-                str(source.source_id): str(source.source_system)
-                for source in session.scalars(select(DimSourceModel).where(DimSourceModel.source_id.in_(source_ids))).all()
-            } if source_ids else {}
+            records = {
+                str(record.record_id): record
+                for record in session.scalars(
+                    select(IngestionRecordModel).where(IngestionRecordModel.batch_id == batch_id)
+                ).all()
+            }
             for match in matches:
-                source_system = str(match.get("source_system") or source_system_by_id.get(str(match.get("source_id") or "")) or "").upper()
-                if not source_system:
-                    continue
-                record = record_index.get((
-                    source_system,
-                    str(match.get("source_record_key") or ""),
-                    int(match.get("row_number") or 0),
-                )) or fallback_index.get((source_system, str(match.get("source_record_key") or "")))
+                record = records.get(str(match.get("record_id") or ""))
                 if record is None:
                     continue
                 rule = session.get(BusinessRuleModel, str(match.get("rule_id") or ""))

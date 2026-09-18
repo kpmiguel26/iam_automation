@@ -90,3 +90,79 @@ class RuleCatalogRepository:
                     "label": field.replace("_", " ").title(),
                 })
         return tuple(result)
+
+    def catalog_condition(self, condition: dict, session: Any, default_source: str = "ALL") -> dict:
+        """Attach governed source and field IDs before a rule is persisted."""
+        if not isinstance(condition, dict):
+            return condition
+        result = dict(condition)
+        if result.get("field"):
+            field_id = self.field_id(session, str(result["field"]))
+            if field_id:
+                result["field_id"] = field_id
+        for key in ("all", "any"):
+            if isinstance(result.get(key), list):
+                result[key] = [
+                    self.catalog_condition(item, session, default_source)
+                    for item in result[key]
+                ]
+        if isinstance(result.get("not"), dict):
+            result["not"] = self.catalog_condition(result["not"], session, default_source)
+        for key in ("left", "right"):
+            operand = result.get(key)
+            if isinstance(operand, dict):
+                result[key] = self.catalog_operand(operand, session, default_source)
+        return result
+
+    def catalog_operand(self, operand: dict, session: Any, default_source: str) -> dict:
+        result = dict(operand)
+        if result.get("kind") == "field":
+            field_id = self.field_id(session, str(result.get("field") or ""))
+            source = str(result.get("source") or default_source).strip().upper() or "ALL"
+            if field_id:
+                result["field_id"] = field_id
+            if source != "ALL":
+                source_id = self.source_id(session, source)
+                if source_id:
+                    result["source_id"] = source_id
+        elif result.get("kind") == "derived":
+            result["arguments"] = [
+                self.catalog_operand(argument, session, default_source)
+                if isinstance(argument, dict) else argument
+                for argument in result.get("arguments", [])
+            ]
+        return result
+
+    def runtime_condition(self, condition: dict, session: Any) -> dict:
+        """Resolve governed IDs back to canonical evaluator field keys."""
+        if not isinstance(condition, dict):
+            return condition
+        result = dict(condition)
+        if result.get("field_id"):
+            field_key = self.field_key(session, str(result["field_id"]))
+            if field_key:
+                result["field"] = field_key
+        for key in ("all", "any"):
+            if isinstance(result.get(key), list):
+                result[key] = [self.runtime_condition(item, session) for item in result[key]]
+        if isinstance(result.get("not"), dict):
+            result["not"] = self.runtime_condition(result["not"], session)
+        for key in ("left", "right"):
+            operand = result.get(key)
+            if isinstance(operand, dict):
+                result[key] = self.runtime_operand(operand, session)
+        return result
+
+    def runtime_operand(self, operand: dict, session: Any) -> dict:
+        result = dict(operand)
+        if result.get("field_id"):
+            field_key = self.field_key(session, str(result["field_id"]))
+            if field_key:
+                result["field"] = field_key
+        if result.get("kind") == "derived":
+            result["arguments"] = [
+                self.runtime_operand(argument, session)
+                if isinstance(argument, dict) else argument
+                for argument in result.get("arguments", [])
+            ]
+        return result
