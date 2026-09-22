@@ -343,7 +343,7 @@ identity_governance:
       can_create_identity: false
     - field_key: employee_name
       strength: SUPPORTING
-      can_match: true
+      can_match: false
       can_create_identity: false
 ```
 
@@ -361,6 +361,8 @@ The policy has these guardrails:
   Employee UUID.
 - `EVIDENCE_ONLY` cannot match or create identity; its facts remain available
   for audit and analysis.
+- A template may nominate at most three source fields for identity matching.
+  The laboratory enforces this limit in the UI and in server-side validation.
 - `SUPPORTING` fields such as names, email addresses and dates may explain or
   strengthen a future match, but can never create identity alone.
 - The policy is versioned with the template and snapshotted with a future

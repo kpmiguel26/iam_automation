@@ -8,7 +8,7 @@ from pathlib import Path
 from openpyxl import Workbook
 
 from iam_automation import webapp
-from iam_automation.application.ingestion.configuration_contracts import DraftFieldDefinition, DraftSourceDefinition
+from iam_automation.application.ingestion.configuration_contracts import DraftFieldDefinition, DraftIdentityGovernance, DraftIdentityIdentifier, DraftSourceDefinition
 from iam_automation.application.ingestion.configuration_service import DraftConfigurationService
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN
@@ -55,6 +55,63 @@ class IngestionConfigurationTests(unittest.TestCase):
         restored = DraftSourceDefinition.from_dict(draft.to_dict())
         self.assertEqual(restored.fields[0].data_type, "string")
         self.assertTrue(restored.fields[0].identifier)
+
+    def test_identity_matching_is_limited_to_three_fields(self):
+        draft = DraftSourceDefinition(
+            source_id="sample",
+            display_name="Sample",
+            identity_governance=DraftIdentityGovernance(
+                identifiers=tuple(
+                    DraftIdentityIdentifier(field_key=f"identifier_{index}", can_match=True)
+                    for index in range(4)
+                )
+            ),
+        )
+        errors = DraftConfigurationService.validate(draft)
+        self.assertIn("Choose no more than 3 fields for identity matching.", errors)
+
+    def test_htmx_disables_other_matching_fields_after_three_selections(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            client = self.make_app(database)
+            csrf = self.csrf(client)
+            inspected = client.post(
+                "/admin/ingestion-sources/sample/inspect",
+                data={"sample_file": (io.BytesIO(b"Employee ID,NUID,Logon ID,Email\n001,ABC,LOG001,a@example.com\n"), "signals.csv")},
+                headers={"X-CSRF-Token": csrf, "HX-Request": "true"},
+                content_type="multipart/form-data",
+            )
+            artifact_id = next(
+                value.split('"', 1)[0]
+                for value in inspected.data.decode().split('value="')[1:]
+                if value and len(value.split('"', 1)[0]) == 32
+            )
+            client.post(
+                "/admin/ingestion-sources/sample/select",
+                data={"artifact_id": artifact_id, "header_row": "1"},
+                headers={"X-CSRF-Token": csrf, "HX-Request": "true"},
+            )
+            response = client.post(
+                "/admin/ingestion-sources/draft/mapping",
+                data={
+                    "source_id": "signals",
+                    "display_name": "Signals",
+                    "identity_role": "IDENTITY_ENRICHMENT",
+                    **{f"field_include_{index}": "on" for index in range(4)},
+                    **{f"field_key_{index}": key for index, key in enumerate(("employee_id", "nuid", "logon_id", "email"))},
+                    **{f"field_type_{index}": "string" for index in range(4)},
+                    **{f"field_transform_{index}": "identity" for index in range(4)},
+                    "identity_field_0_match": "on",
+                    "identity_field_1_match": "on",
+                    "identity_field_2_match": "on",
+                },
+                headers={"X-CSRF-Token": csrf, "HX-Request": "true"},
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.data.decode()
+            self.assertIn("Identity matching fields: 3/3", body)
+            fourth_control = body.split('id="identity-match-3"', 1)[1].split(">", 1)[0]
+            self.assertIn("disabled", fourth_control)
 
     def test_csv_inspection_preserves_leading_zeroes_and_suggests_string(self):
         inspection = DraftConfigurationService.inspect_sample("sample.csv", b"Employee ID,Status\n001234,Active\n000007,Inactive\n")
@@ -192,9 +249,11 @@ class IngestionConfigurationTests(unittest.TestCase):
             self.assertEqual(selected.status_code, 200)
             self.assertIn(b"Review the data before selecting columns", selected.data)
             self.assertIn(b"001234", selected.data)
-            self.assertIn(b"Choose what to import and how it may be used", selected.data)
+            self.assertIn(b"Choose columns and identity signals", selected.data)
             self.assertIn(b"Import this column", selected.data)
             self.assertIn(b"Data type", selected.data)
+            self.assertIn(b"Identity matching fields: 0/3", selected.data)
+            self.assertIn(b"Choose reliable identifiers such as Employee ID, NUID or Logon ID.", selected.data)
 
             role_changed = client.post(
                 "/admin/ingestion-sources/draft/mapping",

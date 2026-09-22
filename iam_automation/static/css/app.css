@@ -285,6 +285,8 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .source-field-identity-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: .35rem .8rem; justify-content: space-between; margin-bottom: .6rem; }
 .source-field-identity-heading span { color: var(--kp-navy); font-size: .74rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .source-field-identity-heading small { color: #527d7d; font-size: .7rem; line-height: 1.35; }
+.identity-matching-summary { background: #eef8f7; border: 1px solid #c6e5e1; border-radius: .5rem; color: #35666a; font-size: .82rem; padding: .6rem .75rem; }
+.identity-matching-summary strong { color: #0b7779; font-size: .95rem; }
 .source-field-identity-controls { align-items: center; display: grid; gap: .75rem; grid-template-columns: minmax(9rem, 1fr) minmax(8rem, .75fr) minmax(10rem, 1fr); }
 .source-field-identity-controls .form-check { align-items: center; display: flex; gap: .4rem; }
 @media (max-width: 768px) {

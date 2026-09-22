@@ -20,6 +20,7 @@ from ...application.ingestion.configuration_contracts import (
     DRAFT_IDENTITY_ROLE_LABELS,
     DRAFT_IDENTITY_ROLES,
     DRAFT_IDENTITY_STRENGTHS,
+    MAX_IDENTITY_MATCH_FIELDS,
     DRAFT_TRANSFORM_DESCRIPTIONS,
     DRAFT_TRANSFORM_LABELS,
     DRAFT_TRANSFORMS,
@@ -69,6 +70,8 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
             identity_role_labels=DRAFT_IDENTITY_ROLE_LABELS,
             identity_role_descriptions=DRAFT_IDENTITY_ROLE_DESCRIPTIONS,
             identity_strengths=DRAFT_IDENTITY_STRENGTHS,
+            identity_matching_count=_identity_matching_count(draft),
+            identity_matching_limit=MAX_IDENTITY_MATCH_FIELDS,
             identity_identifier_by_field={item.field_key: item for item in draft.identity_governance.identifiers},
             identity_recommendations={field.field_key: _identity_recommendation(field) for field in draft.fields},
             validation_kinds=DRAFT_VALIDATION_KINDS,
@@ -115,6 +118,8 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
                 identity_role_labels=DRAFT_IDENTITY_ROLE_LABELS,
                 identity_role_descriptions=DRAFT_IDENTITY_ROLE_DESCRIPTIONS,
                 identity_strengths=DRAFT_IDENTITY_STRENGTHS,
+                identity_matching_count=_identity_matching_count(draft),
+                identity_matching_limit=MAX_IDENTITY_MATCH_FIELDS,
                 identity_identifier_by_field={item.field_key: item for item in draft.identity_governance.identifiers},
                 identity_recommendations={field.field_key: _identity_recommendation(field) for field in draft.fields},
                 validation_kinds=DRAFT_VALIDATION_KINDS,
@@ -191,13 +196,23 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
     @admin_required
     def save_draft_mapping():
         draft = _draft_from_mapping_form(DraftSourceDefinition.from_dict(session.get(SESSION_KEY)), request.form)
-        session[SESSION_KEY] = draft.to_dict()
         selection = session.get("ingestion_sample_selection") or {}
         artifact = get_sample(str(selection.get("artifact_id", "")))
         if artifact is None:
             return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, error="The sample preview expired. Read the file again.", status_code=410)
         header_rows = _selected_header_rows(selection)
         inspection = service.inspect_sample(artifact[0], artifact[1], sheet_name=str(selection.get("sheet_name", "")), header_row=max(header_rows), header_rows=header_rows)
+        errors = DraftConfigurationService.validate(draft)
+        if errors:
+            return partial_or_page(
+                "admin/_ingestion_sample_mapping.html",
+                draft=draft,
+                inspection=inspection,
+                artifact_id=str(selection.get("artifact_id", "")),
+                error=" ".join(errors),
+                status_code=400,
+            )
+        session[SESSION_KEY] = draft.to_dict()
         return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, artifact_id=str(selection.get("artifact_id", "")), message="Source schema saved in this browser session. It is still a draft.")
 
     @blueprint.post("/sample/preview")
@@ -440,6 +455,10 @@ def _identity_governance_from_form(
         can_create_employee=can_create_employee,
         identifiers=tuple(identifiers),
     )
+
+
+def _identity_matching_count(draft: DraftSourceDefinition) -> int:
+    return sum(1 for item in draft.identity_governance.identifiers if item.can_match)
 
 
 def _selected_header_rows(selection: dict[str, Any]) -> tuple[int, ...]:

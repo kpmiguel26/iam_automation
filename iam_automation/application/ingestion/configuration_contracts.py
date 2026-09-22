@@ -76,6 +76,9 @@ DRAFT_IDENTITY_ROLE_DESCRIPTIONS: dict[str, str] = {
     "EVIDENCE_ONLY": "Keeps source evidence available without authorizing identity matching or creation.",
 }
 DRAFT_IDENTITY_STRENGTHS: tuple[str, ...] = ("STRONG", "SUPPORTING")
+# Keep the laboratory deliberately conservative: a template may nominate at
+# most three source fields as identity-matching signals.
+MAX_IDENTITY_MATCH_FIELDS = 3
 
 
 @dataclass(frozen=True)

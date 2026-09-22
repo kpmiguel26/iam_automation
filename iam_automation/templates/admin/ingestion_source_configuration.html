@@ -38,3 +38,28 @@ Safety: This page reads samples in memory and produces DRAFT metadata only.
   <details class="surface p-4 mt-4"><summary class="fw-semibold">Advanced draft settings</summary><div class="row g-3 mt-1"><div class="col-md-6"><label class="form-label" for="advanced-watched-path">Watched folder / path</label><input class="form-control" id="advanced-watched-path" value="{{ draft.reader_settings.watched_path }}" placeholder="Configuration only — watcher is not connected" disabled><div class="form-text">This prototype does not connect watchers.</div></div><div class="col-md-6"><label class="form-label" for="advanced-drift">Schema drift review</label><select class="form-select" id="advanced-drift" disabled>{% for policy in drift_policies %}<option {% if draft.schema_drift_policy == policy %}selected{% endif %}>{{ policy|title }}</option>{% endfor %}</select><div class="form-text">Display-only preview severity for this phase.</div></div></div><pre class="request-json mt-3 mb-0">{{ draft.to_dict()|tojson(indent=2) }}</pre></details>
 </div>
 {% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    'use strict';
+
+    var matchingSelection = null;
+
+    document.addEventListener('htmx:beforeRequest', function (event) {
+      var source = event.detail && event.detail.elt;
+      if (!source || !source.matches || !source.matches('.identity-match-checkbox')) return;
+      matchingSelection = { id: source.id, top: window.scrollY };
+    });
+
+    document.addEventListener('htmx:afterSettle', function () {
+      if (!matchingSelection) return;
+      var state = matchingSelection;
+      matchingSelection = null;
+      var control = document.getElementById(state.id);
+      if (control) control.focus({ preventScroll: true });
+      window.scrollTo({ top: state.top, behavior: 'instant' });
+    });
+  }());
+</script>
+{% endblock %}

@@ -22,9 +22,12 @@ from .configuration_contracts import (
     DRAFT_DRIFT_POLICIES,
     DRAFT_FIELD_TYPES,
     DRAFT_FORMATS,
+    DRAFT_IDENTITY_ROLES,
+    DRAFT_IDENTITY_STRENGTHS,
     DRAFT_TRANSFORMS,
     DraftFieldDefinition,
     DraftFieldMapping,
+    MAX_IDENTITY_MATCH_FIELDS,
     DraftSourceDefinition,
 )
 
@@ -116,6 +119,15 @@ class DraftConfigurationService:
         for validation in draft.validations:
             if validation.kind not in {"required", "nullable", "identifier", "enum", "date_format", "min_length", "max_length", "regex", "duplicate_source_key"}:
                 errors.append(f"Validation kind {validation.kind!r} is not supported.")
+        identity = draft.identity_governance
+        if identity.role not in DRAFT_IDENTITY_ROLES:
+            errors.append("Choose a valid identity template role.")
+        matching_fields = [item for item in identity.identifiers if item.can_match]
+        if len(matching_fields) > MAX_IDENTITY_MATCH_FIELDS:
+            errors.append(f"Choose no more than {MAX_IDENTITY_MATCH_FIELDS} fields for identity matching.")
+        for identifier in identity.identifiers:
+            if identifier.strength not in DRAFT_IDENTITY_STRENGTHS:
+                errors.append(f"Identity field {identifier.field_key!r} uses an unsupported strength.")
         return tuple(errors)
 
     @staticmethod

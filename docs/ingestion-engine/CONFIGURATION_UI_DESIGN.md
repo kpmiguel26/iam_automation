@@ -42,7 +42,9 @@ READ FILE -> REVIEW RAW STRUCTURE -> COMPOSE HEADERS -> REVIEW DATA -> SELECT CO
   Seed, Identity Enrichment or Evidence Only. For each included source field,
   the administrator can explicitly allow matching, classify it as Strong or
   Supporting, and allow identity creation only for strong identifiers. This is
-  source governance, not Employee/canonical field mapping.
+  source governance, not Employee/canonical field mapping. The laboratory
+  allows at most three fields for identity matching; the counter is visible and
+  remaining choices are disabled after the third selection.
 - **CHECK DRAFT:** run structural checks and a normalized preview in memory.
 
 The interaction is server-rendered with HTMX partial swaps and retains normal
