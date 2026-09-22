@@ -48,7 +48,10 @@ class SqliteEvidenceRepository:
         source_id = str(source.source_id) if source is not None else str(batch.source_type or "")
         records = session.scalars(
             select(IngestionRecordModel)
-            .where(IngestionRecordModel.batch_id == str(batch_id))
+            .where(
+                IngestionRecordModel.batch_id == str(batch_id),
+                IngestionRecordModel.status != "QUARANTINED",
+            )
             .order_by(IngestionRecordModel.row_number.asc())
         ).all()
         mappings: tuple[FieldMapping, ...] = ()
@@ -127,6 +130,7 @@ class SqliteEvidenceRepository:
                     IngestionRecordModel.source_system == record.source_system,
                     IngestionRecordModel.source_record_key == record.source_record_key,
                     IngestionRecordModel.record_id != record.record_id,
+                    IngestionRecordModel.status != "QUARANTINED",
                     IngestionRecordModel.created_at_utc < record.created_at_utc,
                 )
                 .order_by(IngestionRecordModel.created_at_utc.desc())

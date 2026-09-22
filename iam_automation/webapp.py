@@ -45,6 +45,7 @@ from .application.publication_state import publication_pending
 from .application.user_service import UserService
 from .application.temporary_super_operator_service import TemporarySuperOperatorService
 from .interfaces.web.admin_routes import create_admin_blueprint
+from .interfaces.web.ingestion_configuration_routes import create_ingestion_configuration_blueprint
 from .interfaces.web.master_routes import create_master_blueprint
 from .interfaces.web.user_routes import create_identity_blueprint, create_user_blueprint
 from .interfaces.web.request_routes import create_request_blueprint
@@ -280,6 +281,7 @@ def create_app(
     app.extensions["iam_refresh_lock"] = threading.Lock()
     if runtime_path:
         app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), sharepoint_root=preflight_result.settings.sharepoint_root_path, local_runtime_path=preflight_result.settings.local_runtime_db_path, published_runtime_path=preflight_result.settings.published_runtime_db_path, audit_path=preflight_result.settings.audit_folder_path))
+        app.register_blueprint(create_ingestion_configuration_blueprint(runtime_path))
         app.register_blueprint(create_master_blueprint(runtime_path, preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_user_blueprint(runtime_path, audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), traceability_directory=traceability_path(preflight_result.settings.sharepoint_root_path), audit_path=preflight_result.settings.audit_folder_path))

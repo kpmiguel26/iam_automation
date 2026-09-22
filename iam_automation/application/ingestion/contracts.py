@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 from typing import Protocol, runtime_checkable
@@ -78,6 +79,30 @@ class IngestionBatch:
             isinstance(mapping, FieldMapping) for mapping in self.field_mappings
         ):
             raise TypeError("IngestionBatch.field_mappings must be a tuple of FieldMapping.")
+
+
+@dataclass(frozen=True)
+class IngestionRecordInput:
+    """Source-neutral row input handed to the generic batch lifecycle."""
+
+    row_number: int
+    source_record_key: str
+    normalized_fields: Mapping[str, object]
+    source_fields: Mapping[str, object]
+    validation_error: str | None = None
+
+
+@dataclass(frozen=True)
+class IngestionBatchOutcome:
+    """Typed post-commit outcome for one staged ingestion batch."""
+
+    batch_id: str
+    filename: str
+    total_rows: int
+    staged_rows: int
+    quarantine_rows: int
+    duplicate_rows: int
+    status: str
 
 
 @runtime_checkable

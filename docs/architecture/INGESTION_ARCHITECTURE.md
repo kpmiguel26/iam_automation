@@ -6,6 +6,10 @@ This document describes the Python ingestion structure currently implemented
 on `fix/sqlite-relational-rule-evaluation`. It is the working reference while
 the remaining consumers move from source JSON to relational facts.
 
+The target source-agnostic design is documented in the
+[Ingestion Engine Architecture](./INGESTION_ENGINE_ARCHITECTURE.md). This file
+remains the current-state reference during that migration.
+
 The next write-model design is documented in
 [Write model architecture](./WRITE_MODEL_ARCHITECTURE.md). It defines the
 canonical `employee` entity, source-specific write tables, identity links and
@@ -20,7 +24,7 @@ iam_automation/
 │   │   ├── common.py          # stable file reads and source timestamps
 │   │   ├── contracts.py       # result contract and compatibility helpers
 │   │   ├── dedup.py           # payload hashing and latest-fact lookup
-│   │   └── orchestrator.py    # source-system to adapter dispatch
+│   │   └── orchestrator.py    # source dispatch and rule lifecycle coordination
 │   ├── accessnow_ingestion_service.py
 │   ├── master_roster_ingestion_service.py
 │   └── roster_lock_ingestion_service.py
@@ -68,8 +72,8 @@ separate decisions.
 - Format adapters know file layouts and source vocabulary.
 - Application ingestion services know batch lifecycle, quarantine and source
   keys.
-- `IngestionOrchestrator` selects an adapter; it does not evaluate rules or
-  promote workers.
+- `IngestionOrchestrator` selects an adapter and coordinates the configured
+  `BEFORE`/`AFTER` rule lifecycle; it does not promote workers.
 - `StarSchemaWriter` is an infrastructure component and writes through the
   SQLite ORM session supplied by the caller.
 - `application/star_schema_writer.py`, `stable_file_read.py` and
@@ -89,9 +93,9 @@ transition behavior and must be resolved before retention cleanup.
 
 ## Step-by-step migration sequence
 
-1. Repair and test the watcher dispatch path. The current `scan_once` contains
-   an early return that prevents its historical processing and notification
-   branch from running.
+1. Keep watcher discovery separate from ingestion. The current `scan_once`
+   updates discovery state and notifications; the explicit Source Updates action
+   owns source parsing, staging, rules and SQLite writes.
 2. Move source payload reads in employee projection, configurable rule
    findings, reports and history to `StarSchemaWriter.payload_for_record` or
    relational queries. The deprecated rehire-alert path is not a runtime

@@ -1,0 +1,17 @@
+{% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+{% if structure %}
+<section class="sample-choice-card" aria-labelledby="sample-choice-title">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div><p class="eyebrow mb-1">Step 2 · Confirm structure</p><h2 id="sample-choice-title" class="h4 mb-1">Which rows make up the column headers?</h2><p class="small text-secondary mb-0">We found <strong>{{ structure.filename }}</strong>. Review the raw rows and select the field names plus any context that explains repeated columns.</p></div>
+    <span class="badge text-bg-light border">{{ structure.format }}</span>
+  </div>
+  <form method="post" action="{{ url_for('ingestion_configuration.select_sample_header') }}" hx-post="{{ url_for('ingestion_configuration.select_sample_header') }}" hx-target="#sample-workspace" hx-swap="innerHTML" class="row g-3 align-items-end">
+    <input type="hidden" id="sample-artifact-id" name="artifact_id" value="{{ artifact_id }}">
+    {% if structure.sheet_names %}<div class="col-md-5"><label class="form-label" for="sample-sheet">Worksheet</label><select class="form-select" id="sample-sheet" name="sheet_name" hx-get="{{ url_for('ingestion_configuration.sample_headers') }}" hx-target="#header-choice" hx-swap="innerHTML" hx-include="#sample-artifact-id" hx-trigger="change"><option value="">Choose a worksheet</option>{% for name in structure.sheet_names %}<option value="{{ name }}" {% if name == (structure.sheets[0].name if structure.sheets else '') %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>{% else %}<input type="hidden" name="sheet_name" value=""><div class="col-md-5"><label class="form-label">Worksheet</label><div class="form-control-plaintext">CSV file</div></div>{% endif %}
+    <div id="header-choice" class="col-12">{% include "admin/_ingestion_header_choices.html" %}</div>
+    <div class="col-12 d-flex justify-content-end"><button class="btn btn-primary" type="submit">Use selected header rows <span aria-hidden="true">→</span></button></div>
+  </form>
+  <div class="small text-secondary mt-3"><span class="text-success">●</span> No data is written. This step only reads the uploaded sample in memory.</div>
+</section>
+{% endif %}

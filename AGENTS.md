@@ -54,6 +54,34 @@ This repository may contain transitional legacy readers and writers. Their prese
 is intentional until the migration is explicitly completed and validated; do not
 clean them up opportunistically.
 
+### Migration protocol for legacy functionality
+
+When migrating an existing function, class or cohesive feature to a new file, use
+an additive migration sequence:
+
+1. Implement the migrated functionality in a new file first. Keep the new module
+   behind the existing public contract until parity is demonstrated.
+2. In the old file, mark the migrated function, class or entry point explicitly as
+   `DEPRECATED`, including a short note pointing to the replacement and the reason
+   for retaining the compatibility path.
+3. Preserve the old import path, call shape, result shape, side effects and legacy
+   fallback unless the user explicitly approves a breaking change. The deprecated
+   path may delegate to the new implementation only after equivalent behavior is
+   covered by tests.
+4. Add characterization/parity and regression tests before switching callers or
+   removing the legacy implementation. Test both the new module and the deprecated
+   compatibility path when both remain supported.
+5. Do not delete the deprecated function, class, old file or compatibility wrapper
+   in the same migration change. Remove it only in a later, explicitly scoped
+   cleanup after production behavior has been demonstrated and the removal criteria
+   are documented.
+
+The `DEPRECATED` marker is a migration status, not permission to break callers.
+Deprecation warnings must not be introduced at runtime by default if they could
+alter production behavior or generate operational noise; use documentation,
+tests and the existing observability conventions unless warning behavior is
+explicitly requested.
+
 ## 3. Data, database and runtime safety
 
 - Treat Access, published SQLite and source files as versioned evidence/snapshots

@@ -100,6 +100,53 @@ class BusinessRuleServiceTests(unittest.TestCase):
             self.assertEqual(service.count_findings_for_records(["record-q"]), 1)
             self.assertEqual(service.count_findings_for_records(["other-record"]), 0)
 
+    def test_structurally_quarantined_records_are_not_evaluated_as_business_rules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            now = datetime.now(timezone.utc).isoformat()
+            with orm_session(database) as session:
+                session.add(ImportBatchModel(
+                    batch_id="structural-quarantine",
+                    filename="source.xlsx",
+                    source_type="MASTER_ROSTER",
+                    status="COMPLETED_WITH_WARNINGS",
+                    total_rows=1,
+                    valid_rows=0,
+                    quarantine_rows=1,
+                    created_by="test",
+                    created_at_utc=now,
+                ))
+                session.add(IngestionRecordModel(
+                    record_id="structural-record-q",
+                    batch_id="structural-quarantine",
+                    source_system="MASTER_ROSTER",
+                    source_file="source.xlsx",
+                    source_checksum="checksum",
+                    row_number=4,
+                    source_record_key="E-4",
+                    normalized_json=json.dumps({"status": "TERMINATED"}),
+                    payload_json="{}",
+                    status="QUARANTINED",
+                    created_at_utc=now,
+                ))
+            service = BusinessRuleService(database)
+            self._active_rule(service)
+            self.assertEqual(service.evaluate_batch("structural-quarantine"), 0)
+            self.assertEqual(service.list_findings(), [])
+
+            before_rule = service.create_rule(
+                name="Preflight status review",
+                description="Review terminated rows.",
+                field="status",
+                operator="equals",
+                value="TERMINATED",
+                severity="WARNING",
+                phase="BEFORE",
+                actor="test",
+            )
+            service.set_status(before_rule, "ACTIVE")
+            self.assertEqual(service.preflight_batch("structural-quarantine")["evaluated_rows"], 0)
+
     def test_quarantine_findings_can_be_filtered_by_rule(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")

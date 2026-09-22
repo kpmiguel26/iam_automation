@@ -1,0 +1,40 @@
+<!--
+File: iam_automation/templates/admin/ingestion_source_configuration.html
+Purpose: Provides the guided, HTMX-backed ingestion source configuration laboratory.
+Safety: This page reads samples in memory and produces DRAFT metadata only.
+-->
+{% extends "base.html" %}
+{% block title %}Configure a report{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4 page-shell admin-page ingestion-config-page">
+  <div class="page-heading">
+    <div><p class="eyebrow">Ingestion Engine laboratory</p><h1>Configure a report</h1><p class="text-secondary mb-0">Start with a sample file. We will help you choose the source columns to import and describe their data types.</p></div>
+    <div class="d-flex flex-wrap gap-2 align-items-center"><span class="status-pill status-pending"><span></span>Draft only</span><span class="role-ribbon">No watcher · No activation</span></div>
+  </div>
+
+  <div class="alert alert-info mt-4 d-flex gap-3 align-items-start" role="note"><span class="fs-5" aria-hidden="true">◇</span><div><strong>Safe design laboratory.</strong> Nothing is imported or activated here. The sample is read temporarily in memory, and the configuration remains a draft in this browser session.</div></div>
+  {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+  {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+
+  <nav class="ingestion-stepper surface mt-4" aria-label="Configuration progress">
+    <a href="#upload-step" class="ingestion-step active"><span class="ingestion-step-number">1</span><span><strong>READ</strong><small>Choose a file</small></span></a>
+    <a href="#sample-workspace" class="ingestion-step"><span class="ingestion-step-number">2</span><span><strong>UNDERSTAND</strong><small>Choose header and data</small></span></a>
+    <a href="#sample-workspace" class="ingestion-step"><span class="ingestion-step-number">3</span><span><strong>SELECT</strong><small>Choose fields and types</small></span></a>
+    <a href="#sample-workspace" class="ingestion-step"><span class="ingestion-step-number">4</span><span><strong>CHECK</strong><small>Preview the draft</small></span></a>
+  </nav>
+
+  <section id="upload-step" class="surface p-4 mt-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3"><div><p class="eyebrow mb-1">Step 1 · Read a sample</p><h2 class="h4 mb-1">Which report would you like to describe?</h2><p class="small text-secondary mb-0">CSV and Excel files are supported. You can change the worksheet and header row after reading the file.</p></div><span class="badge text-bg-light border">Up to 20 MB · preview only</span></div>
+    <form method="post" action="{{ url_for('ingestion_configuration.inspect_sample_structure') }}" hx-post="{{ url_for('ingestion_configuration.inspect_sample_structure') }}" hx-target="#sample-workspace" hx-swap="innerHTML" hx-indicator="#read-sample-button" hx-encoding="multipart/form-data" enctype="multipart/form-data" data-no-loader="true" class="row g-3 align-items-end">
+      <div class="col-lg-8"><label class="form-label" for="sample_file">Sample report</label><input class="form-control" id="sample_file" name="sample_file" type="file" accept=".csv,.xlsx" required><div class="form-text">Use a representative sample, not the production folder. We will display only a few rows.</div></div>
+      <div class="col-lg-auto ms-lg-auto ingestion-read-action"><button id="read-sample-button" class="btn btn-primary ingestion-read-button" type="submit"><span class="ingestion-read-label">Read sample <span aria-hidden="true">→</span></span><span class="ingestion-read-loading" aria-live="polite"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Reading report…</span></button></div>
+    </form>
+  </section>
+
+  <div id="sample-workspace" class="mt-4" aria-live="polite">
+    {% if structure %}{% include "admin/_ingestion_sample_structure.html" %}{% elif inspection %}{% include "admin/_ingestion_sample_mapping.html" %}{% else %}<div class="empty-state surface"><span class="empty-state-icon">1</span><strong>Your report preview will appear here</strong><span>Choose a sample file to begin.</span></div>{% endif %}
+  </div>
+
+  <details class="surface p-4 mt-4"><summary class="fw-semibold">Advanced draft settings</summary><div class="row g-3 mt-1"><div class="col-md-6"><label class="form-label" for="advanced-watched-path">Watched folder / path</label><input class="form-control" id="advanced-watched-path" value="{{ draft.reader_settings.watched_path }}" placeholder="Configuration only — watcher is not connected" disabled><div class="form-text">This prototype does not connect watchers.</div></div><div class="col-md-6"><label class="form-label" for="advanced-drift">Schema drift review</label><select class="form-select" id="advanced-drift" disabled>{% for policy in drift_policies %}<option {% if draft.schema_drift_policy == policy %}selected{% endif %}>{{ policy|title }}</option>{% endfor %}</select><div class="form-text">Display-only preview severity for this phase.</div></div></div><pre class="request-json mt-3 mb-0">{{ draft.to_dict()|tojson(indent=2) }}</pre></details>
+</div>
+{% endblock %}

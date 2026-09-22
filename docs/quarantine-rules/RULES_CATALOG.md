@@ -19,9 +19,10 @@ revisar la condición hay que activarlas desde **Business rules**.
 ## Importante: alcance por fuente
 
 Las reglas se evalúan después de guardar la ingesta y sus findings aparecen en
-**Quarantine**. Las reglas `BEFORE` se evalúan sobre las filas normalizadas
-antes de ejecutar el adaptador; las `AFTER` se evalúan después de guardar los
-hechos en SQLite.
+**Quarantine**. En la implementación actual, las reglas `BEFORE` se evalúan
+sobre el lote staged ya comprometido, antes de ejecutar la fase `AFTER`; no se
+ejecutan antes de que el adapter lea o persista el archivo. Las reglas `AFTER`
+se evalúan después de guardar los hechos en SQLite.
 
 El wizard permite seleccionar `All reports` o una fuente concreta. Las reglas
 marcadas como **Compartida** pueden usar `All reports`; las reglas marcadas como
@@ -31,9 +32,10 @@ campo que simplemente no pertenece a otra fuente.
 ## Comportamiento en fase 1
 
 `BEFORE` y `AFTER` no son bloqueantes. Una regla `BEFORE` detecta la coincidencia
-antes del adaptador y la enlaza al lote cuando este crea sus registros; una
-regla `AFTER` detecta la coincidencia directamente sobre los hechos persistidos.
-Una infracción nunca cancela la importación ni deshace los datos recibidos.
+después de que el adaptador crea y compromete el lote staged, y la enlaza al
+lote antes de la evaluación `AFTER`; una regla `AFTER` detecta la coincidencia
+directamente sobre los hechos persistidos. Una infracción nunca cancela la
+importación ni deshace los datos recibidos.
 
 `fact_quarantine` es la consulta maestra de cuarentena: cada fila enlaza el
 lote, el registro de origen, el empleado cuando ya fue identificado, la regla,

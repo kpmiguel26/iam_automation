@@ -16,6 +16,7 @@ linked status registry.
 ## Active work
 
 - [Business Rules Framework](./features/2026-09-business-rules-framework.md) — active foundation; see the [current rules engine behavior](./architecture/RULES_ENGINE.md). The in-app Business Rules Help page is available at `/help/business-rules`.
+- [Ingestion Engine design](./architecture/INGESTION_ENGINE_ARCHITECTURE.md) — design baseline for the source-agnostic ingestion boundary; implementation is tracked in [the Ingestion Engine work plan](./work/2026-09-22-ingestion-engine-work-plan.md).
 - [Refresh alert](./bugs/2026-09-refresh-alert.md) — confirmed defect, fix pending.
 
 ## Requirement and decision sources

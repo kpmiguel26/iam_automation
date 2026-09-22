@@ -1,0 +1,19 @@
+<div class="header-selection-panel">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+      <label class="form-label mb-1" for="header-row-{{ (recommended_header_rows[-1] if recommended_header_rows else 1) }}">Which rows make up the column headers?</label>
+      <p class="small text-secondary mb-0">Select the main field-name row and any context rows that explain repeated columns. You can change the names after the sample is read.</p>
+    </div>
+    {% if recommended_header_rows %}<span class="badge text-bg-info">Suggested: rows {{ recommended_header_rows|join(', ') }}</span>{% endif %}
+  </div>
+  <div class="table-responsive raw-sample-table border rounded" aria-label="Raw sample rows">
+    <table class="table table-sm align-middle mb-0" data-datatable="off">
+      <caption class="visually-hidden">Raw sample rows. Select the rows that form the header.</caption>
+      <thead><tr><th scope="col">Use</th><th scope="col">Row</th>{% for index in range(raw_column_count) %}<th scope="col">Column {{ index + 1 }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in raw_rows %}<tr class="{% if loop.index in recommended_header_rows %}raw-sample-row-suggested{% endif %}"><td><input class="form-check-input" type="checkbox" name="header_rows" value="{{ loop.index }}" id="header-row-{{ loop.index }}" {% if loop.index in recommended_header_rows %}checked{% endif %}><label class="visually-hidden" for="header-row-{{ loop.index }}">Use row {{ loop.index }} as part of the header</label></td><th scope="row">{{ loop.index }}</th>{% for index in range(raw_column_count) %}<td>{{ row[index] if index < row|length and row[index] else '·' }}</td>{% endfor %}</tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="d-flex flex-wrap justify-content-between gap-2 mt-2"><span class="small text-secondary"><strong>Suggested rows are editable.</strong> For a simple file, keep only the row with the column names.</span><span class="small text-secondary">Raw preview · first {{ raw_rows|length }} rows</span></div>
+</div>
