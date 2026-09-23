@@ -272,10 +272,17 @@ def create_app(
         return render_template("errors/500.html"), 500
 
     static_root = Path(__file__).resolve().parent / "static"
-    css_path = static_root / "css" / "app.css"
-    rule_wizard_js_path = static_root / "js" / "business-rule-wizard.js"
-    asset_mtimes = [int(path.stat().st_mtime) for path in (css_path, rule_wizard_js_path) if path.is_file()]
-    static_version = "-".join(str(mtime) for mtime in asset_mtimes) or "dev"
+    versioned_assets = (
+        static_root / "css" / "app.css",
+        static_root / "js" / "business-rule-wizard.js",
+        static_root / "js" / "data-tables.js",
+        static_root / "js" / "ingestion-identity-guidance.js",
+    )
+
+    def current_static_version() -> str:
+        asset_versions = [f"{path.name}-{path.stat().st_mtime_ns}" for path in versioned_assets if path.is_file()]
+        return "-".join(asset_versions) or "dev"
+
     runtime_path = preflight_result.settings.local_runtime_db_path if preflight_result.settings else None
     app.extensions["iam_file_watcher"] = None
     app.extensions["iam_refresh_lock"] = threading.Lock()
@@ -322,7 +329,7 @@ def create_app(
             "unread_notification_count": unread_count,
             "recent_notifications": recent_notifications,
             "workspace_update_available": workspace_update_available,
-            "static_version": static_version,
+            "static_version": current_static_version(),
             "publication_pending": publication_pending(runtime_path),
         }
 
