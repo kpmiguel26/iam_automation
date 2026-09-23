@@ -122,12 +122,50 @@ class DraftConfigurationService:
         identity = draft.identity_governance
         if identity.role not in DRAFT_IDENTITY_ROLES:
             errors.append("Choose a valid identity template role.")
+        if identity.can_create_employee and identity.role != "IDENTITY_SEED":
+            errors.append("Only an Identity Seed report can have Employee UUID creation permission.")
+        if identity.role == "EVIDENCE_ONLY" and any(item.can_match or item.can_create_identity for item in identity.identifiers):
+            errors.append("Evidence Only reports cannot define identity matching or creation fields.")
         matching_fields = [item for item in identity.identifiers if item.can_match]
         if len(matching_fields) > MAX_IDENTITY_MATCH_FIELDS:
             errors.append(f"Choose no more than {MAX_IDENTITY_MATCH_FIELDS} fields for identity matching.")
+        identity_field_by_key = {field.field_key.casefold(): field for field in draft.fields}
+        strong_matching_keys: set[str] = set()
+        strong_creation_keys: set[str] = set()
+        seen_identity_keys: set[str] = set()
         for identifier in identity.identifiers:
+            identity_key = identifier.field_key.casefold()
+            identity_field = identity_field_by_key.get(identity_key)
+            if identity_key in seen_identity_keys:
+                errors.append(f"Identity field {identifier.field_key!r} is configured more than once.")
+            seen_identity_keys.add(identity_key)
+            if identity_field is None or not identity_field.include:
+                errors.append(f"Identity field {identifier.field_key!r} must be an included source field.")
+            elif identity_field.data_type != "string":
+                errors.append(f"Identity field {identifier.field_key!r} must remain text to preserve identifier values.")
             if identifier.strength not in DRAFT_IDENTITY_STRENGTHS:
                 errors.append(f"Identity field {identifier.field_key!r} uses an unsupported strength.")
+            if identity_field is not None and identity_field.include and identifier.strength == "STRONG" and identifier.can_match:
+                strong_matching_keys.add(identity_key)
+            if identifier.can_create_identity:
+                if identity.role != "IDENTITY_SEED" or not identity.can_create_employee:
+                    errors.append(f"Identity field {identifier.field_key!r} cannot create identity without source-level permission.")
+                if not identifier.can_match:
+                    errors.append(f"Identity field {identifier.field_key!r} must be enabled for identity matching before it can create identity.")
+                if identifier.strength != "STRONG":
+                    errors.append(f"Identity field {identifier.field_key!r} must be Strong before it can create identity.")
+                if identity_field is not None and identity_field.include and identifier.can_match and identifier.strength == "STRONG":
+                    strong_creation_keys.add(identity_key)
+
+        if identity.role == "IDENTITY_ENRICHMENT" and len(strong_matching_keys) < 1:
+            errors.append("Reports used to find existing employees need at least one included Strong identifier selected for matching.")
+        elif identity.role == "IDENTITY_SEED" and identity.can_create_employee:
+            if len(strong_matching_keys) < 2:
+                errors.append("Reports authorized to create Employee UUIDs need at least two included Strong identifiers selected for matching.")
+            if len(strong_creation_keys) < 2:
+                errors.append("Mark at least two Strong identity fields as allowed to create a new Employee UUID.")
+        elif identity.role == "IDENTITY_SEED" and len(strong_matching_keys) < 1:
+            errors.append("Identity Seed reports without creation permission need at least one included Strong identifier selected for matching.")
         return tuple(errors)
 
     @staticmethod

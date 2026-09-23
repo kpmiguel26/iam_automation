@@ -34,13 +34,14 @@ preserved; this task does not expand or reconnect the production lifecycle.
 
 - [x] Architecture baseline and implementation-order decision documented.
 - [x] Isolated `/admin/ingestion-sources` configuration page added.
-- [x] Frozen draft contracts added without production persistence.
+- [x] Frozen draft contracts added; versioned persistence is isolated from runtime ingestion.
 - [x] CSV/XLSX sample inspection and bounded preview added.
 - [x] Source columns can be included/excluded and their inferred data types can be reviewed or overridden.
 - [x] Draft templates can declare identity authority without executing matching or creating employees.
 - [x] Tests verify page access, draft editing, identifiers, CSV/XLSX inspection,
   preview diagnostics and production-write isolation.
-- [ ] Persisted `SourceDefinition`.
+- [x] Persisted draft/approved template snapshots and a separate template library.
+- [ ] Runtime `SourceDefinition` adapter and `SourceRegistry`.
 - [ ] `SourceRegistry`.
 - [ ] Production batch lifecycle extraction or source migration for this revised sequence.
 - [ ] Watcher activation, publishing and production configuration integration.
@@ -88,7 +89,7 @@ Bootstrap and server-rendered conventions.
 
 - Add the `/admin/ingestion-sources` page and Administration navigation link.
 - Provide SOURCE, STRUCTURE, SOURCE SCHEMA and TEST / PREVIEW sections.
-- Keep draft state in the signed Flask session.
+- Keep the editing pointer in the signed Flask session; persist template snapshots in SQLite.
 - Keep employee/canonical field selection outside this prototype; the future Employee Engine owns it.
 - Capture identity governance in the template draft: role, create authority and
   per-field match/create permissions. This is source authority, not employee
@@ -98,7 +99,7 @@ Bootstrap and server-rendered conventions.
 
 - No production source activation.
 - No watcher integration.
-- No persisted configuration schema.
+- No activation, watcher configuration or runtime source registry.
 - No change to current ingestion services.
 
 ### Acceptance criteria
@@ -107,8 +108,12 @@ Bootstrap and server-rendered conventions.
 - Source columns may be excluded from the draft schema.
 - Inferred data types are suggestions and can be overridden by the user.
 - Identifier fields remain strings.
-- Identity creation is only expressible for a strong identifier on an Identity
-  Seed draft; Enrichment and Evidence Only drafts cannot create identity.
+- Employee-linked validation/enrichment drafts require at least one included
+  Strong identifier selected for matching. Identity Seed drafts with Employee
+  UUID creation enabled require at least two distinct included Strong identity
+  fields, both selected for matching and individually authorized to create.
+  Identity Seed without creation permission still requires one Strong matching
+  field; Evidence Only drafts are exempt because they do not link to Employee.
 - Only DRAFT actions are presented.
 
 ### Status
@@ -148,9 +153,9 @@ engine without making the definition production-owned.
 - Duplicate or ambiguous source labels remain visible and editable before source-schema selection.
 - Leading-zero identifiers remain strings.
 - Preview does not write production ingestion tables or facts.
-- The policy is session-only and is not consumed by the generic ingestion
-  lifecycle. A future Identity Resolver/Employee Engine consumes it after fact
-  commitment.
+- The policy is saved in the versioned template snapshot but is not consumed by
+  the generic ingestion lifecycle. A future Identity Resolver/Employee Engine
+  consumes it after fact commitment.
 - Invalid draft configuration returns useful messages.
 
 ### Status
@@ -183,17 +188,20 @@ completion outcomes only after the UI contract is accepted.
 Explicit approval required after Phase B/C review. Do not start this phase as
 part of the configuration prototype task.
 
-## Phase E — Persisted SourceDefinition and SourceRegistry
+## Phase E — Persisted SourceDefinition and SourceRegistry (in progress)
 
 ### Objective
 
-Persist immutable, versioned definitions only after the draft contract is accepted
-and the generic lifecycle boundary is proven.
+Persist versioned template snapshots and a separate review library now that the
+draft contract is usable. Adapt those snapshots to the runtime `SourceDefinition`
+and `SourceRegistry` only after the generic lifecycle boundary is proven.
 
 ### Gate
 
-Requires additive schema design, migration review, authorization/audit decisions
-and explicit approval.
+Implemented so far: additive SQLite schema, draft editing, immutable approved
+versions and application/master administrator approval. Still required: runtime
+registry contract, batch pinning, publication authority and operational audit
+policy. Approved templates are not active runtime sources.
 
 ## Phase F — Roster Lock migration
 

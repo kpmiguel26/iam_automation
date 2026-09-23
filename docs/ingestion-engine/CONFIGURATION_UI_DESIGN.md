@@ -1,6 +1,6 @@
 # Configuration UI Design
 
-**Status:** Prototype implemented as an isolated draft laboratory
+**Status:** Persisted template library implemented; runtime activation remains out of scope
 
 **Date:** 2026-09-22
 
@@ -14,9 +14,10 @@ source schema, choose imported columns, configure inferred data types and
 structural validation expectations, declare the source's identity authority,
 then test a bounded sample in memory.
 
-The page is intentionally a DRAFT-only design laboratory. It does not create a
-production `SourceDefinition`, activate a watcher or invoke the existing
-orchestrator.
+The page saves versioned draft snapshots in SQLite and offers a separate
+template library for continuing configuration and approval. These records are
+configuration evidence only: they do not activate a watcher or invoke the
+existing orchestrator.
 
 ## 2. User workflow
 
@@ -38,12 +39,22 @@ READ FILE -> REVIEW RAW STRUCTURE -> COMPOSE HEADERS -> REVIEW DATA -> SELECT CO
   human-readable cleanup recommendation based on explainable source-column
   signals; the administrator can keep it, choose another option or leave the
   value unchanged.
-- **DECLARE IDENTITY AUTHORITY:** choose whether the template is an Identity
-  Seed, Identity Enrichment or Evidence Only. For each included source field,
-  the administrator can explicitly allow matching, classify it as Strong or
-  Supporting, and allow identity creation only for strong identifiers. This is
-  source governance, not Employee/canonical field mapping. The laboratory
-  allows at most three fields for identity matching; the counter is visible and
+- **DECLARE IDENTITY AUTHORITY:** first choose in plain language whether the
+  report may introduce new employees, may only help find existing employees,
+  or is evidence only. The draft shows the corresponding Identity Seed,
+  Identity Enrichment or Evidence Only contract role. Identity Seed has a
+  separate source-level permission to propose Employee UUIDs. Then, for each
+  included field, the administrator can allow identity matching and classify
+  the field as Strong or Supporting. A field can authorize creation only when
+  it is included, marked for identity matching, classified Strong, and the
+  source-level permission is enabled. Templates that only link or validate
+  existing employees need at least one Strong matching field. A template
+  authorized to create Employee UUIDs needs at least two distinct Strong fields,
+  both selected for matching and creation. Identity Seed without creation
+  permission still needs one Strong matching field; Evidence Only is exempt.
+  Identity fields remain strings so leading zeroes are preserved. This is
+  source governance, not Employee/canonical field mapping. The laboratory allows
+  at most three fields for identity matching; the counter is visible and
   remaining choices are disabled after the third selection.
 - **CHECK DRAFT:** run structural checks and a normalized preview in memory.
 
@@ -55,9 +66,10 @@ Advanced source identity, reader hints, validation constraints and drift severit
 remain available in a disclosure after the guided flow; they are not the first
 thing a user must understand.
 
-The page offers only draft-oriented actions such as `Keep draft in this session`
-and `Preview selected data`. There is no Activate, Publish, Enable watcher or Run
-ingestion action.
+The template library lists draft and approved versions. Administrators can
+continue a draft, approve a valid draft, or create a new draft from an approved
+version. Approved versions are immutable. There is no Activate, Publish, Enable
+watcher or Run ingestion action.
 
 ## 3. Draft contract
 
@@ -74,8 +86,10 @@ The typed contracts live in `iam_automation/application/ingestion/`:
   this screen does not populate canonical or employee mappings.
 - `DraftValidationDefinition`
 
-The contract is frozen and serializable to a Flask session. `status` is always
-`DRAFT`; it is not the future persisted `SourceDefinition` contract.
+The contract remains a draft-only UI contract serializable to JSON and the Flask
+session. SQLite stores versioned snapshots of this contract in
+`source_definition_versions`; it is not yet the runtime `SourceDefinition` or
+`SourceRegistry` contract.
 
 Identifiers are represented as strings. Values such as `001234` are never coerced
 to integers by the sample inspector. Raw composed header identity remains
@@ -99,11 +113,14 @@ Transforms are an explicit allow-list; arbitrary Python is never evaluated. The
 
 ## 5. Isolation guarantees
 
-The prototype:
+The configuration library:
 
-- stores drafts only in the signed Flask session;
+- stores draft and approved template snapshots in an additive SQLite table;
+- keeps the current editing pointer in the signed Flask session;
+- records the actor and timestamps for creation, edits and approval;
+- preserves approved versions and starts a new version when further configuration is needed;
 - does not use the governed employee-field catalog for source selection;
-- captures identity governance only in the signed browser session;
+- persists identity governance with the versioned template snapshot;
 - never creates `ImportBatch`, `IngestionRecord` or `QuarantineRecord` rows;
 - never writes source facts or the star schema;
 - never invokes Business Rules, matching, `EmployeeService` or canonical promotion;
@@ -116,14 +133,15 @@ not passed to `IngestionBatchService`, `IngestionOrchestrator` or any source
 adapter. Employee/canonical mapping is deliberately not part of this screen;
 the Employee Engine will own that later. Identity governance is declared here,
 but the future Identity Resolver/Employee Engine will execute it only after
-facts are committed. A later phase may introduce persisted immutable
-definitions, policy snapshots and a registry only after this workflow is
-accepted.
+facts are committed. The current persisted snapshots are library records only;
+a runtime registry and batch-pinned policy snapshots remain future work.
 
 ## 7. Files
 
 - `iam_automation/application/ingestion/configuration_contracts.py`
 - `iam_automation/application/ingestion/configuration_service.py`
+- `iam_automation/application/ingestion/template_repository.py`
+- `iam_automation/templates/admin/ingestion_template_library.html`
 - `iam_automation/interfaces/web/ingestion_configuration_routes.py`
 - `iam_automation/templates/admin/ingestion_source_configuration.html`
 - `iam_automation/static/css/app.css`
@@ -133,12 +151,13 @@ accepted.
 
 ## 8. Current limitations and open questions
 
-- Drafts are browser-session scoped and disappear when the session is reset.
+- Sample bytes remain in memory for a short time; saved definitions remain in SQLite.
+- Approval validates the current draft contract and freezes a version, but does not publish or activate it.
 - Only the first validation row is currently rendered by the prototype; the
   contract supports multiple rows for the next UI iteration.
 - Preview typing and validation intentionally cover the first safe subset, not a
   complete ETL transform system.
-- The team still needs to decide whether drafts later move to a local file,
-  dedicated draft persistence or an approved configuration publication workflow.
+- Approval authority is limited to application and master administrators; the
+  operational publication authority remains undecided.
 - The future definition version must be pinned to a batch before production
   configuration can be activated.

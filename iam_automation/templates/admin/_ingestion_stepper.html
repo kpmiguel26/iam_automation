@@ -1,0 +1,14 @@
+<nav id="ingestion-stepper" class="ingestion-stepper surface mt-4" aria-label="Configuration progress" hx-swap-oob="outerHTML">
+  {% set steps = [
+    ('READ', 'Choose a file', '#upload-step'),
+    ('UNDERSTAND', 'Choose header and data', '#sample-workspace'),
+    ('SELECT', 'Choose fields and types', '#sample-workspace'),
+    ('CHECK', 'Preview the draft', '#sample-workspace')
+  ] %}
+  {% for label, hint, target in steps %}
+    <a href="{{ target }}" class="ingestion-step {% if loop.index == ingestion_step %}active{% elif loop.index < ingestion_step %}completed{% endif %}" {% if loop.index == ingestion_step %}aria-current="step"{% endif %}>
+      <span class="ingestion-step-number" aria-hidden="true">{% if loop.index < ingestion_step %}✓{% else %}{{ loop.index }}{% endif %}</span>
+      <span><strong>{{ label }}</strong><small>{{ hint }}</small></span>
+    </a>
+  {% endfor %}
+</nav>

@@ -1,5 +1,6 @@
 {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+{% set ingestion_step = 2 if structure else 1 %}{% include "admin/_ingestion_stepper.html" %}
 {% if structure %}
 <section class="sample-choice-card" aria-labelledby="sample-choice-title">
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">

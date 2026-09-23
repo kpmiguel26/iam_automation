@@ -361,6 +361,13 @@ The policy has these guardrails:
   Employee UUID.
 - `EVIDENCE_ONLY` cannot match or create identity; its facts remain available
   for audit and analysis.
+- Employee-linked validation/enrichment templates require at least one included
+  `STRONG` identifier selected for matching. An `IDENTITY_SEED` template with
+  `can_create_employee: true` requires at least two distinct included `STRONG`
+  identifiers; both must be selected for matching and individually authorized
+  to create identity. A seed template without creation permission still requires
+  one `STRONG` matching identifier. `EVIDENCE_ONLY` is exempt because it does
+  not link facts to an Employee.
 - A template may nominate at most three source fields for identity matching.
   The laboratory enforces this limit in the UI and in server-side validation.
 - `SUPPORTING` fields such as names, email addresses and dates may explain or
@@ -402,13 +409,14 @@ uses local SQLite as its governed runtime snapshot, has versioned catalog tables
 and needs auditability and controlled publication. JSON may remain an import/export
 format, not the runtime source of truth.
 
-No new SourceDefinition tables are created by the current configuration
-laboratory. The current `dim_source`, `dim_field` and `source_field_mapping`
-tables remain reusable for the source-field catalog, but identity governance is
-definition-level policy rather than an employee-field mapping. A later
-publication phase must persist immutable definition versions, the identity
-policy, reader settings and the physical fact-table contract together. Saving a
-browser draft must never create a fact table or activate a watcher.
+The configuration library now stores versioned UI-template snapshots in the
+additive `source_definition_versions` table. The current `dim_source`,
+`dim_field` and `source_field_mapping` tables remain reusable for the source-field
+catalog, but identity governance is definition-level policy rather than an
+employee-field mapping. These saved/approved snapshots are not yet the runtime
+`SourceDefinition` or a `SourceRegistry` entry. A later publication phase must
+define that adapter, pin definitions to batches and govern activation. Saving or
+approving a template never creates a fact table or activates a watcher.
 
 ## 6. Canonical mapping
 
@@ -732,7 +740,7 @@ Conceptual flow:
 1. Read a bounded CSV/XLSX sample without connecting the watcher.
 2. Show a raw worksheet grid and allow one or more header/context rows.
 3. Compose multiline headers per column and allow draft field-key edits.
-4. Describe a DRAFT source definition in the browser session.
+4. Describe a DRAFT source template and save versioned snapshots to SQLite.
 5. Review suggested field types while preserving identifiers as strings.
 6. Select source columns, accept or override inferred data types and configure
    source-level transforms.
@@ -740,8 +748,8 @@ Conceptual flow:
 8. Configure required/optional fields and structural validations.
 9. Test against a sample artifact and review diagnostics without staging.
 
-The future production UI may add publication and activation after persisted
-definition versioning and authorization are approved.
+The future production UI may add runtime publication and activation after the
+registry contract, batch pinning and operational authorization are approved.
 
 This UI must remain a local governance tool. It must not expose arbitrary SQL,
 Python or physical database schema editing.

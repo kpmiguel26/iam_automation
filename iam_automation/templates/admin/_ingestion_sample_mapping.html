@@ -1,30 +1,186 @@
 {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+{% set ingestion_step = 4 if preview else (3 if inspection else 2) %}{% include "admin/_ingestion_stepper.html" %}
 {% if inspection %}
 <section class="sample-data-card" aria-labelledby="sample-data-title">
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
-    <div><p class="eyebrow mb-1">Step 3 · Understand the report</p><h2 id="sample-data-title" class="h4 mb-1">Review the data before selecting columns</h2><p class="small text-secondary mb-0">{{ inspection.rows_detected }} row(s) detected · {{ inspection.headers|length }} column(s) found. The preview shows only a small sample.</p></div>
-    <span class="badge text-bg-light border">{{ inspection.selected_sheet or 'CSV file' }} · header {{ inspection.headers|length and 'selected' or 'not found' }}</span>
+    <div>
+      <p class="eyebrow mb-1">Step 3 · Understand the report</p>
+      <h2 id="sample-data-title" class="h4 mb-1">Review the data before selecting columns and employee identity settings</h2>
+      <p class="small text-secondary mb-0">{% if inspection.saved_template %}Saved template · {{ inspection.headers|length }} configured column(s). Read a new sample above if you need to inspect example rows.{% else %}{{ inspection.rows_detected }} row(s) detected · {{ inspection.headers|length }} column(s) found. The preview shows a small sample.{% endif %}</p>
+    </div>
+    <span class="badge text-bg-light border">{{ inspection.selected_sheet or 'CSV file' }} · headers selected</span>
   </div>
-  <div class="table-responsive border rounded mb-4"><table class="table table-sm align-middle mb-0"><caption class="visually-hidden">Sample rows from the uploaded report</caption><thead><tr>{% for header in inspection.headers %}<th scope="col">{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in inspection.rows[:8] %}<tr>{% for header in inspection.headers %}<td>{{ row.get(header, '') }}</td>{% endfor %}</tr>{% else %}<tr><td class="text-secondary">No non-empty data rows were found below the selected header.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="table-responsive border rounded mb-4">
+    <table class="table table-sm align-middle mb-0">
+      <caption class="visually-hidden">Sample rows from the uploaded report</caption>
+      <thead><tr>{% for header in inspection.headers %}<th scope="col">{{ header }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in inspection.rows[:8] %}<tr>{% for header in inspection.headers %}<td>{{ row.get(header, '') }}</td>{% endfor %}</tr>
+        {% else %}<tr><td class="text-secondary">No non-empty data rows were found below the selected header.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
 
-  <form method="post" action="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-target="#sample-workspace" hx-swap="innerHTML focus-scroll:false">
-    <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3"><div><p class="eyebrow mb-1">Step 4 · Select the source schema</p><h2 class="h5 mb-1">Choose columns and identity signals</h2><p class="small text-secondary mb-0">Select the source columns to import. You may nominate up to three reliable identifiers for future matching; employee-field mapping comes later.</p></div><span class="badge text-bg-light border">Source schema + identity authority</span></div>
-    <div class="row g-3 mb-3"><div class="col-md-5"><label class="form-label" for="draft-display-name">Report name</label><input class="form-control" id="draft-display-name" name="display_name" value="{{ draft.display_name }}" required></div><div class="col-md-3"><label class="form-label" for="draft-source-id">Internal key</label><input class="form-control" id="draft-source-id" name="source_id" value="{{ draft.source_id }}" aria-describedby="draft-key-help"><div id="draft-key-help" class="form-text">Used for this draft only.</div></div><div class="col-md-4"><label class="form-label" for="draft-description">What is this report?</label><input class="form-control" id="draft-description" name="description" value="{{ draft.description }}" placeholder="Optional description"></div></div>
+  <form id="identity-guidance-form" method="post" action="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-target="#sample-workspace" hx-swap="innerHTML focus-scroll:false">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+      <div>
+        <p class="eyebrow mb-1">Step 3 · Decide how this report may be used</p>
+        <h2 class="h4 mb-1">First, what should this report do with employee identity?</h2>
+        <p class="small text-secondary mb-0">Choose the closest description. This sets draft permissions; this page never creates or matches employees.</p>
+      </div>
+      <span class="badge text-bg-warning-subtle border border-warning-subtle">Draft settings only</span>
+    </div>
 
-    <section class="template-authority-bar mb-4" aria-labelledby="identity-governance-title">
-      <div class="template-authority-heading"><div><p class="eyebrow mb-1">Template authority</p><h3 id="identity-governance-title" class="h5 mb-1">What authority does this report have over identity?</h3><p class="small text-secondary mb-0">This policy is a draft hint for the future Identity Resolver. Nothing matches employees or creates UUIDs here.</p></div><span class="badge text-bg-warning-subtle border border-warning-subtle">Draft only</span></div>
-      <div class="row g-3 align-items-end mt-1"><div class="col-lg-5"><label class="form-label" for="identity-role">Template role</label><select class="form-select" id="identity-role" name="identity_role" aria-describedby="identity-role-help" hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-trigger="change" hx-include="closest form" hx-target="#sample-workspace" hx-swap="innerHTML">{% for role in identity_roles %}<option value="{{ role }}" {% if draft.identity_governance.role == role %}selected{% endif %}>{{ identity_role_labels.get(role, role|replace('_', ' ')|title) }}</option>{% endfor %}</select><div id="identity-role-help" class="form-text">{{ identity_role_descriptions.get(draft.identity_governance.role, '') }}</div></div><div class="col-lg-4"><div class="identity-create-toggle"><input class="form-check-input identity-create-checkbox" id="identity-can-create" name="identity_can_create_employee" type="checkbox" {% if draft.identity_governance.role == 'IDENTITY_SEED' and draft.identity_governance.can_create_employee %}checked{% endif %} {% if draft.identity_governance.role != 'IDENTITY_SEED' %}disabled{% endif %}><label class="form-check-label" for="identity-can-create"><strong>Can create Employee UUID?</strong><span>{% if draft.identity_governance.role == 'IDENTITY_SEED' %}Only a strong identifier may be allowed to create identity.{% else %}Available only when the template role is Identity Seed.{% endif %}</span></div></div><div class="col-lg-3"><div class="identity-governance-note"><strong>Field guidance</strong><span>Strong can support creation. Supporting helps review a match, but never creates one alone.</span></div></div></div>
-      <div id="identity-matching-help" class="identity-matching-summary mt-3" role="status"><strong>Identity matching fields: {{ identity_matching_count }}/{{ identity_matching_limit }}</strong>. {% if identity_matching_count >= identity_matching_limit %}You have reached the limit; other choices are disabled. Uncheck one to choose a different field.{% else %}Choose reliable identifiers such as Employee ID, NUID or Logon ID. Names and dates are supporting context, not unique identifiers.{% endif %}</div>
+    <fieldset id="identity-guidance" class="identity-guidance" data-identity-limit="{{ identity_matching_limit }}" data-role="{{ draft.identity_governance.role }}">
+      <legend class="visually-hidden">How this report may be used with employee identity</legend>
+      <div class="identity-role-options">
+        <label class="identity-role-card {% if draft.identity_governance.role == 'IDENTITY_SEED' %}is-selected{% endif %}" for="identity-role-seed">
+          <input class="form-check-input identity-role-choice identity-guided-control" id="identity-role-seed" type="radio" name="identity_role" value="IDENTITY_SEED" {% if draft.identity_governance.role == 'IDENTITY_SEED' %}checked{% endif %}
+            hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-trigger="change" hx-include="closest form" hx-target="#sample-workspace" hx-swap="innerHTML focus-scroll:false">
+          <span class="identity-role-copy">
+            <strong>This report can introduce new employees</strong>
+            <small>Use when this is a trusted source for people who may not exist in IAM yet.</small>
+            <span class="identity-role-tech">Contract role: Identity Seed</span>
+          </span>
+        </label>
+        <label class="identity-role-card {% if draft.identity_governance.role == 'IDENTITY_ENRICHMENT' %}is-selected{% endif %}" for="identity-role-enrichment">
+          <input class="form-check-input identity-role-choice identity-guided-control" id="identity-role-enrichment" type="radio" name="identity_role" value="IDENTITY_ENRICHMENT" {% if draft.identity_governance.role == 'IDENTITY_ENRICHMENT' %}checked{% endif %}
+            hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-trigger="change" hx-include="closest form" hx-target="#sample-workspace" hx-swap="innerHTML focus-scroll:false">
+          <span class="identity-role-copy">
+            <strong>This report can find employees who already exist</strong>
+            <small>Use its identifiers to connect incoming data to existing employees. It cannot introduce a new identity.</small>
+            <span class="identity-role-tech">Contract role: Identity Enrichment</span>
+          </span>
+        </label>
+        <label class="identity-role-card {% if draft.identity_governance.role == 'EVIDENCE_ONLY' %}is-selected{% endif %}" for="identity-role-evidence">
+          <input class="form-check-input identity-role-choice identity-guided-control" id="identity-role-evidence" type="radio" name="identity_role" value="EVIDENCE_ONLY" {% if draft.identity_governance.role == 'EVIDENCE_ONLY' %}checked{% endif %}
+            hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-trigger="change" hx-include="closest form" hx-target="#sample-workspace" hx-swap="innerHTML focus-scroll:false">
+          <span class="identity-role-copy">
+            <strong>Keep this report as evidence only</strong>
+            <small>Include the information for review and reporting, without using it to identify employees.</small>
+            <span class="identity-role-tech">Contract role: Evidence Only</span>
+          </span>
+        </label>
+      </div>
+
+      <div class="identity-source-permission {% if draft.identity_governance.role != 'IDENTITY_SEED' %}is-unavailable{% endif %}">
+        <div class="form-check">
+          <input class="form-check-input identity-create-checkbox identity-guided-control" id="identity-can-create" name="identity_can_create_employee" type="checkbox" value="on"
+            {% if draft.identity_governance.role == 'IDENTITY_SEED' and draft.identity_governance.can_create_employee %}checked{% endif %}
+            {% if draft.identity_governance.role != 'IDENTITY_SEED' %}disabled{% endif %}
+            hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-trigger="change" hx-include="closest form" hx-target="#sample-workspace" hx-swap="innerHTML focus-scroll:false">
+          <label class="form-check-label" for="identity-can-create"><strong>Authorize this report to propose new Employee UUIDs</strong></label>
+        </div>
+        <p class="small text-secondary mb-0">This source-level permission is only the first condition. Only a strong identifier may be allowed to create identity. At least one included field must also be marked <strong>Strong</strong> and explicitly allowed to create.</p>
+      </div>
+      {% set strong_matching_ids = draft.identity_governance.identifiers|selectattr('can_match')|selectattr('strength', 'equalto', 'STRONG')|list %}
+      {% set strong_creation_ids = draft.identity_governance.identifiers|selectattr('can_create_identity')|list %}
+      {% set needs_strong_ids = (draft.identity_governance.role == 'IDENTITY_SEED' and draft.identity_governance.can_create_employee and (strong_matching_ids|length < 2 or strong_creation_ids|length < 2)) or (draft.identity_governance.role == 'IDENTITY_ENRICHMENT' and strong_matching_ids|length < 1) or (draft.identity_governance.role == 'IDENTITY_SEED' and not draft.identity_governance.can_create_employee and strong_matching_ids|length < 1) %}
+      <p id="identity-mode-guidance" class="identity-mode-guidance {% if needs_strong_ids %}needs-attention{% endif %}" role="status" aria-live="polite">
+        {% if draft.identity_governance.role == 'IDENTITY_SEED' and draft.identity_governance.can_create_employee %}
+          To create Employee UUIDs, select at least 2 included Strong IDs for matching and authorize both for creation. Current: {{ strong_matching_ids|length }}/2 Strong IDs selected; {{ strong_creation_ids|length }}/2 authorized.
+        {% elif draft.identity_governance.role == 'IDENTITY_SEED' %}
+          This report can help find an existing employee with at least 1 Strong ID. New Employee UUID creation is not authorized.
+        {% elif draft.identity_governance.role == 'IDENTITY_ENRICHMENT' %}
+          To link this report to existing employees, select at least 1 included Strong ID for matching. This report cannot propose a new Employee UUID.
+        {% else %}
+          This report is retained as evidence. Identity matching and new Employee UUID creation are disabled.
+        {% endif %}
+      </p>
+    </fieldset>
+
+    <section class="identity-fields-section mt-4" aria-labelledby="identity-fields-title">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+        <div>
+        <p class="eyebrow mb-1">Step 3 · Choose columns and identity signals</p>
+          <h3 id="identity-fields-title" class="h5 mb-1">Which columns can identify the same person?</h3>
+          <p class="small text-secondary mb-0">Choose reliable identifiers such as Employee ID, NUID or Logon ID. Names and dates are supporting information, not unique IDs.</p>
+        </div>
+        <span class="badge text-bg-light border" id="identity-matching-count" aria-label="Identity matching fields: {{ identity_matching_count }}/{{ identity_matching_limit }}" aria-live="polite">{{ identity_matching_count }} of {{ identity_matching_limit }} identity fields selected</span>
+      </div>
+
+      <div class="alert alert-info py-2 small" role="note">
+        <strong>Strong</strong> means the value uniquely identifies a person and is dependable. <strong>Supporting</strong> means the value can help review a possible match, but cannot identify or create an employee by itself.
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-5"><label class="form-label" for="draft-display-name">Report name</label><input class="form-control" id="draft-display-name" name="display_name" value="{{ draft.display_name }}" required></div>
+        <div class="col-md-3"><label class="form-label" for="draft-source-id">Internal key</label><input class="form-control" id="draft-source-id" name="source_id" value="{{ draft.source_id }}" aria-describedby="draft-key-help" {% if session.get('ingestion_definition_version_id') %}readonly{% endif %}><div id="draft-key-help" class="form-text">Stable across saved versions of this report.</div></div>
+        <div class="col-md-4"><label class="form-label" for="draft-description">What is this report?</label><input class="form-control" id="draft-description" name="description" value="{{ draft.description }}" placeholder="Optional description"></div>
+      </div>
+
+      <div class="source-schema-list" role="list" aria-label="Source columns">
+        {% for field in draft.fields %}
+          {% set identity = identity_identifier_by_field.get(field.field_key) %}
+          <article class="source-schema-card {% if field.include %}is-included{% else %}is-excluded{% endif %}" role="listitem" data-identity-field>
+            <div class="source-schema-card-header">
+              <label class="source-field-toggle-label" for="field-include-{{ loop.index0 }}"><input class="form-check-input source-field-toggle" id="field-include-{{ loop.index0 }}" name="field_include_{{ loop.index0 }}" type="checkbox" {% if field.include %}checked{% endif %}> <span>Import this column into the report</span></label>
+              <span class="source-field-order">Column {{ loop.index }}</span>
+            </div>
+            <div class="source-field-raw"><span>Column in the uploaded file</span><strong title="{{ field.source_name }}">{{ field.source_name }}</strong></div>
+            <div class="source-field-controls">
+              <div><label class="form-label" for="field-key-{{ loop.index0 }}">Name in this draft</label><input class="form-control" id="field-key-{{ loop.index0 }}" name="field_key_{{ loop.index0 }}" value="{{ field.field_key }}" required></div>
+              <div>
+                <label class="form-label" for="field-type-{{ loop.index0 }}">Data type</label>
+                <select class="form-select" id="field-type-{{ loop.index0 }}" name="field_type_{{ loop.index0 }}" data-field-type {% if not field.include or (identity and (identity.can_match or identity.can_create_identity)) %}disabled{% endif %}>
+                  {% for field_type in field_types %}<option value="{{ field_type }}" {% if field.data_type == field_type %}selected{% endif %}>{{ field_type|title }}{% if field.inferred_type == field_type %} · suggested{% endif %}</option>{% endfor %}
+                </select>
+                <div class="form-text">Suggested: <strong>{{ field.inferred_type|title }}</strong>. You can change it unless this is an identity field.</div>
+                <div class="identity-type-guidance" data-field-type-guidance hidden>Identity values stay as text so IDs such as <code>001234</code> keep their leading zeroes.</div>
+              </div>
+              <div>
+                <label class="form-label" for="field-transform-{{ loop.index0 }}">Optional cleanup</label>
+                <select class="form-select" id="field-transform-{{ loop.index0 }}" name="field_transform_{{ loop.index0 }}" aria-describedby="field-transform-help-{{ loop.index0 }}">
+                  {% for transform in transforms %}<option value="{{ transform }}" {% if field.transform_name == transform %}selected{% endif %}>{{ transform_labels.get(transform, transform|replace('_', ' ')|title) }}{% if field.inferred_transform == transform %} · recommended{% endif %}</option>{% endfor %}
+                </select>
+                <div id="field-transform-help-{{ loop.index0 }}" class="source-field-recommendation"><strong>Recommended:</strong> {{ transform_labels.get(field.inferred_transform, field.inferred_transform) }}<span> — {{ transform_descriptions.get(field.inferred_transform, '') }}</span></div>
+              </div>
+            </div>
+
+            <fieldset class="source-field-identity">
+              <legend class="source-field-identity-heading">Identity settings for this column</legend>
+              <div class="source-field-identity-controls">
+                <div class="form-check">
+                  <input class="form-check-input identity-match-checkbox identity-guided-control" id="identity-match-{{ loop.index0 }}" name="identity_field_{{ loop.index0 }}_match" type="checkbox" {% if identity and identity.can_match %}checked{% endif %} {% if not field.include or draft.identity_governance.role == 'EVIDENCE_ONLY' or (identity_matching_count >= identity_matching_limit and not (identity and identity.can_match)) %}disabled{% endif %}
+                    hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-trigger="change" hx-include="closest form" hx-target="#sample-workspace" hx-swap="innerHTML focus-scroll:false">
+                  <label class="form-check-label" for="identity-match-{{ loop.index0 }}">Use this column to find a person</label>
+                </div>
+                <div>
+                  <label class="form-label" for="identity-strength-{{ loop.index0 }}">How reliable is this ID?</label>
+                  <select class="form-select form-select-sm identity-guided-control" id="identity-strength-{{ loop.index0 }}" name="identity_field_{{ loop.index0 }}_strength" data-identity-strength {% if not field.include or not (identity and identity.can_match) or draft.identity_governance.role == 'EVIDENCE_ONLY' %}disabled{% endif %}
+                    hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-trigger="change" hx-include="closest form" hx-target="#sample-workspace" hx-swap="innerHTML focus-scroll:false">
+                    {% for strength in identity_strengths %}<option value="{{ strength }}" {% if identity and identity.strength == strength %}selected{% elif not identity and strength == 'SUPPORTING' %}selected{% endif %}>{% if strength == 'STRONG' %}Strong · unique and dependable{% else %}Supporting · helpful context{% endif %}</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="form-check identity-field-create">
+                  <input class="form-check-input identity-guided-control" id="identity-create-{{ loop.index0 }}" name="identity_field_{{ loop.index0 }}_create" type="checkbox" {% if identity and identity.can_create_identity %}checked{% endif %} data-identity-create {% if not field.include or draft.identity_governance.role != 'IDENTITY_SEED' or not draft.identity_governance.can_create_employee or not (identity and identity.can_match) or not (identity and identity.strength == 'STRONG') %}disabled{% endif %}
+                    hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-trigger="change" hx-include="closest form" hx-target="#sample-workspace" hx-swap="innerHTML focus-scroll:false">
+                  <label class="form-check-label" for="identity-create-{{ loop.index0 }}">May authorize a new Employee UUID</label>
+                  <small>Available only for a Strong ID when this report has creation permission.</small>
+                </div>
+              </div>
+              <small class="source-field-recommendation">{{ identity_recommendations.get(field.field_key, '') }}</small>
+            </fieldset>
+            <input type="hidden" name="source_field_{{ loop.index0 }}" value="{{ field.source_name }}">
+          </article>
+        {% endfor %}
+      </div>
+
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+        <span class="small text-secondary">A report must have permission and a Strong field marked for creation before it could propose a new identity. This preview only checks the draft.</span>
+        <button class="btn btn-primary" type="submit">Save template to the library <span aria-hidden="true">→</span></button>
+      </div>
     </section>
-
-    <div class="source-schema-list" role="list" aria-label="Source columns">{% for field in draft.fields %}{% set identity = identity_identifier_by_field.get(field.field_key) %}<article class="source-schema-card {% if field.include %}is-included{% else %}is-excluded{% endif %}" role="listitem"><div class="source-schema-card-header"><label class="source-field-toggle-label" for="field-include-{{ loop.index0 }}"><input class="form-check-input source-field-toggle" id="field-include-{{ loop.index0 }}" name="field_include_{{ loop.index0 }}" type="checkbox" {% if field.include %}checked{% endif %}> <span>Import this column</span></label><span class="source-field-order">Column {{ loop.index }}</span></div><div class="source-field-raw"><span>Raw source column</span><strong title="{{ field.source_name }}">{{ field.source_name }}</strong></div><div class="source-field-controls"><div><label class="form-label" for="field-key-{{ loop.index0 }}">Draft field name</label><input class="form-control" id="field-key-{{ loop.index0 }}" name="field_key_{{ loop.index0 }}" value="{{ field.field_key }}" required></div><div><label class="form-label" for="field-type-{{ loop.index0 }}">Data type</label><select class="form-select" id="field-type-{{ loop.index0 }}" name="field_type_{{ loop.index0 }}">{% for field_type in field_types %}<option value="{{ field_type }}" {% if field.data_type == field_type %}selected{% endif %}>{{ field_type|title }}{% if field.inferred_type == field_type %} · suggested{% endif %}</option>{% endfor %}</select><div class="form-text">Suggested: <strong>{{ field.inferred_type|title }}</strong>. You can override it.</div></div><div><label class="form-label" for="field-transform-{{ loop.index0 }}">Optional cleanup</label><select class="form-select" id="field-transform-{{ loop.index0 }}" name="field_transform_{{ loop.index0 }}" aria-describedby="field-transform-help-{{ loop.index0 }}">{% for transform in transforms %}<option value="{{ transform }}" {% if field.transform_name == transform %}selected{% endif %}>{{ transform_labels.get(transform, transform|replace('_', ' ')|title) }}{% if field.inferred_transform == transform %} · recommended{% endif %}</option>{% endfor %}</select><div id="field-transform-help-{{ loop.index0 }}" class="source-field-recommendation"><strong>Recommended:</strong> {{ transform_labels.get(field.inferred_transform, field.inferred_transform) }}<span> — {{ transform_descriptions.get(field.inferred_transform, '') }}</span></div></div></div><div class="source-field-identity"><div class="source-field-identity-heading"><span>Identity use for this column</span><small>{{ identity_recommendations.get(field.field_key, '') }}</small></div><div class="source-field-identity-controls"><div class="form-check"><input class="form-check-input identity-match-checkbox" id="identity-match-{{ loop.index0 }}" name="identity_field_{{ loop.index0 }}_match" type="checkbox" hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-trigger="change" hx-include="closest form" hx-target="#sample-workspace" hx-swap="innerHTML" {% if identity and identity.can_match %}checked{% endif %} {% if (identity_matching_count >= identity_matching_limit and not (identity and identity.can_match)) or draft.identity_governance.role == 'EVIDENCE_ONLY' %}disabled{% endif %}><label class="form-check-label" for="identity-match-{{ loop.index0 }}">Use for matching</label></div><div><label class="form-label visually-hidden" for="identity-strength-{{ loop.index0 }}">Strength for {{ field.field_key }}</label><select class="form-select form-select-sm" id="identity-strength-{{ loop.index0 }}" name="identity_field_{{ loop.index0 }}_strength">{% for strength in identity_strengths %}<option value="{{ strength }}" {% if identity and identity.strength == strength %}selected{% elif not identity and strength == 'SUPPORTING' %}selected{% endif %}>{{ strength|title }}</option>{% endfor %}</select></div><div class="form-check"><input class="form-check-input" id="identity-create-{{ loop.index0 }}" name="identity_field_{{ loop.index0 }}_create" type="checkbox" {% if identity and identity.can_create_identity %}checked{% endif %}><label class="form-check-label" for="identity-create-{{ loop.index0 }}">May create identity</label></div></div></div><input type="hidden" name="source_field_{{ loop.index0 }}" value="{{ field.source_name }}"></article>{% endfor %}</div>
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3"><span class="small text-secondary">Identifiers such as <code>001234</code> remain text. This keeps the schema and governance in the browser draft only.</span><button class="btn btn-primary" type="submit">Keep draft in this session <span aria-hidden="true">→</span></button></div>
   </form>
 </section>
 
-<section class="surface p-4 mt-4" aria-labelledby="preview-title">
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3"><div><p class="eyebrow mb-1">Step 5 · Check your work</p><h2 id="preview-title" class="h5 mb-1">Test this draft</h2><p class="small text-secondary mb-0">This checks the selected source columns and types in memory. It does not run an import.</p></div><form method="post" action="{{ url_for('ingestion_configuration.preview_sample') }}" hx-post="{{ url_for('ingestion_configuration.preview_sample') }}" hx-target="#sample-workspace" hx-swap="innerHTML"><button class="btn btn-outline-primary" type="submit">Preview selected data</button></form></div>
+{% if not inspection.saved_template %}<section class="surface p-4 mt-4" aria-labelledby="preview-title">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+    <div><p class="eyebrow mb-1">Step 4 · Check your work</p><h2 id="preview-title" class="h5 mb-1">Preview this draft</h2><p class="small text-secondary mb-0">This checks the selected columns and types in memory. It does not run an import or match employees.</p></div>
+    <form method="post" action="{{ url_for('ingestion_configuration.preview_sample') }}" hx-post="{{ url_for('ingestion_configuration.preview_sample') }}" hx-target="#sample-workspace" hx-swap="innerHTML"><button class="btn btn-outline-primary" type="submit">Preview selected data</button></form>
+  </div>
   {% if preview %}<div class="preview-result mt-4">{% include "admin/_ingestion_preview_result.html" %}</div>{% endif %}
 </section>
+{% endif %}
 {% endif %}

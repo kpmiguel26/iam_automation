@@ -1,8 +1,8 @@
-"""Typed, non-persistent contracts for the ingestion configuration laboratory.
+"""Typed draft contracts for the ingestion template configuration laboratory.
 
-These contracts deliberately describe a draft configuration only.  They are not
-the persisted ``SourceDefinition`` planned for a later phase and must not be
-used by the production ingestion lifecycle yet.
+These contracts describe a draft configuration only. Versioned snapshots may be
+saved for review, but this is not the runtime ``SourceDefinition`` contract and
+must not be used by the production ingestion lifecycle yet.
 """
 
 from __future__ import annotations
@@ -71,8 +71,8 @@ DRAFT_IDENTITY_ROLE_LABELS: dict[str, str] = {
     "EVIDENCE_ONLY": "Evidence Only",
 }
 DRAFT_IDENTITY_ROLE_DESCRIPTIONS: dict[str, str] = {
-    "IDENTITY_SEED": "May propose new Employee UUIDs when a strong create identifier is present.",
-    "IDENTITY_ENRICHMENT": "May help match existing employees, but cannot create a new Employee UUID.",
+    "IDENTITY_SEED": "Needs at least two Strong identifiers authorized for matching and creation before it can propose a new Employee UUID.",
+    "IDENTITY_ENRICHMENT": "Needs at least one Strong identifier to find existing employees; cannot create a new Employee UUID.",
     "EVIDENCE_ONLY": "Keeps source evidence available without authorizing identity matching or creation.",
 }
 DRAFT_IDENTITY_STRENGTHS: tuple[str, ...] = ("STRONG", "SUPPORTING")

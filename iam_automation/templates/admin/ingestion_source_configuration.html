@@ -12,16 +12,12 @@ Safety: This page reads samples in memory and produces DRAFT metadata only.
     <div class="d-flex flex-wrap gap-2 align-items-center"><span class="status-pill status-pending"><span></span>Draft only</span><span class="role-ribbon">No watcher · No activation</span></div>
   </div>
 
-  <div class="alert alert-info mt-4 d-flex gap-3 align-items-start" role="note"><span class="fs-5" aria-hidden="true">◇</span><div><strong>Safe design laboratory.</strong> Nothing is imported or activated here. The sample is read temporarily in memory, and the configuration remains a draft in this browser session.</div></div>
+  <div class="alert alert-info mt-4 d-flex gap-3 align-items-start" role="note"><span class="fs-5" aria-hidden="true">◇</span><div class="flex-grow-1"><strong>Template design only.</strong> Saving stores a versioned template in the database. Approval keeps that version available for the next configuration stage; it does not activate a watcher or run an import.</div><a class="btn btn-sm btn-outline-primary" href="{{ url_for('ingestion_configuration.template_library') }}">Open template library</a></div>
   {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
   {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
 
-  <nav class="ingestion-stepper surface mt-4" aria-label="Configuration progress">
-    <a href="#upload-step" class="ingestion-step active"><span class="ingestion-step-number">1</span><span><strong>READ</strong><small>Choose a file</small></span></a>
-    <a href="#sample-workspace" class="ingestion-step"><span class="ingestion-step-number">2</span><span><strong>UNDERSTAND</strong><small>Choose header and data</small></span></a>
-    <a href="#sample-workspace" class="ingestion-step"><span class="ingestion-step-number">3</span><span><strong>SELECT</strong><small>Choose fields and types</small></span></a>
-    <a href="#sample-workspace" class="ingestion-step"><span class="ingestion-step-number">4</span><span><strong>CHECK</strong><small>Preview the draft</small></span></a>
-  </nav>
+  {% set ingestion_step = 4 if preview else (3 if inspection else (2 if structure else 1)) %}
+  {% include "admin/_ingestion_stepper.html" %}
 
   <section id="upload-step" class="surface p-4 mt-4">
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3"><div><p class="eyebrow mb-1">Step 1 · Read a sample</p><h2 class="h4 mb-1">Which report would you like to describe?</h2><p class="small text-secondary mb-0">CSV and Excel files are supported. You can change the worksheet and header row after reading the file.</p></div><span class="badge text-bg-light border">Up to 20 MB · preview only</span></div>
@@ -48,7 +44,7 @@ Safety: This page reads samples in memory and produces DRAFT metadata only.
 
     document.addEventListener('htmx:beforeRequest', function (event) {
       var source = event.detail && event.detail.elt;
-      if (!source || !source.matches || !source.matches('.identity-match-checkbox')) return;
+      if (!source || !source.matches || !source.matches('.identity-guided-control')) return;
       matchingSelection = { id: source.id, top: window.scrollY };
     });
 
@@ -62,4 +58,5 @@ Safety: This page reads samples in memory and produces DRAFT metadata only.
     });
   }());
 </script>
+<script src="{{ url_for('static', filename='js/ingestion-identity-guidance.js', v=static_version) }}"></script>
 {% endblock %}

@@ -35,6 +35,7 @@ from ...application.ingestion.configuration_contracts import (
     DraftValidationDefinition,
 )
 from ...application.ingestion.configuration_service import DraftConfigurationService, suggest_source_transform
+from ...application.ingestion.template_repository import TemplateRepository
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
 
 
@@ -42,9 +43,10 @@ SESSION_KEY = "ingestion_configuration_draft"
 
 
 def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
-    """Create the non-persistent draft configuration blueprint."""
+    """Create the persisted, non-activating template configuration blueprint."""
     blueprint = Blueprint("ingestion_configuration", __name__, url_prefix="/admin/ingestion-sources")
     service = DraftConfigurationService(database_path)
+    templates = TemplateRepository(database_path)
     sample_artifacts: dict[str, tuple[float, str, bytes]] = {}
 
     def admin_required(view: Callable):
@@ -56,6 +58,19 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
             return view(*args, **kwargs)
 
         return wrapped
+
+    def approver_required(view: Callable):
+        @wraps(view)
+        @admin_required
+        def wrapped(*args, **kwargs):
+            roles = {normalize_role(role) for role in session.get("iam_roles", ())}
+            if not roles & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}:
+                return "Application administrator approval is required.", 403
+            return view(*args, **kwargs)
+        return wrapped
+
+    def current_actor() -> str:
+        return str(session.get("iam_user") or "administrator")
 
     def render_page(*, draft: DraftSourceDefinition, message: str | None = None, error: str | None = None, preview: dict | None = None, structure: dict | None = None, inspection: dict | None = None, artifact_id: str | None = None, raw_rows: tuple | None = None, recommended_header_rows: tuple[int, ...] = (), raw_column_count: int | None = None, status_code: int = 200):
         return render_template(
@@ -198,6 +213,37 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
         draft = _draft_from_mapping_form(DraftSourceDefinition.from_dict(session.get(SESSION_KEY)), request.form)
         selection = session.get("ingestion_sample_selection") or {}
         artifact = get_sample(str(selection.get("artifact_id", "")))
+        if artifact is None and selection.get("artifact_id"):
+            return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, error="The sample preview expired. Read the file again.", status_code=410)
+        if artifact is None:
+            inspection = _saved_template_inspection(draft)
+        else:
+            header_rows = _selected_header_rows(selection)
+            inspection = service.inspect_sample(artifact[0], artifact[1], sheet_name=str(selection.get("sheet_name", "")), header_row=max(header_rows), header_rows=header_rows)
+        errors = DraftConfigurationService.validate(draft)
+        if errors:
+            return partial_or_page(
+                "admin/_ingestion_sample_mapping.html",
+                draft=draft,
+                inspection=inspection,
+                artifact_id=str(selection.get("artifact_id", "")),
+                error=" ".join(errors),
+                status_code=400,
+            )
+        try:
+            saved = templates.save_draft(draft.to_dict(), current_actor(), session.get("ingestion_definition_version_id"))
+        except ValueError as exc:
+            return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, artifact_id=str(selection.get("artifact_id", "")), error=str(exc), status_code=400)
+        session[SESSION_KEY] = draft.to_dict()
+        session["ingestion_definition_version_id"] = saved["definition_version_id"]
+        return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, artifact_id=str(selection.get("artifact_id", "")), message=f"Source schema saved in this browser session and in the template library as draft version {saved['version_number']}.")
+
+    @blueprint.post("/sample/preview")
+    @admin_required
+    def preview_sample():
+        draft = DraftSourceDefinition.from_dict(session.get(SESSION_KEY))
+        selection = session.get("ingestion_sample_selection") or {}
+        artifact = get_sample(str(selection.get("artifact_id", "")))
         if artifact is None:
             return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, error="The sample preview expired. Read the file again.", status_code=410)
         header_rows = _selected_header_rows(selection)
@@ -212,19 +258,6 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
                 error=" ".join(errors),
                 status_code=400,
             )
-        session[SESSION_KEY] = draft.to_dict()
-        return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, artifact_id=str(selection.get("artifact_id", "")), message="Source schema saved in this browser session. It is still a draft.")
-
-    @blueprint.post("/sample/preview")
-    @admin_required
-    def preview_sample():
-        draft = DraftSourceDefinition.from_dict(session.get(SESSION_KEY))
-        selection = session.get("ingestion_sample_selection") or {}
-        artifact = get_sample(str(selection.get("artifact_id", "")))
-        if artifact is None:
-            return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, error="The sample preview expired. Read the file again.", status_code=410)
-        header_rows = _selected_header_rows(selection)
-        inspection = service.inspect_sample(artifact[0], artifact[1], sheet_name=str(selection.get("sheet_name", "")), header_row=max(header_rows), header_rows=header_rows)
         return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, preview=service.preview(draft, inspection), artifact_id=str(selection.get("artifact_id", "")), message="Preview completed in memory. No production ingestion objects were created.")
 
     @blueprint.route("", methods=["GET", "POST"])
@@ -239,6 +272,8 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
             action = "remove_field"
         if action == "reset":
             session.pop(SESSION_KEY, None)
+            session.pop("ingestion_definition_version_id", None)
+            session.pop("ingestion_sample_selection", None)
             return redirect(url_for("ingestion_configuration.configuration_page"))
 
         draft = _draft_from_form(request.form)
@@ -259,8 +294,13 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
         if errors and action in {"save", "preview"}:
             return render_page(draft=draft, error=" ".join(errors), status_code=400)
         if action == "save":
+            try:
+                saved = templates.save_draft(draft.to_dict(), current_actor(), session.get("ingestion_definition_version_id"))
+            except ValueError as exc:
+                return render_page(draft=draft, error=str(exc), status_code=400)
             session[SESSION_KEY] = draft.to_dict()
-            return render_page(draft=draft, message="Draft saved in this browser session. It is not active and is not persisted to the production database.")
+            session["ingestion_definition_version_id"] = saved["definition_version_id"]
+            return render_page(draft=draft, message=f"Template saved to the library as draft version {saved['version_number']}.")
         if action == "preview":
             upload = request.files.get("sample_file")
             if not upload or not upload.filename:
@@ -280,7 +320,79 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
                 return render_page(draft=draft, error=str(exc), status_code=400)
         return render_page(draft=draft, error="Choose a supported draft action.", status_code=400)
 
+    @blueprint.get("/library")
+    @admin_required
+    def template_library():
+        return render_template("admin/ingestion_template_library.html", templates=templates.list_versions())
+
+    @blueprint.get("/new")
+    @admin_required
+    def start_new_template():
+        session.pop(SESSION_KEY, None)
+        session.pop("ingestion_definition_version_id", None)
+        session.pop("ingestion_sample_selection", None)
+        return redirect(url_for("ingestion_configuration.configuration_page"))
+
+    @blueprint.get("/library/<version_id>/edit")
+    @admin_required
+    def edit_saved_draft(version_id: str):
+        saved = templates.get(version_id)
+        if saved is None:
+            return "Template version not found.", 404
+        if saved["status"] != "DRAFT":
+            return redirect(url_for("ingestion_configuration.create_version", version_id=version_id))
+        draft = DraftSourceDefinition.from_dict(saved["definition"])
+        session[SESSION_KEY] = draft.to_dict()
+        session["ingestion_definition_version_id"] = version_id
+        session.pop("ingestion_sample_selection", None)
+        return render_page(draft=draft, inspection=_saved_template_inspection(draft), message=f"Editing saved draft version {saved['version_number']}.")
+
+    @blueprint.post("/library/<version_id>/approve")
+    @approver_required
+    def approve_template(version_id: str):
+        saved = templates.get(version_id)
+        if saved is None:
+            return "Template version not found.", 404
+        errors = DraftConfigurationService.validate(DraftSourceDefinition.from_dict(saved["definition"]))
+        if errors:
+            return render_template("admin/ingestion_template_library.html", templates=templates.list_versions(), error=" ".join(errors)), 400
+        try:
+            templates.approve(version_id, current_actor())
+        except ValueError as exc:
+            return render_template("admin/ingestion_template_library.html", templates=templates.list_versions(), error=str(exc)), 409
+        return redirect(url_for("ingestion_configuration.template_library"))
+
+    @blueprint.post("/library/<version_id>/new-version")
+    @admin_required
+    def create_version(version_id: str):
+        saved = templates.get(version_id)
+        if saved is None:
+            return "Template version not found.", 404
+        if saved["status"] != "APPROVED":
+            return redirect(url_for("ingestion_configuration.edit_saved_draft", version_id=version_id))
+        draft = DraftSourceDefinition.from_dict(saved["definition"])
+        version = templates.save_draft(draft.to_dict(), current_actor())
+        session[SESSION_KEY] = draft.to_dict()
+        session["ingestion_definition_version_id"] = version["definition_version_id"]
+        session.pop("ingestion_sample_selection", None)
+        return render_page(draft=draft, inspection=_saved_template_inspection(draft), message=f"New draft version {version['version_number']} created from approved version {saved['version_number']}.")
+
     return blueprint
+
+
+def _saved_template_inspection(draft: DraftSourceDefinition) -> dict[str, Any]:
+    headers = tuple(field.source_name for field in draft.fields)
+    return {
+        "filename": "Saved template",
+        "format": draft.reader_settings.format,
+        "sheet_names": (draft.reader_settings.sheet_name,) if draft.reader_settings.sheet_name else (),
+        "selected_sheet": draft.reader_settings.sheet_name,
+        "header_rows": draft.reader_settings.header_rows,
+        "headers": headers,
+        "rows_detected": 0,
+        "rows": (),
+        "saved_template": True,
+    }
 
 
 def _draft_from_form(form) -> DraftSourceDefinition:
@@ -393,16 +505,24 @@ def _draft_from_inspection(draft: DraftSourceDefinition, inspection: dict[str, A
 
 
 def _draft_from_mapping_form(draft: DraftSourceDefinition, form) -> DraftSourceDefinition:
-    fields = tuple(
-        replace(
+    fields = []
+    for index, field in enumerate(draft.fields):
+        identity_selected = (
+            form.get(f"identity_field_{index}_match") == "on"
+            or form.get(f"identity_field_{index}_create") == "on"
+        )
+        fields.append(replace(
             field,
             include=form.get(f"field_include_{index}") == "on",
             field_key=str(form.get(f"field_key_{index}", field.field_key)).strip() or field.field_key,
-            data_type=str(form.get(f"field_type_{index}", field.data_type)).strip() or field.data_type,
+            data_type=(
+                "string" if identity_selected
+                else str(form.get(f"field_type_{index}", field.data_type)).strip() or field.data_type
+            ),
+            identifier=identity_selected,
             transform_name=str(form.get(f"field_transform_{index}", field.transform_name)).strip() or field.transform_name,
-        )
-        for index, field in enumerate(draft.fields)
-    )
+        ))
+    fields = tuple(fields)
     return replace(
         _draft_with_source_basics(draft, form, draft.reader_settings.filename_pattern or draft.display_name),
         fields=fields,
@@ -433,7 +553,7 @@ def _identity_governance_from_form(
         strength = str(form.get(f"identity_field_{index}_strength", "SUPPORTING")).strip().upper()
         if strength not in DRAFT_IDENTITY_STRENGTHS:
             strength = "SUPPORTING"
-        if role != "IDENTITY_SEED":
+        if role != "IDENTITY_SEED" or not can_create_employee or not can_match:
             can_create_identity = False
         if strength != "STRONG":
             can_create_identity = False
