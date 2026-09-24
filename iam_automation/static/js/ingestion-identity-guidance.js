@@ -10,7 +10,10 @@
     var role = roleChoice ? roleChoice.value : 'EVIDENCE_ONLY';
     var sourcePermission = form.querySelector('#identity-can-create');
     var mayCreate = role === 'IDENTITY_SEED' && !!sourcePermission && sourcePermission.checked;
-    var limit = Number(guidance.dataset.identityLimit || 3);
+    var configuredLimit = Number(guidance.dataset.identityLimit);
+    var limit = Number.isInteger(configuredLimit) && configuredLimit > 0
+      ? configuredLimit
+      : form.querySelectorAll('[data-identity-field]').length;
     var selectedCount = 0;
     var strongMatchingCount = 0;
     var createAuthorizedFields = 0;

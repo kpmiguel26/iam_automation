@@ -76,9 +76,8 @@ DRAFT_IDENTITY_ROLE_DESCRIPTIONS: dict[str, str] = {
     "EVIDENCE_ONLY": "Keeps source evidence available without authorizing identity matching or creation.",
 }
 DRAFT_IDENTITY_STRENGTHS: tuple[str, ...] = ("STRONG", "SUPPORTING")
-# Keep the laboratory deliberately conservative: a template may nominate at
-# most three source fields as identity-matching signals.
-MAX_IDENTITY_MATCH_FIELDS = 3
+# Existing and new templates start with this configurable per-template value.
+DEFAULT_IDENTITY_MATCHING_LIMIT = 3
 
 
 @dataclass(frozen=True)
@@ -139,6 +138,7 @@ class DraftIdentityGovernance:
     role: str = "EVIDENCE_ONLY"
     can_create_employee: bool = False
     identifiers: tuple[DraftIdentityIdentifier, ...] = ()
+    max_matching_fields: int = DEFAULT_IDENTITY_MATCHING_LIMIT
 
 
 @dataclass(frozen=True)
@@ -220,6 +220,12 @@ class DraftSourceDefinition:
             if isinstance(item, dict)
         )
         identity_payload = payload.get("identity_governance") or {}
+        try:
+            max_matching_fields = int(identity_payload.get("max_matching_fields", DEFAULT_IDENTITY_MATCHING_LIMIT))
+        except (TypeError, ValueError):
+            max_matching_fields = DEFAULT_IDENTITY_MATCHING_LIMIT
+        if max_matching_fields < 1:
+            max_matching_fields = DEFAULT_IDENTITY_MATCHING_LIMIT
         identity_identifiers = tuple(
             DraftIdentityIdentifier(
                 field_key=str(item.get("field_key", "")),
@@ -276,6 +282,7 @@ class DraftSourceDefinition:
                 role=str(identity_payload.get("role", "EVIDENCE_ONLY")).upper(),
                 can_create_employee=bool(identity_payload.get("can_create_employee", False)),
                 identifiers=identity_identifiers,
+                max_matching_fields=max_matching_fields,
             ),
             watched_subfolder=str(payload.get("watched_subfolder", "")),
             date_time_settings=DraftDateTimeSettings(

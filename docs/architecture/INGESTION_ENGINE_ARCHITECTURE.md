@@ -368,8 +368,10 @@ The policy has these guardrails:
   to create identity. A seed template without creation permission still requires
   one `STRONG` matching identifier. `EVIDENCE_ONLY` is exempt because it does
   not link facts to an Employee.
-- A template may nominate at most three source fields for identity matching.
-  The laboratory enforces this limit in the UI and in server-side validation.
+- Each template stores its own maximum number of identity-matching fields in
+  `identity_governance.max_matching_fields`. The Template Library identity modal
+  configures this value; new and older templates start with a default of three.
+  The laboratory enforces the configured limit in the UI and server-side validation.
 - `SUPPORTING` fields such as names, email addresses and dates may explain or
   strengthen a future match, but can never create identity alone.
 - The policy is versioned with the template and snapshotted with a future

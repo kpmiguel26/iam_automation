@@ -47,7 +47,9 @@ READ FILE -> REVIEW RAW STRUCTURE -> COMPOSE HEADERS -> REVIEW DATA -> SELECT CO
 - **CONFIGURE IN THE LIBRARY:** each saved source appears as a card. A modal
   lets the administrator choose whether the report may introduce employees,
   find existing employees, or remain evidence only, then select identifier
-  fields from that template. Identifier values stay strings. A report that may
+  fields from that template and set its maximum matching-field count. Identifier
+  values stay strings. New and older templates start with a limit of three until
+  changed in the modal. A report that may
   propose new Employee UUIDs needs at least two distinct included Strong IDs,
   both selected for matching and explicitly authorized for creation. Approved
   definitions start a new draft when identity settings change.
@@ -71,9 +73,10 @@ Reader hints, validation constraints and drift severity remain available in a
 disclosure after the guided flow; they are not the first thing a user must
 understand.
 
-The template library shows one card per source with version history. Administrators
-can configure identity, reorder templates, continue a draft, approve a valid draft,
-or create a new draft from an approved version. Approved versions are immutable.
+The template library shows one card per source with version history, creator and
+last editor attribution. Administrators can configure identity, reorder templates,
+continue a draft, approve a valid draft, or create a new draft from an approved
+version. Approved versions are immutable.
 There is no Activate, Publish, Enable watcher or Run ingestion action.
 
 ## 3. Draft contract

@@ -260,13 +260,17 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .source-schema-card.is-included, .source-schema-card:has(.source-field-toggle:checked) { border-color: #9bcfca; box-shadow: 0 8px 18px rgba(14,105,105,.08); }
 .source-schema-card:has(.source-field-toggle:not(:checked)) { background: #fbfcfd; }
 .source-schema-card:has(.source-field-accordion-collapse.show) { border-color: #74b7b0; }
-.source-schema-card-header { align-items: center; display: grid; gap: .9rem; grid-template-columns: auto minmax(0, 1fr) auto auto auto; padding: .9rem 1rem; }
+.source-schema-card-header { align-items: center; display: grid; gap: .9rem; grid-template-columns: auto minmax(0, 1fr) auto; padding: .9rem 1rem; }
 .source-field-toggle-label { align-items: center; color: var(--kp-navy); cursor: pointer; display: inline-flex; font-size: .9rem; font-weight: 700; gap: .45rem; margin: 0; white-space: nowrap; }
 .source-field-toggle-label .form-check-input { margin: 0; }
 .source-field-order { background: #f1f5f7; border-radius: 999px; color: #667487; font-size: .7rem; font-weight: 700; letter-spacing: .04em; padding: .3rem .55rem; white-space: nowrap; }
 .source-field-raw { min-width: 0; }
-.source-field-raw span { color: #7a8795; display: block; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.source-field-raw strong { color: var(--kp-navy); display: block; margin-top: .25rem; overflow-wrap: anywhere; }
+.source-field-raw > span:first-child { color: #7a8795; display: block; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.source-field-raw > strong { color: var(--kp-navy); display: block; margin-top: .25rem; overflow-wrap: anywhere; }
+.source-field-summary-toggle { align-items: center; background: transparent; border: 0; border-radius: .35rem; color: inherit; cursor: pointer; display: flex; font: inherit; gap: 1rem; justify-content: space-between; min-width: 0; padding: .1rem; text-align: left; width: 100%; }
+.source-field-summary-toggle:hover { background: #f7fafb; }
+.source-field-summary-toggle:focus-visible { outline: 3px solid rgba(13, 110, 253, .45); outline-offset: 3px; }
+.source-field-summary-badges { align-items: center; display: flex; flex: 0 0 auto; gap: .55rem; }
 .source-field-meta { align-items: baseline; display: flex; flex-wrap: wrap; gap: .12rem .8rem; margin-top: .15rem; min-width: 0; }
 .source-field-template-key { color: #788697; display: inline; font-size: .72rem; margin: 0; overflow-wrap: anywhere; }
 .source-field-template-key code { color: #40536b; font-size: inherit; }
@@ -313,6 +317,8 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .identity-field-create small { color: #657387; flex-basis: 100%; font-size: .68rem; line-height: 1.35; margin-left: 1.5rem; }
 .identity-type-guidance { color: #527078; font-size: .68rem; line-height: 1.35; margin-top: .35rem; }
 .identity-type-guidance[hidden] { display: none; }
+.identity-matching-limit-control { max-width: 22rem; }
+.identity-matching-limit-count { display: block; font-weight: 600; margin-top: .35rem; }
 .source-schema-card.is-identity-field { border-color: #74b7b0; }
 .template-card-grid { display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr); }
 .template-card-message { grid-column: 1 / -1; margin-bottom: 0; }
@@ -327,6 +333,8 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 .template-card-title { color: var(--kp-navy); display: block; font-weight: 600; line-height: 1.25; margin-bottom: .2rem; overflow-wrap: anywhere; }
 .template-card-description { color: #6c7785; display: block; font-size: .9rem; }
 .template-card-glance { color: #657387; display: block; font-size: .78rem; margin-top: .35rem; overflow-wrap: anywhere; }
+.template-card-provenance { color: #788697; display: flex; flex-wrap: wrap; font-size: .72rem; gap: .15rem .85rem; margin-top: .35rem; }
+.template-card-provenance strong { color: #526177; font-weight: 600; }
 .template-card-accordion-action { align-items: center; color: #1266c5; display: inline-flex; flex: 0 0 auto; font-size: .82rem; font-weight: 700; gap: .6rem; }
 .template-card-hide-label, .template-card-accordion[open] .template-card-show-label { display: none; }
 .template-card-accordion[open] .template-card-hide-label { display: inline; }
@@ -371,12 +379,10 @@ h1 { color: var(--kp-navy); font-weight: 700; }
   .source-action-toolbar { align-items: stretch; flex-direction: column; }
   .source-action-toolbar-actions { justify-content: flex-start; }
   .source-schema-list { grid-template-columns: 1fr; }
-  .source-schema-card-header { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .source-schema-card-header { grid-template-columns: minmax(0, 1fr) auto; }
   .source-field-toggle-label { grid-column: 1; grid-row: 1; min-width: 0; }
-  .source-field-raw { grid-column: 1; grid-row: 2; }
-  .source-field-type-badge { grid-column: 2; grid-row: 2; }
-  .source-field-order { grid-column: 3; grid-row: 2; }
-  .source-field-accordion-toggle { grid-column: 3; grid-row: 1; }
+  .source-field-summary-toggle { grid-column: 1 / -1; grid-row: 2; }
+  .source-field-accordion-toggle { grid-column: 2; grid-row: 1; }
   .template-authority-heading { align-items: flex-start; flex-direction: column; }
   .identity-role-options { grid-template-columns: 1fr; }
   .identity-role-card { min-height: 0; }
@@ -390,9 +396,8 @@ h1 { color: var(--kp-navy); font-weight: 700; }
 @media (max-width: 480px) {
   .source-schema-card-header { gap: .55rem; grid-template-columns: minmax(0, 1fr) auto; padding: .75rem; }
   .source-field-toggle-label { grid-column: 1; grid-row: 1; white-space: normal; }
-  .source-field-raw { grid-column: 1 / -1; grid-row: 2; }
-  .source-field-type-badge { grid-column: 1; grid-row: 3; justify-self: start; }
-  .source-field-order { grid-column: 2; grid-row: 3; justify-self: end; }
+  .source-field-summary-toggle { align-items: flex-start; gap: .55rem; }
+  .source-field-summary-badges { flex-wrap: wrap; justify-content: flex-end; }
   .source-field-accordion-toggle { grid-column: 2; grid-row: 1; }
   .source-field-identity-controls { align-items: start; grid-template-columns: 1fr; }
   .source-field-controls { grid-template-columns: 1fr; }

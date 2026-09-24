@@ -27,7 +27,6 @@ from .configuration_contracts import (
     DRAFT_TRANSFORMS,
     DraftFieldDefinition,
     DraftFieldMapping,
-    MAX_IDENTITY_MATCH_FIELDS,
     DraftSourceDefinition,
 )
 
@@ -122,13 +121,15 @@ class DraftConfigurationService:
         identity = draft.identity_governance
         if identity.role not in DRAFT_IDENTITY_ROLES:
             errors.append("Choose a valid identity template role.")
+        if identity.max_matching_fields < 1:
+            errors.append("The identity matching limit must be at least one field.")
         if identity.can_create_employee and identity.role != "IDENTITY_SEED":
             errors.append("Only an Identity Seed report can have Employee UUID creation permission.")
         if identity.role == "EVIDENCE_ONLY" and any(item.can_match or item.can_create_identity for item in identity.identifiers):
             errors.append("Evidence Only reports cannot define identity matching or creation fields.")
         matching_fields = [item for item in identity.identifiers if item.can_match]
-        if len(matching_fields) > MAX_IDENTITY_MATCH_FIELDS:
-            errors.append(f"Choose no more than {MAX_IDENTITY_MATCH_FIELDS} fields for identity matching.")
+        if len(matching_fields) > identity.max_matching_fields:
+            errors.append(f"Choose no more than {identity.max_matching_fields} fields for identity matching.")
         identity_field_by_key = {field.field_key.casefold(): field for field in draft.fields}
         strong_matching_keys: set[str] = set()
         strong_creation_keys: set[str] = set()

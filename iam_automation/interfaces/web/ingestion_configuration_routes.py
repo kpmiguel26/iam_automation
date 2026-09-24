@@ -23,7 +23,6 @@ from ...application.ingestion.configuration_contracts import (
     DRAFT_IDENTITY_ROLE_LABELS,
     DRAFT_IDENTITY_ROLES,
     DRAFT_IDENTITY_STRENGTHS,
-    MAX_IDENTITY_MATCH_FIELDS,
     DRAFT_TRANSFORM_DESCRIPTIONS,
     DRAFT_TRANSFORM_LABELS,
     DRAFT_TRANSFORMS,
@@ -185,7 +184,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             identity_role_descriptions=DRAFT_IDENTITY_ROLE_DESCRIPTIONS,
             identity_strengths=DRAFT_IDENTITY_STRENGTHS,
             identity_matching_count=_identity_matching_count(draft),
-            identity_matching_limit=MAX_IDENTITY_MATCH_FIELDS,
+            identity_matching_limit=draft.identity_governance.max_matching_fields,
             identity_identifier_by_field={item.field_key: item for item in draft.identity_governance.identifiers},
             identity_recommendations={field.field_key: _identity_recommendation(field) for field in draft.fields},
             validation_kinds=DRAFT_VALIDATION_KINDS,
@@ -233,7 +232,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 identity_role_descriptions=DRAFT_IDENTITY_ROLE_DESCRIPTIONS,
                 identity_strengths=DRAFT_IDENTITY_STRENGTHS,
                 identity_matching_count=_identity_matching_count(draft),
-                identity_matching_limit=MAX_IDENTITY_MATCH_FIELDS,
+                identity_matching_limit=draft.identity_governance.max_matching_fields,
                 identity_identifier_by_field={item.field_key: item for item in draft.identity_governance.identifiers},
                 identity_recommendations={field.field_key: _identity_recommendation(field) for field in draft.fields},
                 validation_kinds=DRAFT_VALIDATION_KINDS,
@@ -440,6 +439,13 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         if saved is None:
             return "Template version not found.", 404
         draft = DraftSourceDefinition.from_dict(saved["definition"])
+        current_rows = request.args.getlist("identity_row_indices")
+        requested_limit = _positive_int(
+            request.args.get("identity_matching_limit", ""),
+            default=draft.identity_governance.max_matching_fields,
+        )
+        if len(current_rows) >= requested_limit:
+            return "", 204
         return render_template(
             "admin/_ingestion_identity_field_row.html",
             row_index=max(0, _positive_int(request.args.get("index", "0"), default=0)),
@@ -457,6 +463,22 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             return "Template version not found.", 404
         draft = DraftSourceDefinition.from_dict(saved["definition"])
         configured = _identity_settings_from_form(draft, request.form)
+        identity_limit = configured.identity_governance.max_matching_fields
+        matching_count = _identity_matching_count(configured)
+        if identity_limit < 1 or matching_count > identity_limit:
+            if identity_limit < 1:
+                error = "Set the identity matching limit to at least one field."
+            else:
+                error = f"This template allows up to {identity_limit} identity fields. Remove extra selections or increase the limit."
+            return render_template(
+                "admin/_ingestion_identity_settings_modal.html",
+                item=saved,
+                draft=configured,
+                identity_rows=_identity_rows(configured),
+                available_fields=tuple(field for field in configured.fields if field.include),
+                next_identity_row_index=max(1, len(configured.identity_governance.identifiers)),
+                error=error,
+            ), 400
         try:
             if saved["status"] == "APPROVED":
                 saved = templates.save_draft(configured.to_dict(), current_actor())
@@ -802,6 +824,10 @@ def _identity_settings_from_form(draft: DraftSourceDefinition, form) -> DraftSou
     if role not in DRAFT_IDENTITY_ROLES:
         role = "EVIDENCE_ONLY"
     can_create_employee = role == "IDENTITY_SEED" and form.get("identity_can_create_employee") == "on"
+    try:
+        max_matching_fields = int(form.get("identity_matching_limit", draft.identity_governance.max_matching_fields))
+    except (TypeError, ValueError):
+        max_matching_fields = 0
     identifiers: list[DraftIdentityIdentifier] = []
     fields: list[DraftFieldDefinition] = []
     field_by_key = {field.field_key.casefold(): field for field in draft.fields if field.include}
@@ -829,6 +855,7 @@ def _identity_settings_from_form(draft: DraftSourceDefinition, form) -> DraftSou
             role=role,
             can_create_employee=can_create_employee,
             identifiers=tuple(identifiers),
+            max_matching_fields=max_matching_fields,
         ),
         status="DRAFT",
     )
@@ -886,6 +913,7 @@ def _identity_governance_from_form(
         role=role,
         can_create_employee=can_create_employee,
         identifiers=tuple(identifiers),
+        max_matching_fields=draft.identity_governance.max_matching_fields,
     )
 
 
@@ -980,6 +1008,7 @@ def _without_field(draft: DraftSourceDefinition, index: int) -> DraftSourceDefin
                 for identifier in draft.identity_governance.identifiers
                 if removed_field_key is None or identifier.field_key != removed_field_key
             ),
+            max_matching_fields=draft.identity_governance.max_matching_fields,
         ),
         watched_subfolder=draft.watched_subfolder,
         date_time_settings=replace(

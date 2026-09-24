@@ -6,6 +6,7 @@
     var modalElement = document.querySelector('#templateIdentityModal, #templateBehaviorModal');
     syncTimezoneMode(modalElement);
     syncSkipRule(modalElement);
+    syncIdentityLimit(modalElement);
     if (modalElement && window.bootstrap && window.bootstrap.Modal) {
       window.bootstrap.Modal.getOrCreateInstance(modalElement).show();
     }
@@ -35,12 +36,47 @@
     });
   }
 
+  function syncIdentityLimit(root) {
+    if (!root || !root.matches('#templateIdentityModal')) return;
+    var limitInput = root.querySelector('[name="identity_matching_limit"]');
+    var feedback = root.querySelector('[data-identity-limit-count]');
+    var saveButton = root.querySelector('button[type="submit"]');
+    var rowList = root.querySelector('#identity-fields-list');
+    var addButton = root.querySelector('[data-add-identity-field]');
+    if (!limitInput || !feedback || !saveButton || !rowList) return;
+    var limit = Number(limitInput.value);
+    var validLimit = Number.isInteger(limit) && limit > 0;
+    var rows = Array.from(rowList.querySelectorAll('[data-identity-row]'));
+    if (validLimit && rows.length > limit) {
+      rows.slice(limit).forEach(function (row) { row.remove(); });
+      rows = Array.from(rowList.querySelectorAll('[data-identity-row]'));
+    }
+    var selectedCount = Array.from(rowList.querySelectorAll('select[name$="_key"]'))
+      .filter(function (select) { return select.value.trim() !== ''; }).length;
+    var overLimit = !validLimit || selectedCount > limit;
+    feedback.textContent = selectedCount + ' selected · ' + rows.length + ' rows / ' + (validLimit ? limit : '—') + ' max';
+    feedback.classList.toggle('text-danger', overLimit);
+    feedback.classList.toggle('text-secondary', !overLimit);
+    saveButton.disabled = overLimit;
+    if (addButton) addButton.disabled = !validLimit || rows.length >= limit;
+  }
+
   document.body.addEventListener('change', function (event) {
     if (event.target && event.target.matches('[data-timezone-mode]')) {
       syncTimezoneMode(event.target.closest('.modal'));
     }
     if (event.target && event.target.matches('[data-skip-field]')) {
       syncSkipRule(event.target.closest('.modal'));
+    }
+    if (event.target && (event.target.matches('[name="identity_matching_limit"]') || event.target.matches('#identity-fields-list select[name$="_key"]'))) {
+      syncIdentityLimit(event.target.closest('.modal'));
+    }
+  });
+
+  document.body.addEventListener('htmx:afterSwap', function (event) {
+    var target = event.detail && event.detail.target;
+    if (target && (target.id === 'identity-fields-list' || target.id === 'template-modal-region')) {
+      syncIdentityLimit(document.querySelector('#templateIdentityModal'));
     }
   });
 
