@@ -19,7 +19,13 @@ from ..rules import RuleContext, RulePhase, RuleRegistry, RuleResult
 
 
 class IngestionOrchestrator:
-    """Dispatch a source file to the adapter responsible for its format."""
+    """Dispatch a source file to the adapter responsible for its format.
+
+    DEPRECATED (migration pending): this hard-coded factory is the active
+    runtime dispatcher until SourceRecognizer/SourceRegistry have a production
+    contract and parity coverage. Keep this facade and its result behavior in
+    place while sources migrate one at a time.
+    """
 
     FILE_SOURCES: frozenset[str] = frozenset(
         {

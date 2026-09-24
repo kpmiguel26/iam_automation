@@ -206,6 +206,9 @@ class DraftConfigurationService:
         sample_rows = tuple(inspection.get("rows", ()))
         declared_fields = tuple(field for field in draft.fields if field.source_name.strip())
         fields = tuple(field for field in declared_fields if field.include)
+        # DEPRECATED compatibility: older drafts may still override a field's
+        # key/cleanup through DraftFieldMapping. New drafts store both on the
+        # source field itself; preserve this fallback while old snapshots exist.
         mappings = {mapping.source_field.casefold(): mapping for mapping in draft.mappings if mapping.source_field.strip()}
         field_by_source = {field.source_name.casefold(): field for field in fields}
         declared_sources = {field.source_name.casefold() for field in declared_fields}

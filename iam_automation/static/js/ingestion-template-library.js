@@ -1,16 +1,39 @@
 (function () {
   'use strict';
 
-  document.body.addEventListener('htmx:afterSwap', function (event) {
-    if (!event.detail || !event.detail.target || event.detail.target.id !== 'template-modal-region') return;
-    var modalElement = document.querySelector('#templateIdentityModal, #templateBehaviorModal');
+  function openLibraryModal(target) {
+    if (!target) return;
+    var modalElement = target.querySelector('#templateIdentityModal, #templateBehaviorModal, #objectTemplateModal, #deleteReportTemplateModal');
+    if (!modalElement || modalElement.dataset.libraryModalOpened === 'true') return;
+    modalElement.dataset.libraryModalOpened = 'true';
+    if (window.bootstrap && window.bootstrap.Modal) {
+      window.bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    }
     syncTimezoneMode(modalElement);
     syncSkipRule(modalElement);
     syncIdentityLimit(modalElement);
-    if (modalElement && window.bootstrap && window.bootstrap.Modal) {
-      window.bootstrap.Modal.getOrCreateInstance(modalElement).show();
-    }
+    syncObjectTemplate(modalElement);
+  }
+
+  document.addEventListener('htmx:afterSwap', function (event) {
+    var target = event.detail && event.detail.target ? event.detail.target : event.target;
+    if (!target || target.id !== 'template-modal-region') return;
+    openLibraryModal(target);
   });
+
+  document.body.addEventListener('htmx:afterRequest', function (event) {
+    var requestElement = event.detail && event.detail.elt;
+    if (!requestElement || !requestElement.matches('[hx-get*="template-object/settings"]') || !event.detail.successful) return;
+    window.requestAnimationFrame(function () {
+      openLibraryModal(document.getElementById('template-modal-region'));
+    });
+  });
+
+  var modalRegion = document.getElementById('template-modal-region');
+  if (modalRegion && window.MutationObserver) {
+    new MutationObserver(function () { openLibraryModal(modalRegion); })
+      .observe(modalRegion, {childList: true});
+  }
 
   function syncTimezoneMode(root) {
     if (!root) return;
@@ -20,6 +43,58 @@
       input.disabled = mode.value !== 'CUSTOM';
       input.required = mode.value === 'CUSTOM';
     });
+  }
+
+  function syncObjectTemplate(root) {
+    if (!root || !root.matches('#objectTemplateModal')) return;
+    var sources = Array.from(root.querySelectorAll('[data-object-source]'));
+    var selectedSources = new Set(sources.filter(function (input) { return input.checked; }).map(function (input) { return input.value; }));
+    var identities = Array.from(root.querySelectorAll('[data-object-identity]'));
+    identities.forEach(function (input) {
+      var sourceSelected = selectedSources.has(input.dataset.sourceId);
+      input.disabled = !sourceSelected;
+      if (!sourceSelected) input.checked = false;
+    });
+    var selectedStrong = identities.filter(function (input) { return input.checked && input.dataset.strength === 'STRONG'; });
+    var selectedStrongRefs = new Set(selectedStrong.map(function (input) { return input.value; }));
+    var strongSources = new Set(selectedStrong.map(function (input) { return input.dataset.sourceId; }));
+    root.querySelectorAll('[data-object-match-group]').forEach(function (group) {
+      var sourceSelect = group.querySelector('[data-object-match-source]');
+      var anchorSelect = group.querySelector('[data-object-match-anchor]');
+      if (!sourceSelect || !anchorSelect) return;
+      Array.from(sourceSelect.options).forEach(function (option) {
+        if (option.value) option.disabled = !selectedSources.has(option.value) || !strongSources.has(option.value);
+      });
+      if (sourceSelect.value && (!selectedSources.has(sourceSelect.value) || !strongSources.has(sourceSelect.value))) sourceSelect.value = '';
+      var anchorSource = sourceSelect.value;
+      Array.from(anchorSelect.options).forEach(function (option) {
+        if (!option.value) return;
+        var sourceId = option.dataset.sourceId || '';
+        option.disabled = sourceId !== anchorSource || !selectedStrongRefs.has(option.value);
+      });
+      if (anchorSelect.value && (!selectedStrongRefs.has(anchorSelect.value) || !anchorSelect.selectedOptions[0] || anchorSelect.selectedOptions[0].dataset.sourceId !== anchorSource)) anchorSelect.value = '';
+      var anchorChosen = Boolean(anchorSelect.value && anchorSource);
+      group.querySelectorAll('[data-object-match-target]').forEach(function (input) {
+        var sourceId = input.dataset.sourceId || '';
+        var validTarget = anchorChosen && selectedSources.has(sourceId) && sourceId !== anchorSource && selectedStrongRefs.has(input.value);
+        input.disabled = !validTarget;
+        if (!validTarget) input.checked = false;
+      });
+      group.querySelectorAll('[data-object-match-target-report]').forEach(function (reportGroup) {
+        var hasTarget = Array.from(reportGroup.querySelectorAll('[data-object-match-target]')).some(function (input) { return !input.disabled; });
+        reportGroup.hidden = !hasTarget;
+      });
+    });
+    var canLink = strongSources.size > 1;
+    var addButton = root.querySelector('[data-add-object-match]');
+    if (addButton) addButton.disabled = !canLink;
+    var count = root.querySelector('[data-object-identifier-count]');
+    if (count) {
+      var selectedCount = identities.filter(function (input) { return input.checked; }).length;
+      count.textContent = selectedCount + ' selected';
+    }
+    var empty = root.querySelector('[data-object-match-empty]');
+    if (empty) empty.hidden = root.querySelectorAll('[data-object-match-group]').length > 0;
   }
 
   function syncSkipRule(root) {
@@ -71,10 +146,26 @@
     if (event.target && (event.target.matches('[name="identity_matching_limit"]') || event.target.matches('#identity-fields-list select[name$="_key"]'))) {
       syncIdentityLimit(event.target.closest('.modal'));
     }
+    if (event.target && event.target.matches('[data-object-source], [data-object-identity], [data-object-match-source], [data-object-match-anchor], [data-object-match-target]')) {
+      syncObjectTemplate(event.target.closest('#objectTemplateModal'));
+    }
+  });
+
+  document.body.addEventListener('click', function (event) {
+    var removeButton = event.target.closest('[data-remove-object-match]');
+    if (removeButton) {
+      var row = removeButton.closest('[data-object-match-group]');
+      var modal = removeButton.closest('#objectTemplateModal');
+      if (row) row.remove();
+      syncObjectTemplate(modal);
+    }
   });
 
   document.body.addEventListener('htmx:afterSwap', function (event) {
     var target = event.detail && event.detail.target;
+    if (target && target.id === 'object-match-list') {
+      syncObjectTemplate(target.closest('#objectTemplateModal'));
+    }
     if (target && (target.id === 'identity-fields-list' || target.id === 'template-modal-region')) {
       syncIdentityLimit(document.querySelector('#templateIdentityModal'));
     }
@@ -82,19 +173,27 @@
 
   document.body.addEventListener('htmx:configRequest', function (event) {
     var trigger = event.detail && event.detail.elt;
-    if (!trigger || !trigger.matches('[data-add-identity-field]')) return;
-    event.detail.parameters.index = trigger.dataset.nextIndex || '0';
+    if (!trigger) return;
+    if (trigger.matches('[data-add-identity-field]')) {
+      event.detail.parameters.index = trigger.dataset.nextIndex || '0';
+      return;
+    }
+    if (trigger.matches('[data-add-object-match]')) event.detail.parameters.index = trigger.dataset.nextIndex || '0';
   });
 
   document.body.addEventListener('htmx:afterRequest', function (event) {
     var trigger = event.detail && event.detail.elt;
-    if (!trigger || !trigger.matches('[data-add-identity-field]') || !event.detail.successful) return;
-    trigger.dataset.nextIndex = String(Number(trigger.dataset.nextIndex || '0') + 1);
+    if (!trigger || !event.detail.successful) return;
+    if (trigger.matches('[data-add-identity-field], [data-add-object-match]')) {
+      trigger.dataset.nextIndex = String(Number(trigger.dataset.nextIndex || '0') + 1);
+      syncObjectTemplate(trigger.closest('#objectTemplateModal'));
+    }
   });
 
   document.body.addEventListener('htmx:afterRequest', function (event) {
     var form = event.detail && event.detail.elt;
     if (!form || !form.matches('form[action*="identity-settings"], form[data-template-config-save]') || !event.detail.successful) return;
+    if (document.querySelector('#template-modal-region .alert-danger[role="alert"]')) return;
     var modalElement = form.closest('.modal');
     if (modalElement && window.bootstrap && window.bootstrap.Modal) {
       window.bootstrap.Modal.getOrCreateInstance(modalElement).hide();

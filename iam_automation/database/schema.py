@@ -33,6 +33,7 @@ ACCESS_TABLES: tuple[str, ...] = (
     "tbl_Locations",
     "tbl_Managers",
     "tbl_SystemProfiles",
+    # DEPRECATED compatibility table; retain for existing Access installations.
     "tbl_TemplateMappings",
     "tbl_ExportRuns",
     "tbl_ApplicationVersions",
@@ -56,6 +57,8 @@ def access_schema_statements() -> tuple[str, ...]:
         "CREATE TABLE tbl_Locations (LocationID TEXT(50) PRIMARY KEY, LocationName TEXT(255), IsActive BIT)",
         "CREATE TABLE tbl_Managers (ManagerID TEXT(50) PRIMARY KEY, DisplayName TEXT(255), Email TEXT(255), IsActive BIT)",
         "CREATE TABLE tbl_SystemProfiles (ProfileID COUNTER PRIMARY KEY, ProfileName TEXT(100), ProfileJSON MEMO, IsActive BIT)",
+        # DEPRECATED compatibility table; versioned report-template snapshots
+        # are the new configuration path. Do not drop this schema here.
         "CREATE TABLE tbl_TemplateMappings (MappingID COUNTER PRIMARY KEY, SystemName TEXT(50), TemplateName TEXT(255), MappingJSON MEMO, IsActive BIT)",
         "CREATE TABLE tbl_ExportRuns (ExportRunID COUNTER PRIMARY KEY, SystemName TEXT(50), TemplateName TEXT(255), BatchID TEXT(36), StartedAtUTC DATETIME, CompletedAtUTC DATETIME, Status TEXT(30), OutputPath MEMO, ErrorDetails MEMO)",
         "CREATE TABLE tbl_ApplicationVersions (ApplicationVersion TEXT(50) PRIMARY KEY, MinimumSchemaVersion TEXT(30), ReleasedAtUTC DATETIME, IsSupported BIT)",

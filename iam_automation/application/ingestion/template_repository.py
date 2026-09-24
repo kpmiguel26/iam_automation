@@ -28,7 +28,7 @@ class TemplateRepository:
         return tuple(self._decode_row(row) for row in rows)
 
     def list_template_cards(self) -> tuple[dict[str, Any], ...]:
-        """Return the latest version per source with its version history and run order."""
+        """Return the latest active version per source with history and order."""
         with self._connection() as connection:
             rows = connection.execute(
                 """SELECT v.definition_version_id, v.source_id, v.version_number, v.status,
@@ -37,6 +37,10 @@ class TemplateRepository:
                           COALESCE(o.ingestion_order, 2147483647) AS ingestion_order
                    FROM source_definition_versions v
                    LEFT JOIN source_ingestion_orders o ON o.source_id = v.source_id
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM source_template_lifecycle_events d
+                       WHERE d.source_id = v.source_id AND d.restored_at_utc IS NULL
+                   )
                    ORDER BY v.source_id, v.version_number DESC"""
             ).fetchall()
             history_rows = connection.execute(
@@ -44,6 +48,10 @@ class TemplateRepository:
                           definition_json, created_by, created_at_utc, updated_by,
                           updated_at_utc, approved_by, approved_at_utc
                    FROM source_definition_versions
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM source_template_lifecycle_events d
+                       WHERE d.source_id = source_definition_versions.source_id AND d.restored_at_utc IS NULL
+                   )
                    ORDER BY source_id, version_number DESC"""
             ).fetchall()
         versions: dict[str, list[dict[str, Any]]] = {}
@@ -74,6 +82,10 @@ class TemplateRepository:
                 """SELECT v.source_id, MIN(COALESCE(o.ingestion_order, 2147483647)) AS sort_order
                    FROM source_definition_versions v
                    LEFT JOIN source_ingestion_orders o ON o.source_id = v.source_id
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM source_template_lifecycle_events d
+                       WHERE d.source_id = v.source_id AND d.restored_at_utc IS NULL
+                   )
                    GROUP BY v.source_id ORDER BY sort_order, v.source_id COLLATE NOCASE"""
             ).fetchall()]
             if source_id not in sources:
@@ -91,6 +103,48 @@ class TemplateRepository:
                         (item_source_id, position, actor, now),
                     )
         return self.list_template_cards()
+
+    def delete_template(self, source_id: str, actor: str) -> None:
+        """Hide a report template while retaining its versions and source lineage."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM source_definition_versions WHERE source_id = ? LIMIT 1",
+                (source_id,),
+            ).fetchone()
+            if exists is None:
+                raise ValueError("Report template not found.")
+            deleted = connection.execute(
+                """SELECT 1 FROM source_template_lifecycle_events
+                   WHERE source_id = ? AND restored_at_utc IS NULL LIMIT 1""",
+                (source_id,),
+            ).fetchone()
+            if deleted is not None:
+                raise ValueError("Report template is already removed from the active library.")
+            connection.execute(
+                """INSERT INTO source_template_lifecycle_events
+                   (lifecycle_event_id, source_id, deleted_by, deleted_at_utc)
+                   VALUES (?, ?, ?, ?)""",
+                (str(uuid.uuid4()), source_id, actor, now),
+            )
+            active_sources = [str(row[0]) for row in connection.execute(
+                """SELECT v.source_id, MIN(COALESCE(o.ingestion_order, 2147483647)) AS sort_order
+                   FROM source_definition_versions v
+                   LEFT JOIN source_ingestion_orders o ON o.source_id = v.source_id
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM source_template_lifecycle_events d
+                       WHERE d.source_id = v.source_id AND d.restored_at_utc IS NULL
+                   )
+                   GROUP BY v.source_id ORDER BY sort_order, v.source_id COLLATE NOCASE"""
+            ).fetchall()]
+            for position, active_source_id in enumerate(active_sources, start=1):
+                connection.execute(
+                    """INSERT INTO source_ingestion_orders(source_id, ingestion_order, updated_by, updated_at_utc)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(source_id) DO UPDATE SET ingestion_order = excluded.ingestion_order,
+                           updated_by = excluded.updated_by, updated_at_utc = excluded.updated_at_utc""",
+                    (active_source_id, position, actor, now),
+                )
 
     def get(self, definition_version_id: str) -> dict[str, Any] | None:
         with self._connection() as connection:
@@ -110,8 +164,16 @@ class TemplateRepository:
         now = datetime.now(timezone.utc).isoformat()
         payload = json.dumps(definition, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        reactivated = False
         with self._connection() as connection:
             if version_id:
+                deleted = connection.execute(
+                    """SELECT 1 FROM source_template_lifecycle_events
+                       WHERE source_id = ? AND restored_at_utc IS NULL LIMIT 1""",
+                    (source_id,),
+                ).fetchone()
+                if deleted is not None:
+                    raise ValueError("This report template was removed. Start a new report draft to restore it.")
                 row = connection.execute(
                     "SELECT status, source_id FROM source_definition_versions WHERE definition_version_id = ?",
                     (version_id,),
@@ -128,6 +190,20 @@ class TemplateRepository:
                 )
                 saved_id = version_id
             else:
+                deleted = connection.execute(
+                    """SELECT lifecycle_event_id FROM source_template_lifecycle_events
+                       WHERE source_id = ? AND restored_at_utc IS NULL
+                       ORDER BY deleted_at_utc DESC LIMIT 1""",
+                    (source_id,),
+                ).fetchone()
+                if deleted is not None:
+                    connection.execute(
+                        """UPDATE source_template_lifecycle_events
+                           SET restored_by = ?, restored_at_utc = ?
+                           WHERE lifecycle_event_id = ? AND restored_at_utc IS NULL""",
+                        (actor, now, deleted[0]),
+                    )
+                    reactivated = True
                 version = connection.execute(
                     "SELECT COALESCE(MAX(version_number), 0) + 1 FROM source_definition_versions WHERE source_id = ?",
                     (source_id,),
@@ -140,8 +216,30 @@ class TemplateRepository:
                        VALUES (?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?)""",
                     (saved_id, source_id, version, payload, digest, actor, now, actor, now),
                 )
+                if reactivated:
+                    active_sources = [str(row[0]) for row in connection.execute(
+                        """SELECT v.source_id, MIN(COALESCE(o.ingestion_order, 2147483647)) AS sort_order
+                           FROM source_definition_versions v
+                           LEFT JOIN source_ingestion_orders o ON o.source_id = v.source_id
+                           WHERE v.source_id != ? AND NOT EXISTS (
+                               SELECT 1 FROM source_template_lifecycle_events d
+                               WHERE d.source_id = v.source_id AND d.restored_at_utc IS NULL
+                           )
+                           GROUP BY v.source_id ORDER BY sort_order, v.source_id COLLATE NOCASE""",
+                        (source_id,),
+                    ).fetchall()]
+                    active_sources.append(source_id)
+                    for position, active_source_id in enumerate(active_sources, start=1):
+                        connection.execute(
+                            """INSERT INTO source_ingestion_orders(source_id, ingestion_order, updated_by, updated_at_utc)
+                               VALUES (?, ?, ?, ?)
+                               ON CONFLICT(source_id) DO UPDATE SET ingestion_order = excluded.ingestion_order,
+                                   updated_by = excluded.updated_by, updated_at_utc = excluded.updated_at_utc""",
+                            (active_source_id, position, actor, now),
+                        )
         result = self.get(saved_id)
         assert result is not None
+        result["reactivated"] = reactivated
         return result
 
     def approve(self, version_id: str, actor: str) -> dict[str, Any]:
@@ -150,7 +248,11 @@ class TemplateRepository:
             cursor = connection.execute(
                 """UPDATE source_definition_versions
                    SET status = 'APPROVED', approved_by = ?, approved_at_utc = ?, updated_by = ?, updated_at_utc = ?
-                   WHERE definition_version_id = ? AND status = 'DRAFT'""",
+                   WHERE definition_version_id = ? AND status = 'DRAFT'
+                     AND NOT EXISTS (
+                         SELECT 1 FROM source_template_lifecycle_events d
+                         WHERE d.source_id = source_definition_versions.source_id AND d.restored_at_utc IS NULL
+                     )""",
                 (actor, now, actor, now, version_id),
             )
             if cursor.rowcount != 1:

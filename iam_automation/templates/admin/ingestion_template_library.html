@@ -3,16 +3,18 @@
 {% block content %}
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell admin-page ingestion-config-page">
   <div class="page-heading">
-    <div><p class="eyebrow">Ingestion Engine · Configuration</p><h1>Template library</h1><p class="text-secondary mb-0">Configure employee identifiers, scan folders, date/time handling and future row rules for each saved report. Set each template’s ingestion order.</p></div>
+    <div><p class="eyebrow">Ingestion Engine · Configuration</p><h1>Template library</h1><p class="text-secondary mb-0">Configure record identifiers, scan folders, date/time handling and future row rules for each saved report. Set each template’s ingestion order.</p></div>
     <a class="btn btn-primary" href="{{ url_for('ingestion_configuration.start_new_template') }}">Define a new report</a>
   </div>
-  <div class="alert alert-info mt-4" role="note"><strong>These are governed settings.</strong> They do not enable a watcher, create employees, match records, or import data. Changes to approved definitions start a new draft version.</div>
+  <div class="alert alert-info mt-4" role="note"><strong>These are governed settings.</strong> They do not enable a watcher, create objects, match records, or import data. Changes to approved definitions start a new draft version.</div>
   {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
-  {% if cards %}
-    {% include "admin/_ingestion_template_cards.html" %}
-  {% else %}
-    <div class="empty-state surface mt-4"><span class="empty-state-icon">1</span><strong>No templates saved yet</strong><span>Define a report and choose “Save template to the library” to keep its configuration here.</span><a class="btn btn-primary mt-2" href="{{ url_for('ingestion_configuration.start_new_template') }}">Start a report template</a></div>
-  {% endif %}
+  {% include "admin/_ingestion_template_cards.html" %}
+  <section class="mt-5" aria-labelledby="object-template-section-title">
+    <div class="mb-3"><p class="eyebrow mb-1">Object Engine · Configuration</p><h2 class="h3 mb-1" id="object-template-section-title">Template Object</h2><p class="text-secondary mb-0">Define a named object from included report fields and link report identities to describe how its properties relate.</p></div>
+    <div id="object-template-card-region">
+      {% include "admin/_object_template_card.html" %}
+    </div>
+  </section>
 </div>
 <div id="template-modal-region"></div>
 {% endblock %}

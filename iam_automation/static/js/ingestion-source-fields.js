@@ -48,6 +48,27 @@
     }
   });
 
+  document.addEventListener('htmx:afterRequest', function (event) {
+    var detail = event.detail || {};
+    var target = detail.target;
+    if (detail.successful || !target || target.id !== 'sample-workspace') return;
+    var responseText = detail.xhr && detail.xhr.responseText;
+    var message = '';
+    if (responseText) {
+      var parsed = new DOMParser().parseFromString(responseText, 'text/html');
+      var alert = parsed.querySelector('[role="alert"], .alert-danger');
+      if (alert) message = alert.textContent.trim();
+    }
+    if (!message) message = 'The report template could not be saved. Review the fields and try again.';
+    target.querySelectorAll(':scope > .alert-danger[role="alert"]').forEach(function (existing) { existing.remove(); });
+    var feedback = document.createElement('div');
+    feedback.className = 'alert alert-danger';
+    feedback.setAttribute('role', 'alert');
+    feedback.textContent = message;
+    target.prepend(feedback);
+    feedback.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  });
+
   document.addEventListener('DOMContentLoaded', function () {
     updateIncludedCount(document.getElementById('source-schema-form'));
   });

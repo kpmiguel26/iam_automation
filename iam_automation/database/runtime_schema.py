@@ -260,6 +260,9 @@ def initialize_runtime_database(path: Path) -> Path:
                 ON notifications (recipient_username, status, created_at_utc);
             CREATE INDEX IF NOT EXISTS idx_admin_delegations_active
                 ON admin_delegations (delegate_username, status, expires_at_utc);
+            -- DEPRECATED compatibility table: new template configuration is
+            -- versioned in source_definition_versions. Keep this table for old
+            -- databases and callers; do not remove it in this migration.
             CREATE TABLE IF NOT EXISTS template_mappings (
                 mapping_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 system_name TEXT NOT NULL,

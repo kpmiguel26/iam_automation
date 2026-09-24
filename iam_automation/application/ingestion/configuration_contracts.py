@@ -116,6 +116,13 @@ class DraftFieldDefinition:
 
 @dataclass(frozen=True)
 class DraftFieldMapping:
+    """DEPRECATED compatibility shape for pre-library field mappings.
+
+    New drafts keep the output key and cleanup on ``DraftFieldDefinition``.
+    Retain this shape to read older session/snapshot payloads and preserve
+    preview compatibility until those payloads are migrated or expire.
+    """
+
     source_field: str
     target_field: str = ""
     transform_name: str = "identity"
@@ -178,6 +185,7 @@ class DraftSourceDefinition:
     watched_subfolder: str = ""
     date_time_settings: DraftDateTimeSettings = field(default_factory=DraftDateTimeSettings)
     skip_rules: tuple[DraftFieldSkipRule, ...] = ()
+    # DEPRECATED compatibility data; the current field editor does not emit it.
     mappings: tuple[DraftFieldMapping, ...] = ()
     validations: tuple[DraftValidationDefinition, ...] = ()
     schema_drift_policy: str = "WARNING"

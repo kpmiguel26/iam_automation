@@ -55,6 +55,11 @@ def _match_types(source_system: str, identifier_type: str) -> set[str]:
 def find_worker_matches(session, source_system: str, payload: dict[str, object]) -> tuple[list[str], str]:
     """Find canonical workers using all strong evidence, then safe fallbacks.
 
+    DEPRECATED (migration pending): this Employee-specific resolver is the
+    active runtime path until a runtime Object Engine consumes approved
+    Template Object relationships and passes matching parity. Keep its current
+    callers and result/reason contract during the parallel phase.
+
     The previous implementation returned on the first identifier.  That made
     the result dependent on field order and allowed two identifiers in one
     source row to point at different canonical workers without surfacing the

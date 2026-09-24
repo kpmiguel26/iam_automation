@@ -49,6 +49,13 @@ class MasterRosterIngestionService:
         self.database_path = database_path
 
     def ingest_file(self, path: Path, actor: str = "workspace-watcher") -> MasterRosterIngestionResult:
+        """Stage one Master Roster file through its active compatibility path.
+
+        DEPRECATED (migration pending): the inline batch/quarantine/fact
+        persistence below is scheduled to move to ``IngestionBatchService``.
+        Keep source reading, normalization and the public result shape intact;
+        do not switch callers until Master Roster parity is demonstrated.
+        """
         path = path.expanduser().resolve()
         if path.suffix.lower() != ".xlsx":
             raise ValueError("Master Roster ingestion requires an XLSX workbook.")

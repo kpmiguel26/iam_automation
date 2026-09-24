@@ -1,5 +1,6 @@
 <div id="template-cards" class="template-card-grid mt-4" aria-live="polite">
   {% if message %}<div class="alert alert-success template-card-message" role="status">{{ message }}</div>{% endif %}
+  {% if not cards %}<div class="empty-state surface mt-4"><span class="empty-state-icon">1</span><strong>No report templates in the library</strong><span>Define a report and choose “Save template to the library” to keep its configuration here.</span><a class="btn btn-primary mt-2" href="{{ url_for('ingestion_configuration.start_new_template') }}">Start a report template</a></div>{% endif %}
   {% for item in cards %}
     {% set definition = item.definition %}
     {% set identity = definition.identity_governance %}
@@ -54,6 +55,7 @@
               {% else %}
                 <form method="post" action="{{ url_for('ingestion_configuration.create_version', version_id=item.definition_version_id) }}"><button class="btn btn-outline-secondary" type="submit">New version</button></form>
               {% endif %}
+              <button class="btn btn-outline-danger ms-auto" type="button" hx-get="{{ url_for('ingestion_configuration.delete_template_modal', source_id=item.source_id) }}" hx-target="#template-modal-region" hx-swap="innerHTML" aria-label="Delete {{ definition.display_name or item.source_id }} report template">Delete report template</button>
             </div>
             {% if item.versions|length > 1 %}
               <details class="template-version-history"><summary>Version history ({{ item.versions|length }})</summary>

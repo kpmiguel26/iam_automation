@@ -68,6 +68,13 @@ class AccessNowIngestionService:
         self.database_path = database_path
 
     def ingest_folder(self, folder: Path) -> AccessNowIngestionResult:
+        """Merge and stage the active/termination report set.
+
+        DEPRECATED (migration pending): its inline batch persistence is a
+        source-specific lifecycle path planned to use ``IngestionBatchService``.
+        The multi-file merge, AccessNow policy, reconciliation and result
+        contract remain active until their runtime replacements pass parity.
+        """
         folder = folder.expanduser().resolve()
         paths = sorted(path for path in folder.iterdir() if path.is_file() and path.suffix.lower() in {".csv", ".xlsx"} and not path.name.startswith("."))
         if not paths:
@@ -182,6 +189,13 @@ class AccessNowIngestionService:
 
     @staticmethod
     def _find_match_detail(session, payload: dict[str, str], match_index: dict[str, dict[tuple[str, str], set[str]]] | None = None) -> tuple[list[str], str]:
+        """Resolve AccessNow rows against the active canonical Employee model.
+
+        DEPRECATED (migration pending): this source-specific runtime resolver
+        is a replacement target for the future Object Engine. Keep it active
+        until saved Template Object relationships are executable and parity is
+        demonstrated.
+        """
         if match_index is None:
             return find_worker_matches(session, SOURCE_SYSTEM, payload)
         strong_matches: dict[str, set[str]] = {}

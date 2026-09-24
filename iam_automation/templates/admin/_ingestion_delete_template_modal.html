@@ -1,0 +1,12 @@
+<div class="modal fade" id="deleteReportTemplateModal" tabindex="-1" aria-labelledby="deleteReportTemplateModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form class="modal-content" method="post" action="{{ url_for('ingestion_configuration.delete_template', source_id=item.source_id) }}" data-template-config-save hx-post="{{ url_for('ingestion_configuration.delete_template', source_id=item.source_id) }}" hx-target="#template-cards" hx-swap="outerHTML" hx-indicator="#delete-template-saving">
+      <div class="modal-header"><div><p class="eyebrow mb-1">Report template · Removal</p><h2 class="modal-title h4" id="deleteReportTemplateModalTitle">Delete report template?</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-body">
+        <p class="mb-2">Remove <strong>{{ item.definition.display_name or item.source_id }}</strong> from the active Template Library?</p>
+        <p class="small text-secondary mb-0">It has {{ item.versions|length }} saved version{{ '' if item.versions|length == 1 else 's' }}. The template will disappear from the active library and ingestion order. Its version history, owner/editor attribution and any Employee-template references will remain in the database. If you define this report again with the same internal key, it returns as a new draft version with its earlier history intact.</p>
+      </div>
+      <div class="modal-footer"><span id="delete-template-saving" class="htmx-indicator small text-secondary" role="status">Removing template…</span><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger" type="submit">Delete report template</button></div>
+    </form>
+  </div>
+</div>

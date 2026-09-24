@@ -1,0 +1,51 @@
+<fieldset class="object-match-row surface p-3 mb-3" data-object-match-group>
+  <legend class="visually-hidden">Strong identifier match group {{ row_index + 1 }}</legend>
+  <div class="row g-3 align-items-end">
+    <div class="col-md-6">
+      <label class="form-label" for="object-match-source-{{ row_index }}">Anchor report</label>
+      <select class="form-select" id="object-match-source-{{ row_index }}" name="object_match_source_{{ row_index }}" data-object-match-source required>
+        <option value="">Choose a report</option>
+        {% for source in object_sources if source.source_id in selected_sources %}
+          <option value="{{ source.source_id }}" {% if source.source_id == match.source_id %}selected{% endif %}>{{ source.source_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="object-match-anchor-{{ row_index }}">Anchor Strong identifier</label>
+      <select class="form-select" id="object-match-anchor-{{ row_index }}" name="object_match_anchor_{{ row_index }}" data-object-match-anchor required>
+        <option value="">Choose an identifier</option>
+        {% for option in identity_options if option.strength == 'STRONG' and option.source_id in selected_sources and (option.source_id, option.field_key) in selected_identifiers %}
+          <option value="{{ option.value }}" data-source-id="{{ option.source_id }}" {% if option.value == match.anchor_value %}selected{% endif %}>{{ option.source_name }} · {{ option.source_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="mt-3" data-object-match-targets>
+    <p class="form-label mb-2">Matching Strong identifiers in other reports</p>
+    <div class="row g-2">
+      {% for source in object_sources if source.source_id in selected_sources %}
+        {% set report_options = identity_options|selectattr('source_id', 'equalto', source.source_id)|selectattr('strength', 'equalto', 'STRONG')|list %}
+        {% if report_options %}
+          <div class="col-12 col-lg-6" data-object-match-target-report="{{ source.source_id }}">
+            <div class="surface p-3 h-100">
+              <strong class="d-block mb-2">{{ source.source_label }}</strong>
+              {% for option in report_options %}
+                {% if (option.source_id, option.field_key) in selected_identifiers %}
+                  <label class="form-check d-flex gap-2 align-items-start mb-2" for="object-match-target-{{ row_index }}-{{ source.source_id }}-{{ option.field_key }}">
+                    <input class="form-check-input mt-1" type="checkbox" id="object-match-target-{{ row_index }}-{{ source.source_id }}-{{ option.field_key }}" name="object_match_targets_{{ row_index }}" value="{{ option.value }}" data-object-match-target data-source-id="{{ option.source_id }}" {% if option.value in match.target_values %}checked{% endif %}>
+                    <span>{{ option.source_name }} <small class="text-secondary">· {{ option.field_key }}</small></span>
+                  </label>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <div class="form-text">Select one or more fields. They must come from reports other than the anchor report.</div>
+  </div>
+
+  <input type="hidden" name="object_match_indices" value="{{ row_index }}">
+  <button class="btn btn-sm btn-link text-danger px-0 mt-2" type="button" data-remove-object-match>Remove match group</button>
+</fieldset>

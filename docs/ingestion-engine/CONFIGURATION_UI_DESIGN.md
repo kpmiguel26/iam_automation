@@ -56,6 +56,11 @@ READ FILE -> REVIEW RAW STRUCTURE -> COMPOSE HEADERS -> REVIEW DATA -> SELECT CO
 - **SET INGESTION ORDER:** move template cards earlier or later. The order is
   stored by stable source key in separate metadata, so changing order does not
   rewrite immutable approved definition versions.
+- **DELETE REPORT TEMPLATE:** an administrator confirms removal from the active
+  library. The template is excluded from the active order and new Employee field
+  choices; its version snapshots, attribution and existing Employee-template
+  references remain preserved as evidence. Recreating a report with the same
+  internal key restores it as a new draft version and records the restoration.
 - **CONFIGURE TEMPLATE BEHAVIOR:** an HTMX modal on each card can select or
   create a watched subfolder strictly below the configured SharePoint root,
   choose the active Business Rules calendar time zone or a custom IANA time
@@ -64,6 +69,15 @@ READ FILE -> REVIEW RAW STRUCTURE -> COMPOSE HEADERS -> REVIEW DATA -> SELECT CO
   also be saved by choosing a comparison and a calendar date. Folder paths, calendar
   references, timezone choices and skip rules are configuration metadata only;
   they do not activate the watcher, convert values or exclude rows.
+- **CONFIGURE TEMPLATE OBJECT:** a separate card lets the user name an object,
+  select saved report templates as sources, and automatically builds its
+  properties from their included fields. The user selects Strong and Supporting
+  identifiers declared by those report templates, then creates match groups:
+  one selected Strong identifier from an anchor report can link to one or more
+  Strong identifiers from other reports. A source graph must connect every
+  selected report. Saved relationship groups expand to the existing persisted
+  pair list so earlier object-template versions remain readable. Each saved
+  version retains source lineage and owner/editor attribution.
 
 The interaction is server-rendered with HTMX partial swaps and retains normal
 form actions as a full-page fallback. This keeps the screen approachable for
@@ -79,7 +93,31 @@ continue a draft, approve a valid draft, or create a new draft from an approved
 version. Approved versions are immutable.
 There is no Activate, Publish, Enable watcher or Run ingestion action.
 
-## 3. Draft contract
+## 3. Parallel runtime and deprecation register
+
+The new template library and the production ingestion path are parallel systems
+for now. Report and Template Object versions are configuration evidence only.
+They do not replace the current source-specific adapters, the hard-coded runtime
+dispatcher, canonical Employee matching, or approval/application workflows.
+
+Legacy entry points carry source-level `DEPRECATED` notes to preserve the
+migration trail. The marker means “planned replacement, still active”; it does
+not remove or redirect callers. Keep each compatibility path until its runtime
+replacement exists and source-specific parity is demonstrated.
+
+| Legacy entry point | Replacement target | Current status |
+|---|---|---|
+| `IngestionOrchestrator` hard-coded factory dispatch | Future `SourceRecognizer` + `SourceRegistry` | Active dispatcher; no runtime registry is wired yet. |
+| Master Roster, AccessNow and RSR hand-written batch persistence | `IngestionBatchService` | Still active per source; Roster Lock already delegates to the generic batch service. |
+| `find_worker_matches` and source-specific matching calls | Future runtime resolver consuming Template Object relationships | Still active for the existing Employee model; the Template Object only stores configuration. |
+| `DraftFieldMapping` and `template_mappings` | Draft field keys/cleanup plus versioned report-template snapshots | Legacy configuration compatibility is retained; new library editing does not write the legacy mapping table. |
+
+Do not treat existing matching or application workflows as switched or
+inactive: the new object configuration is not consumed by runtime ingestion.
+No adapter, canonical Employee flow or old mapping table is deleted by this
+phase.
+
+## 4. Draft contract
 
 The typed contracts live in `iam_automation/application/ingestion/`:
 
@@ -105,7 +143,7 @@ separate from the editable draft field key. Identity authority is never inferred
 as an active decision: the screen provides explainable hints, but the user must
 select the role and permissions.
 
-## 4. Validation and preview behavior
+## 5. Validation and preview behavior
 
 The preview service supports CSV and XLSX samples with a 20 MB upload limit, at
 most 5,000 inspected rows and at most 25 displayed rows. Excel sheet names, raw
@@ -119,16 +157,23 @@ Transforms are an explicit allow-list; arbitrary Python is never evaluated. The
   are suggested for lowercase trimming, dates are prepared for validation and
   ordinary text defaults to keeping the source value as provided.
 
-## 5. Isolation guarantees
+## 6. Isolation guarantees
 
 The configuration library:
 
 - stores draft and approved template snapshots in an additive SQLite table;
 - stores source-template execution order in a separate additive table;
+- stores removal/restoration events in `source_template_lifecycle_events` and
+  retains all report version rows and source lineage;
+- stores the user-named Template Object as versioned configuration in the
+  existing `employee_template_versions` history table; selected identifiers,
+  cross-report Strong links and generated property references retain their
+  source-report lineage;
 - keeps the current editing pointer in the signed Flask session;
 - records the actor and timestamps for creation, edits and approval;
 - preserves approved versions and starts a new version when further configuration is needed;
-- does not use the governed employee-field catalog for source selection;
+- derives object properties from included fields in selected saved report
+  templates and does not mutate the governed field catalog;
 - persists identity governance with the versioned template snapshot;
 - persists the selected SharePoint subfolder, the pinned calendar/timezone
   settings, selected date/time fields and future date-age skip rules with the
@@ -144,22 +189,34 @@ The configuration library:
   SharePoint root, and does not connect them to the production watcher;
 - never changes FileWatchService, active adapters, result contracts or `BEFORE` semantics.
 
-## 6. Integration boundary with the future engine
+## 7. Integration boundary with the future engine
 
-The draft contract is a validation target for the future agnostic engine. It is
-not passed to `IngestionBatchService`, `IngestionOrchestrator` or any source
-adapter. Employee/canonical mapping is deliberately not part of this screen;
-the Employee Engine will own that later. Identity governance is declared here,
-but the future Identity Resolver/Employee Engine will execute it only after
-facts are committed. The current persisted snapshots are library records only;
-a runtime registry and batch-pinned policy snapshots remain future work.
+The report draft contract is a validation target for the future agnostic engine.
+It is not passed to `IngestionBatchService`, `IngestionOrchestrator` or any source
+adapter. The Template Object stores a user-chosen object name, source property
+references, selected identifiers and Strong links across reports. This phase only
+records configuration: it does not create objects, match identities, define
+merge precedence or map differently named fields into shared canonical
+attributes. Those decisions remain with a future object engine. Identity
+governance is declared in report templates, but a future resolver will execute it
+only after facts are committed. These snapshots are library records only; a
+runtime registry and batch-pinned policy snapshots remain future work.
 
-## 7. Files
+## 8. Files
 
 - `iam_automation/application/ingestion/configuration_contracts.py`
 - `iam_automation/application/ingestion/configuration_service.py`
 - `iam_automation/application/ingestion/template_repository.py`
+- `iam_automation/application/ingestion/object_template_repository.py`
+- `iam_automation/database/alembic/versions/0025_employee_template_versions.py`
+- `iam_automation/database/alembic/versions/0026_source_template_deletions.py`
+- `iam_automation/database/alembic/versions/0027_source_template_lifecycle_events.py`
+- `iam_automation/application/ingestion/object_template_repository.py`
 - `iam_automation/templates/admin/ingestion_template_library.html`
+- `iam_automation/templates/admin/_object_template_card.html`
+- `iam_automation/templates/admin/_object_template_modal.html`
+- `iam_automation/templates/admin/_object_template_match_row.html`
+- `iam_automation/templates/admin/_ingestion_delete_template_modal.html`
 - `iam_automation/templates/admin/_ingestion_template_cards.html`
 - `iam_automation/templates/admin/_ingestion_template_behavior_modal.html`
 - `iam_automation/static/js/ingestion-template-library.js`
@@ -170,7 +227,7 @@ a runtime registry and batch-pinned policy snapshots remain future work.
 - `iam_automation/webapp.py`
 - `tests/test_ingestion_configuration.py`
 
-## 8. Current limitations and open questions
+## 9. Current limitations and open questions
 
 - Sample bytes remain in memory for a short time; saved definitions remain in SQLite.
 - Approval validates the current draft contract and freezes a version, but does not publish or activate it.

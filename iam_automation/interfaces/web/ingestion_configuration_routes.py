@@ -6,6 +6,7 @@ from functools import wraps
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable
+import json
 import os
 import re
 import time
@@ -13,7 +14,7 @@ import uuid
 from dataclasses import replace
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
-from flask import Blueprint, redirect, render_template, request, session, url_for
+from flask import Blueprint, make_response, redirect, render_template, request, session, url_for
 
 from ...application.ingestion.configuration_contracts import (
     DRAFT_DRIFT_POLICIES,
@@ -39,6 +40,7 @@ from ...application.ingestion.configuration_contracts import (
     DraftValidationDefinition,
 )
 from ...application.ingestion.configuration_service import DraftConfigurationService, suggest_source_transform
+from ...application.ingestion.object_template_repository import ObjectTemplateRepository
 from ...application.ingestion.template_repository import TemplateRepository
 from ...application.rules.configuration import RuleConfigurationService
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
@@ -53,6 +55,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
     blueprint = Blueprint("ingestion_configuration", __name__, url_prefix="/admin/ingestion-sources")
     service = DraftConfigurationService(database_path)
     templates = TemplateRepository(database_path)
+    object_templates = ObjectTemplateRepository(database_path)
     rule_configuration = RuleConfigurationService(database_path)
     sample_artifacts: dict[str, tuple[float, str, bytes]] = {}
 
@@ -79,6 +82,21 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
     def current_actor() -> str:
         return str(session.get("iam_user") or "administrator")
 
+    def fragment_status(status_code: int) -> int:
+        """Let HTMX swap rendered validation feedback while preserving HTTP errors for normal forms."""
+        if request.headers.get("HX-Request") == "true" and 400 <= status_code < 500:
+            return 200
+        return status_code
+
+    def modal_validation_response(body):
+        """Retarget rendered validation feedback into the modal without replacing library cards."""
+        if request.headers.get("HX-Request") == "true":
+            response = make_response(body, 200)
+            response.headers["HX-Retarget"] = "#template-modal-region"
+            response.headers["HX-Reswap"] = "innerHTML"
+            return response
+        return body, 400
+
     def active_rule_calendar() -> dict[str, Any]:
         configuration = rule_configuration.configuration()
         context = configuration.get("context_version")
@@ -104,9 +122,57 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
 
     def card_context() -> dict[str, Any]:
         cards = templates.list_template_cards()
+        property_options: list[dict[str, str]] = []
+        identity_options: list[dict[str, Any]] = []
+        object_sources: list[dict[str, Any]] = []
         for card in cards:
             card["definition"] = DraftSourceDefinition.from_dict(card["definition"]).to_dict()
-        return {"cards": cards, "rule_calendar": active_rule_calendar()}
+            definition = card["definition"]
+            included_fields = [field for field in definition["fields"] if field["include"]]
+            object_sources.append({
+                "source_id": card["source_id"],
+                "source_definition_version_id": card["definition_version_id"],
+                "source_label": definition["display_name"] or card["source_id"],
+                "field_count": len(included_fields),
+            })
+            for field in included_fields:
+                property_options.append({
+                    "source_id": card["source_id"],
+                    "source_definition_version_id": card["definition_version_id"],
+                    "source_label": definition["display_name"] or card["source_id"],
+                    "field_key": field["field_key"],
+                    "source_name": field["source_name"],
+                    "data_type": field["data_type"],
+                    "value": json.dumps([card["source_id"], field["field_key"]], ensure_ascii=False),
+                })
+            identity = definition["identity_governance"]
+            included_by_key = {field["field_key"]: field for field in included_fields}
+            for identifier in identity["identifiers"]:
+                field = included_by_key.get(identifier["field_key"])
+                if not field or not identifier["can_match"]:
+                    continue
+                identity_options.append({
+                    "source_id": card["source_id"],
+                    "source_definition_version_id": card["definition_version_id"],
+                    "source_label": definition["display_name"] or card["source_id"],
+                    "field_key": identifier["field_key"],
+                    "source_name": field["source_name"],
+                    "strength": identifier["strength"],
+                    "can_create_identity": identifier["can_create_identity"],
+                    "source_can_create_object": identity["role"] == "IDENTITY_SEED" and identity["can_create_employee"],
+                    "value": json.dumps([card["source_id"], identifier["field_key"]], ensure_ascii=False),
+                })
+        property_options.sort(key=lambda option: (option["source_label"].casefold(), option["source_name"].casefold()))
+        identity_options.sort(key=lambda option: (option["source_label"].casefold(), option["source_name"].casefold()))
+        object_sources.sort(key=lambda option: option["source_label"].casefold())
+        return {
+            "cards": cards,
+            "rule_calendar": active_rule_calendar(),
+            "object_template": object_templates.latest(),
+            "object_sources": object_sources,
+            "object_property_options": property_options,
+            "object_identity_options": identity_options,
+        }
 
     def sharepoint_folders() -> tuple[str, ...]:
         if sharepoint_root is None:
@@ -239,7 +305,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 drift_policies=DRAFT_DRIFT_POLICIES,
                 raw_column_count=_raw_column_count(context.get("raw_rows", ())),
                 **context,
-            ), status_code
+            ), fragment_status(status_code)
         return render_page(draft=draft, status_code=status_code, **context)
 
     @blueprint.post("/sample/inspect")
@@ -331,10 +397,14 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         try:
             saved = templates.save_draft(draft.to_dict(), current_actor(), session.get("ingestion_definition_version_id"))
         except ValueError as exc:
-            return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, artifact_id=str(selection.get("artifact_id", "")), error=str(exc), status_code=400)
+            return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, artifact_id=str(selection.get("artifact_id", "")), error=f"Could not save the report template: {exc}", status_code=400)
         session[SESSION_KEY] = draft.to_dict()
         session["ingestion_definition_version_id"] = saved["definition_version_id"]
-        return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, artifact_id=str(selection.get("artifact_id", "")), message=f"Source schema saved in this browser session and in the template library as draft version {saved['version_number']}.")
+        if saved.get("reactivated"):
+            message = f"The deleted report template was restored as draft version {saved['version_number']}. Its earlier versions and audit history were retained."
+        else:
+            message = f"Source schema saved in this browser session and in the template library as draft version {saved['version_number']}."
+        return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, artifact_id=str(selection.get("artifact_id", "")), message=message)
 
     @blueprint.post("/sample/preview")
     @admin_required
@@ -423,6 +493,282 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
     def template_library():
         return render_template("admin/ingestion_template_library.html", **card_context())
 
+    @blueprint.get("/library/<source_id>/delete")
+    @admin_required
+    def delete_template_modal(source_id: str):
+        item = next((card for card in templates.list_template_cards() if card["source_id"] == source_id), None)
+        if item is None:
+            return "Report template not found.", 404
+        return render_template("admin/_ingestion_delete_template_modal.html", item=item)
+
+    @blueprint.post("/library/<source_id>/delete")
+    @admin_required
+    def delete_template(source_id: str):
+        try:
+            templates.delete_template(source_id, current_actor())
+        except ValueError as exc:
+            return str(exc), 404
+        if request.headers.get("HX-Request") == "true":
+            return render_template(
+                "admin/_ingestion_template_cards.html",
+                **card_context(),
+                message="Report template removed from the active library. Its versions and audit history were retained.",
+            )
+        return redirect(url_for("ingestion_configuration.template_library"))
+
+    def parse_object_ref(value: str) -> tuple[str, str] | None:
+        try:
+            source_id, field_key = json.loads(value)
+        except (TypeError, ValueError):
+            return None
+        if not source_id or not field_key:
+            return None
+        return str(source_id), str(field_key)
+
+    def object_modal_context(form_values=None, *, error: str | None = None):
+        context = card_context()
+        saved = context["object_template"]
+        prior_definition = (saved or {}).get("definition", {})
+        sources = list(context["object_sources"])
+        source_ids = {source["source_id"] for source in sources}
+        for source in prior_definition.get("source_templates", ()):
+            source_id = str(source.get("source_id", ""))
+            if source_id and source_id not in source_ids:
+                sources.append({**source, "stale": True, "field_count": 0})
+                source_ids.add(source_id)
+        identity_options = list(context["object_identity_options"])
+        identity_refs = {(item["source_id"], item["field_key"]) for item in identity_options}
+        for identifier in prior_definition.get("identifiers", ()):
+            key = (str(identifier.get("source_id", "")), str(identifier.get("field_key", "")))
+            if key[0] and key[1] and key not in identity_refs:
+                identity_options.append({**identifier, "source_label": identifier.get("source_label", key[0]), "stale": True, "value": json.dumps(list(key), ensure_ascii=False)})
+                identity_refs.add(key)
+        property_options = list(context["object_property_options"])
+        property_refs = {(item["source_id"], item["field_key"]) for item in property_options}
+        for prop in prior_definition.get("properties", ()):
+            key = (str(prop.get("source_id", "")), str(prop.get("field_key", "")))
+            if key[0] and key[1] and key not in property_refs:
+                property_options.append({**prop, "source_label": prop.get("source_label", key[0]), "stale": True})
+                property_refs.add(key)
+
+        if form_values is not None:
+            selected_sources = set(form_values.getlist("object_sources"))
+            selected_identifiers = {ref for value in form_values.getlist("object_identifiers") if (ref := parse_object_ref(value))}
+            object_name = str(form_values.get("object_name", ""))
+            creation_authorized = form_values.get("allow_object_creation") == "on"
+            indices = form_values.getlist("object_match_indices")
+            matches = []
+            for index in indices:
+                index = str(_positive_int(index, default=0))
+                if any(item["index"] == index for item in matches):
+                    continue
+                source_id = str(form_values.get(f"object_match_source_{index}", ""))
+                anchor_value = str(form_values.get(f"object_match_anchor_{index}", ""))
+                target_values = [str(value) for value in form_values.getlist(f"object_match_targets_{index}") if value]
+                matches.append({
+                    "index": str(index),
+                    "source_id": source_id,
+                    "anchor_value": anchor_value,
+                    "target_values": target_values,
+                })
+        else:
+            saved_sources = prior_definition.get("source_templates", ())
+            selected_sources = {str(source.get("source_id", "")) for source in saved_sources if source.get("source_id")}
+            if not saved_sources:
+                selected_sources = {source["source_id"] for source in context["object_sources"]}
+            selected_identifiers = {
+                (str(item.get("source_id", "")), str(item.get("field_key", "")))
+                for item in prior_definition.get("identifiers", ())
+                if item.get("source_id") and item.get("field_key")
+            }
+            object_name = str(prior_definition.get("object_name", ""))
+            creation_authorized = bool(prior_definition.get("allow_object_creation", False))
+            matches = []
+            grouped_matches: dict[tuple[str, str], dict[str, Any]] = {}
+            for match in prior_definition.get("matches", ()):
+                left = match.get("left", {})
+                right = match.get("right", {})
+                anchor_ref = (str(left.get("source_id", "")), str(left.get("field_key", "")))
+                target_ref = (str(right.get("source_id", "")), str(right.get("field_key", "")))
+                if not all(anchor_ref) or not all(target_ref):
+                    continue
+                group = grouped_matches.setdefault(anchor_ref, {
+                    "source_id": anchor_ref[0],
+                    "anchor_value": json.dumps(list(anchor_ref), ensure_ascii=False),
+                    "target_values": [],
+                })
+                target_value = json.dumps(list(target_ref), ensure_ascii=False)
+                if target_value not in group["target_values"]:
+                    group["target_values"].append(target_value)
+            matches = [dict(item, index=str(index)) for index, item in enumerate(grouped_matches.values())]
+        sources.sort(key=lambda item: str(item.get("source_label", item.get("source_id", ""))).casefold())
+        identity_options.sort(key=lambda item: (str(item.get("source_label", "")).casefold(), str(item.get("source_name", "")).casefold()))
+        property_options.sort(key=lambda item: (str(item.get("source_label", "")).casefold(), str(item.get("source_name", "")).casefold()))
+        return render_template(
+            "admin/_object_template_modal.html",
+            object_sources=sources,
+            identity_options=identity_options,
+            property_options=property_options,
+            selected_sources=selected_sources,
+            selected_identifiers=selected_identifiers,
+            next_match_index=max((int(item["index"]) for item in matches), default=-1) + 1,
+            object_name=object_name,
+            creation_authorized=creation_authorized,
+            matches=matches,
+            saved=saved,
+            error=error,
+        )
+
+    def object_modal_error(form_values, message: str):
+        return modal_validation_response(object_modal_context(form_values, error=message))
+
+    @blueprint.get("/library/template-object/settings")
+    @admin_required
+    def object_template_modal():
+        return object_modal_context()
+
+    @blueprint.get("/library/template-object/match-row")
+    @admin_required
+    def object_template_match_row():
+        context = card_context()
+        selected_sources = set(request.args.getlist("object_sources"))
+        selected_refs = {ref for value in request.args.getlist("object_identifiers") if (ref := parse_object_ref(value))}
+        selected_strong = [
+            item for item in context["object_identity_options"]
+            if item["strength"] == "STRONG" and item["source_id"] in selected_sources
+            and (item["source_id"], item["field_key"]) in selected_refs
+        ]
+        strong_sources = {item["source_id"] for item in selected_strong}
+        if len(strong_sources) < 2:
+            return "", 204
+        return render_template(
+            "admin/_object_template_match_row.html",
+            row_index=_positive_int(request.args.get("index", "0"), default=0),
+            object_sources=[item for item in context["object_sources"] if item["source_id"] in selected_sources],
+            identity_options=selected_strong,
+            selected_sources=selected_sources,
+            selected_identifiers=selected_refs,
+            match={"source_id": "", "anchor_value": "", "target_values": []},
+        )
+
+    @blueprint.post("/library/template-object/settings")
+    @admin_required
+    def save_object_template():
+        context = card_context()
+        prior = context["object_template"]
+        prior_definition = (prior or {}).get("definition", {})
+        current_sources = {item["source_id"]: item for item in context["object_sources"]}
+        prior_sources = {str(item.get("source_id", "")): item for item in prior_definition.get("source_templates", ())}
+        selected_sources = list(dict.fromkeys(request.form.getlist("object_sources")))
+        source_refs = {**prior_sources, **current_sources}
+        object_name = str(request.form.get("object_name", "")).strip()
+        if not object_name:
+            return object_modal_error(request.form, "Enter a name for this object template.")
+        if len(object_name) > 120:
+            return object_modal_error(request.form, "Keep the object name to 120 characters or fewer.")
+        if not selected_sources or any(source_id not in source_refs for source_id in selected_sources):
+            return object_modal_error(request.form, "Choose at least one saved report template for this object.")
+
+        identity_options = {(item["source_id"], item["field_key"]): item for item in context["object_identity_options"]}
+        prior_identities = {
+            (str(item.get("source_id", "")), str(item.get("field_key", ""))): item
+            for item in prior_definition.get("identifiers", ())
+        }
+        selected_identifiers: list[dict[str, Any]] = []
+        seen_identifier_refs: set[tuple[str, str]] = set()
+        for value in request.form.getlist("object_identifiers"):
+            ref = parse_object_ref(value)
+            if not ref or ref[0] not in selected_sources or ref in seen_identifier_refs:
+                continue
+            candidate = identity_options.get(ref) or prior_identities.get(ref)
+            if candidate is None:
+                return object_modal_error(request.form, "Choose only strong or weak identifiers configured in the selected report templates.")
+            selected_identifiers.append(candidate)
+            seen_identifier_refs.add(ref)
+
+        selected_identity_map = {(item["source_id"], item["field_key"]): item for item in selected_identifiers}
+        if not selected_identifiers:
+            return object_modal_error(request.form, "Choose at least one configured Strong or Supporting identifier for this object.")
+        match_indices = list(dict.fromkeys(_positive_int(value, default=0) for value in request.form.getlist("object_match_indices")))
+        matches: list[dict[str, Any]] = []
+        used_match_pairs: set[frozenset[tuple[str, str]]] = set()
+        adjacency = {source_id: set() for source_id in selected_sources}
+        for index in match_indices:
+            source_id = str(request.form.get(f"object_match_source_{index}", ""))
+            anchor_value = str(request.form.get(f"object_match_anchor_{index}", ""))
+            target_values = [str(value) for value in request.form.getlist(f"object_match_targets_{index}") if value]
+            if not source_id and not anchor_value and not target_values:
+                continue
+            anchor_ref = parse_object_ref(anchor_value)
+            anchor = selected_identity_map.get(anchor_ref) if anchor_ref else None
+            if source_id not in selected_sources or anchor is None or anchor["strength"] != "STRONG" or anchor["source_id"] != source_id:
+                return object_modal_error(request.form, "Choose a selected Strong identifier from the selected anchor report.")
+            if not target_values:
+                return object_modal_error(request.form, "Choose at least one Strong identifier from another report for each match group.")
+            for target_value in target_values:
+                target_ref = parse_object_ref(target_value)
+                target = selected_identity_map.get(target_ref) if target_ref else None
+                if target is None or target["strength"] != "STRONG":
+                    return object_modal_error(request.form, "Each target must be a selected Strong identifier.")
+                if target["source_id"] == source_id:
+                    return object_modal_error(request.form, "Choose target identifiers from reports other than the anchor report.")
+                pair_ref = frozenset((anchor_ref, target_ref))
+                if pair_ref in used_match_pairs:
+                    return object_modal_error(request.form, "This Strong identifier pair is already included in another match group.")
+                used_match_pairs.add(pair_ref)
+                adjacency[anchor["source_id"]].add(target["source_id"])
+                adjacency[target["source_id"]].add(anchor["source_id"])
+                matches.append({"strength": "STRONG", "left": anchor, "right": target})
+
+        if len(selected_sources) > 1:
+            sources_with_strong_ids = {item["source_id"] for item in selected_identifiers if item["strength"] == "STRONG"}
+            if any(source_id not in sources_with_strong_ids for source_id in selected_sources):
+                return object_modal_error(request.form, "Choose a Strong identifier for every report template that contributes fields.")
+            connected = set()
+            frontier = [selected_sources[0]]
+            while frontier:
+                source_id = frontier.pop()
+                if source_id in connected:
+                    continue
+                connected.add(source_id)
+                frontier.extend(adjacency.get(source_id, ()) - connected)
+            if connected != set(selected_sources):
+                return object_modal_error(request.form, "Link every contributing report template through Strong identifiers before saving.")
+
+        allow_creation = request.form.get("allow_object_creation") == "on"
+        creation_authorized_by_source: dict[str, int] = {}
+        for item in selected_identifiers:
+            if item["strength"] == "STRONG" and item.get("source_can_create_object") and item.get("can_create_identity"):
+                creation_authorized_by_source[item["source_id"]] = creation_authorized_by_source.get(item["source_id"], 0) + 1
+        if allow_creation and max(creation_authorized_by_source.values(), default=0) < 2:
+            return object_modal_error(request.form, "Object creation requires at least two selected Strong identifiers that their report templates explicitly authorize for creation.")
+
+        property_options = {(item["source_id"], item["field_key"]): item for item in context["object_property_options"]}
+        prior_properties = {
+            (str(item.get("source_id", "")), str(item.get("field_key", ""))): item
+            for item in prior_definition.get("properties", ())
+        }
+        properties = []
+        for source_id in selected_sources:
+            for key, option in property_options.items():
+                if key[0] == source_id:
+                    properties.append(option)
+            if source_id not in current_sources:
+                properties.extend(item for key, item in prior_properties.items() if key[0] == source_id)
+        source_templates = [source_refs[source_id] for source_id in selected_sources]
+        definition = {
+            "object_name": object_name,
+            "allow_object_creation": allow_creation,
+            "source_templates": source_templates,
+            "properties": properties,
+            "identifiers": selected_identifiers,
+            "matches": matches,
+        }
+        saved = object_templates.save_draft(definition, current_actor())
+        if request.headers.get("HX-Request") == "true":
+            return render_template("admin/_object_template_card.html", **card_context(), message=f"{object_name} object template saved as draft v{saved['version_number']}.")
+        return redirect(url_for("ingestion_configuration.template_library"))
+
     @blueprint.get("/library/<version_id>/identity-settings")
     @admin_required
     def identity_settings_modal(version_id: str):
@@ -470,7 +816,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 error = "Set the identity matching limit to at least one field."
             else:
                 error = f"This template allows up to {identity_limit} identity fields. Remove extra selections or increase the limit."
-            return render_template(
+            return modal_validation_response(render_template(
                 "admin/_ingestion_identity_settings_modal.html",
                 item=saved,
                 draft=configured,
@@ -478,14 +824,14 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 available_fields=tuple(field for field in configured.fields if field.include),
                 next_identity_row_index=max(1, len(configured.identity_governance.identifiers)),
                 error=error,
-            ), 400
+            ))
         try:
             if saved["status"] == "APPROVED":
                 saved = templates.save_draft(configured.to_dict(), current_actor())
             else:
                 templates.save_draft(configured.to_dict(), current_actor(), version_id)
         except ValueError as exc:
-            return render_template("admin/_ingestion_identity_settings_modal.html", item=saved, draft=configured, identity_rows=_identity_rows(configured), available_fields=tuple(field for field in configured.fields if field.include), next_identity_row_index=max(1, len(configured.identity_governance.identifiers)), error=str(exc)), 400
+            return modal_validation_response(render_template("admin/_ingestion_identity_settings_modal.html", item=saved, draft=configured, identity_rows=_identity_rows(configured), available_fields=tuple(field for field in configured.fields if field.include), next_identity_row_index=max(1, len(configured.identity_governance.identifiers)), error=str(exc)))
         if request.headers.get("HX-Request") == "true":
             return render_template("admin/_ingestion_template_cards.html", **card_context(), message="Identity settings saved as a template draft.")
         return redirect(url_for("ingestion_configuration.template_library"))
@@ -579,7 +925,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 templates.save_draft(configured.to_dict(), current_actor(), version_id)
         except (ValueError, OSError, ZoneInfoNotFoundError) as exc:
             response = behavior_modal(version_id, error=str(exc), form_values=request.form)
-            return response, 400
+            return modal_validation_response(response)
         if request.headers.get("HX-Request") == "true":
             return render_template("admin/_ingestion_template_cards.html", **card_context(), message="Template settings saved.")
         return redirect(url_for("ingestion_configuration.template_library"))
@@ -685,6 +1031,9 @@ def _draft_from_form(form) -> DraftSourceDefinition:
                 enum_values=enum_values,
             )
         )
+        # DEPRECATED compatibility: the current schema editor has no canonical
+        # mapping controls. Continue accepting old form posts without changing
+        # the versioned field-key contract.
         target = _indexed(form, "mapping_target", index).strip()
         if target:
             mappings.append(DraftFieldMapping(source_field=source_name.strip(), target_field=target, transform_name=_indexed(form, "mapping_transform", index) or "identity"))
@@ -767,7 +1116,7 @@ def _draft_from_inspection(draft: DraftSourceDefinition, inspection: dict[str, A
         reader_settings=replace(draft.reader_settings, format=str(inspection.get("format", "XLSX")), sheet_name=str(inspection.get("selected_sheet", "")), header_row=max(tuple(inspection.get("header_rows", (1,)))), header_rows=tuple(inspection.get("header_rows", (1,)))),
         recognition_settings=replace(draft.recognition_settings, extension=".csv" if inspection.get("format") == "CSV" else ".xlsx", sheet_name=str(inspection.get("selected_sheet", "")), required_headers=tuple(str(header) for header in inspection.get("headers", ()))),
         # The configuration laboratory describes source schema only. Canonical
-        # or employee mappings are intentionally deferred to the Employee Engine.
+        # or shared object mappings are intentionally deferred to the future Object Engine.
         mappings=(),
     )
 

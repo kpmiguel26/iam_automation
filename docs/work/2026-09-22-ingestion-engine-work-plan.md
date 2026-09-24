@@ -37,15 +37,19 @@ preserved; this task does not expand or reconnect the production lifecycle.
 - [x] Frozen draft contracts added; versioned persistence is isolated from runtime ingestion.
 - [x] CSV/XLSX sample inspection and bounded preview added.
 - [x] Source columns can be included/excluded and their inferred data types can be reviewed or overridden.
-- [x] Draft templates can declare identity authority without executing matching or creating employees.
+- [x] Draft templates can declare identity authority without executing matching or creating objects.
 - [x] Tests verify page access, draft editing, identifiers, CSV/XLSX inspection,
   preview diagnostics and production-write isolation.
 - [x] Persisted draft/approved template snapshots and a separate template library.
 - [x] Template library presents one card per source, with HTMX identity settings and source-level ingestion order.
 - [x] Template cards configure the SharePoint-root subfolder, saved/default or custom timezone, selected date/time fields, and an inert user-selected date comparison for future skipping.
+- [x] Administrators can hide/restore report templates without deleting their version or lifecycle history.
+- [x] A versioned, user-named Template Object definition derives properties from included source fields and stores user-selected Strong/Supporting identifiers and cross-report Strong match groups.
+- [x] Match groups support one anchor identifier to multiple target identifiers and save in the existing pair-list shape for compatibility.
 - [ ] Runtime `SourceDefinition` adapter and `SourceRegistry`.
 - [ ] `SourceRegistry`.
-- [ ] Production batch lifecycle extraction or source migration for this revised sequence.
+- [ ] Complete production batch lifecycle extraction and source-by-source migration. Roster Lock currently delegates batch persistence to `IngestionBatchService`; Master Roster, AccessNow and RSR retain hand-written persistence paths.
+- [ ] Runtime Object Engine consuming saved Template Object relationships; current Employee matching remains active.
 - [ ] Watcher activation, publishing and production configuration integration.
 
 ## Guardrails
@@ -58,10 +62,22 @@ preserved; this task does not expand or reconnect the production lifecycle.
   from sample inspection or preview.
 - Do not connect the production FileWatchService to draft watched paths.
 - Keep configured folder, timezone conversion and skip policies inert until a later runtime phase is approved.
-- Do not add database tables or migrations for drafts in this phase.
+- Keep configuration migrations additive and separate from the production source lifecycle. Existing saved drafts and history must remain readable.
 - Preserve current adapter imports, result shapes and legacy behavior.
 - When a later migration moves a function/class to a new file, follow the
   `DEPRECATED` compatibility protocol in `AGENTS.md`.
+
+### Parallel architecture and deprecation markers
+
+The new library is not a runtime replacement yet. Legacy entry points that have
+a defined future replacement are marked `DEPRECATED` in their docstrings or
+near the old compatibility path. This marker tracks the intended migration only:
+the current runtime still calls those entry points, and no caller is redirected
+until runtime implementation and source-specific parity are complete. Keep all
+marked code and schemas in place during this parallel phase.
+
+See [the deprecation register and configuration boundary](../ingestion-engine/CONFIGURATION_UI_DESIGN.md#3-parallel-runtime-and-deprecation-register)
+and the [four-source matching findings](../ingestion-engine/2026-09-24-four-source-match-findings.md).
 
 ## Phase A — Architecture baseline
 
@@ -93,9 +109,9 @@ Bootstrap and server-rendered conventions.
 - Add the `/admin/ingestion-sources` page and Administration navigation link.
 - Provide SOURCE, STRUCTURE, SOURCE SCHEMA and TEST / PREVIEW sections.
 - Keep the editing pointer in the signed Flask session; persist template snapshots in SQLite.
-- Keep employee/canonical field selection outside this prototype; the future Employee Engine owns it.
+- The future object engine owns a separate, versioned Template Object definition. Users name the object, select report templates as sources, inherit all included fields as properties, choose configured Strong/Supporting identifiers, and link Strong identifiers across sources; runtime object creation and updates remain outside this configuration phase.
 - Capture identity governance in the template draft: role, create authority and
-  per-field match/create permissions. This is source authority, not employee
+  per-field match/create permissions. This is source authority, not object
   field mapping.
 
 ### Non-goals
@@ -157,7 +173,7 @@ engine without making the definition production-owned.
 - Leading-zero identifiers remain strings.
 - Preview does not write production ingestion tables or facts.
 - The policy is saved in the versioned template snapshot but is not consumed by
-  the generic ingestion lifecycle. A future Identity Resolver/Employee Engine
+  the generic ingestion lifecycle. A future Identity Resolver/Object Engine
   consumes it after fact commitment.
 - Invalid draft configuration returns useful messages.
 

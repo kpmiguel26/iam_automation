@@ -92,6 +92,13 @@ class RsrSupplierWorkerDetailsAdapter:
         self.database_path = database_path
 
     def ingest_file(self, path: Path, actor: str = "workspace-watcher") -> RsrIngestionResult:
+        """Stage RSR details through the active source-specific adapter.
+
+        DEPRECATED (migration pending): inline batch persistence is scheduled
+        to move to ``IngestionBatchService``. Keep the reader, source policy,
+        matching/apply facade and result contract active until RSR parity is
+        demonstrated; do not remove or redirect callers here.
+        """
         path = path.expanduser().resolve()
         checksum = hashlib.sha256(read_stable_bytes(path)).hexdigest()
         with orm_session(self.database_path) as session:
@@ -132,6 +139,12 @@ class RsrSupplierWorkerDetailsAdapter:
         return RsrIngestionResult(batch_id, path.name, len(rows), staged, quarantined)
 
     def match_batch(self, batch_id: str) -> list[dict[str, str]]:
+        """Resolve staged RSR records against the active canonical Employee model.
+
+        DEPRECATED (migration pending): the future runtime Object Engine is
+        intended to consume configured cross-report relationships. Preserve
+        this matching result contract until that resolver and RSR parity exist.
+        """
         with orm_session(self.database_path) as session:
             records = session.scalars(select(IngestionRecordModel).where(IngestionRecordModel.batch_id == batch_id, IngestionRecordModel.source_system == SOURCE_SYSTEM, IngestionRecordModel.status == "STAGED").order_by(IngestionRecordModel.row_number)).all()
             preview = []
