@@ -49,6 +49,10 @@
     if (!root || !root.matches('#objectTemplateModal')) return;
     var sources = Array.from(root.querySelectorAll('[data-object-source]'));
     var selectedSources = new Set(sources.filter(function (input) { return input.checked; }).map(function (input) { return input.value; }));
+    var selectedSourceInputs = sources.filter(function (input) { return input.checked; });
+    var earliestSource = selectedSourceInputs.sort(function (left, right) {
+      return Number(left.dataset.ingestionOrder || '2147483647') - Number(right.dataset.ingestionOrder || '2147483647');
+    })[0] || null;
     var identities = Array.from(root.querySelectorAll('[data-object-identity]'));
     identities.forEach(function (input) {
       var sourceSelected = selectedSources.has(input.dataset.sourceId);
@@ -58,12 +62,16 @@
     var selectedStrong = identities.filter(function (input) { return input.checked && input.dataset.strength === 'STRONG'; });
     var selectedStrongRefs = new Set(selectedStrong.map(function (input) { return input.value; }));
     var strongSources = new Set(selectedStrong.map(function (input) { return input.dataset.sourceId; }));
-    root.querySelectorAll('[data-object-match-group]').forEach(function (group) {
+    var matchGroups = Array.from(root.querySelectorAll('[data-object-match-group]'));
+    matchGroups.forEach(function (group, groupIndex) {
       var sourceSelect = group.querySelector('[data-object-match-source]');
       var anchorSelect = group.querySelector('[data-object-match-anchor]');
       if (!sourceSelect || !anchorSelect) return;
       Array.from(sourceSelect.options).forEach(function (option) {
-        if (option.value) option.disabled = !selectedSources.has(option.value) || !strongSources.has(option.value);
+        if (option.value) {
+          var mustStartAtFirst = groupIndex === 0 && selectedSources.size > 1;
+          option.disabled = !selectedSources.has(option.value) || !strongSources.has(option.value) || (mustStartAtFirst && earliestSource && option.value !== earliestSource.value);
+        }
       });
       if (sourceSelect.value && (!selectedSources.has(sourceSelect.value) || !strongSources.has(sourceSelect.value))) sourceSelect.value = '';
       var anchorSource = sourceSelect.value;
@@ -94,7 +102,70 @@
       count.textContent = selectedCount + ' selected';
     }
     var empty = root.querySelector('[data-object-match-empty]');
-    if (empty) empty.hidden = root.querySelectorAll('[data-object-match-group]').length > 0;
+    if (empty) empty.hidden = matchGroups.length > 0;
+
+    var guidance = root.querySelector('[data-object-order-guidance]');
+    if (guidance) {
+      guidance.textContent = selectedSources.size > 1 && earliestSource
+        ? 'The first link starts with ' + (earliestSource.dataset.sourceLabel || earliestSource.value) + ' · ingestion order ' + earliestSource.dataset.ingestionOrder + '. This is the earliest selected report in the saved ingestion plan.'
+        : 'Select multiple report templates to see the required starting report.';
+    }
+
+    var preview = root.querySelector('[data-object-match-map-list]');
+    var previewEmpty = root.querySelector('[data-object-match-map-empty]');
+    if (preview && previewEmpty) {
+      preview.replaceChildren();
+      var adjacency = new Map();
+      selectedSources.forEach(function (sourceId) { adjacency.set(sourceId, new Set()); });
+      var configuredGroups = 0;
+      matchGroups.forEach(function (group) {
+        var anchor = group.querySelector('[data-object-match-anchor]');
+        var targets = Array.from(group.querySelectorAll('[data-object-match-target]:checked'));
+        var anchorOption = anchor && anchor.selectedOptions[0];
+        if (!anchorOption || !anchorOption.value || !targets.length) return;
+        configuredGroups += 1;
+        var anchorSource = anchorOption.dataset.sourceId || '';
+        targets.forEach(function (target) {
+          var targetSource = target.dataset.sourceId || '';
+          if (adjacency.has(anchorSource) && adjacency.has(targetSource)) {
+            adjacency.get(anchorSource).add(targetSource);
+            adjacency.get(targetSource).add(anchorSource);
+          }
+        });
+        var item = document.createElement('li');
+        var targetsText = targets.map(function (target) {
+          return (target.dataset.sourceLabel || targetSourceName(target.dataset.sourceId)) + ' · ' + (target.dataset.fieldLabel || target.dataset.fieldKey);
+        }).join('  ↔  ');
+        item.textContent = (anchorOption.dataset.sourceLabel || targetSourceName(anchorSource)) + ' · ' + (anchorOption.dataset.fieldLabel || anchorOption.dataset.fieldKey) + '  ↔  ' + targetsText;
+        preview.appendChild(item);
+      });
+      previewEmpty.hidden = configuredGroups > 0;
+      var connectedCount = 0;
+      if (earliestSource && adjacency.has(earliestSource.value)) {
+        var visited = new Set();
+        var frontier = [earliestSource.value];
+        while (frontier.length) {
+          var current = frontier.pop();
+          if (visited.has(current)) continue;
+          visited.add(current);
+          (adjacency.get(current) || new Set()).forEach(function (next) { if (!visited.has(next)) frontier.push(next); });
+        }
+        connectedCount = visited.size;
+      }
+      var countSummary = root.querySelector('[data-object-match-map-summary]');
+      if (!countSummary) {
+        countSummary = document.createElement('p');
+        countSummary.className = 'small fw-semibold mt-2 mb-0';
+        countSummary.dataset.objectMatchMapSummary = '';
+        preview.parentElement.appendChild(countSummary);
+      }
+      countSummary.textContent = configuredGroups + ' configured link group' + (configuredGroups === 1 ? '' : 's') + ' · ' + connectedCount + ' of ' + selectedSources.size + ' selected reports reachable from the first report.';
+    }
+  }
+
+  function targetSourceName(sourceId) {
+    var source = Array.from(document.querySelectorAll('#objectTemplateModal [data-object-source]')).find(function (item) { return item.value === sourceId; });
+    return source ? (source.dataset.sourceLabel || sourceId) : sourceId;
   }
 
   function syncSkipRule(root) {

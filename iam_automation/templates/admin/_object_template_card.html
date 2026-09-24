@@ -6,7 +6,7 @@
   {% set identifiers = definition.get('identifiers', []) %}
   {% set matches = definition.get('matches', []) %}
   {% set strong_count = identifiers|selectattr('strength', 'equalto', 'STRONG')|list|length %}
-  <article class="template-library-card surface" aria-labelledby="object-template-title">
+  <article class="template-library-card object-template-library-card surface" aria-labelledby="object-template-title">
     <details class="template-card-accordion" name="template-library-accordion">
       <summary class="template-card-accordion-summary">
         <span class="template-card-order-index" aria-hidden="true">O</span>

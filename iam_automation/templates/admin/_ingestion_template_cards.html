@@ -1,38 +1,42 @@
 <div id="template-cards" class="template-card-grid mt-4" aria-live="polite">
   {% if message %}<div class="alert alert-success template-card-message" role="status">{{ message }}</div>{% endif %}
+  {% if cards %}<div class="template-library-toolbar"><div><strong>{{ cards|length }} report templates</strong><span>Order runs from top to bottom. Use the arrows to set the sequence.</span></div><span class="template-library-order-hint">Position 1 is read first</span></div>{% endif %}
   {% if not cards %}<div class="empty-state surface mt-4"><span class="empty-state-icon">1</span><strong>No report templates in the library</strong><span>Define a report and choose “Save template to the library” to keep its configuration here.</span><a class="btn btn-primary mt-2" href="{{ url_for('ingestion_configuration.start_new_template') }}">Start a report template</a></div>{% endif %}
   {% for item in cards %}
     {% set definition = item.definition %}
     {% set identity = definition.identity_governance %}
     {% set identifier_names = namespace(values=[]) %}
     {% for identifier in identity.identifiers if identifier.can_match %}{% for field in definition.fields if field.field_key == identifier.field_key %}{% set _ = identifier_names.values.append(field.source_name) %}{% endfor %}{% endfor %}
-    <article class="template-library-card surface" aria-labelledby="template-title-{{ loop.index }}">
+    <article class="template-library-card report-template-library-card surface" aria-labelledby="template-title-{{ loop.index }}">
+      <div class="template-card-order-rail">
+        <span class="template-card-order-index" aria-label="Ingestion order {{ item.ingestion_order }}">{{ item.ingestion_order }}</span>
+      </div>
       <div class="template-card-main">
         <details class="template-card-accordion" name="template-library-accordion">
           <summary class="template-card-accordion-summary">
-            <span class="template-card-order-index" aria-label="Ingestion order {{ item.ingestion_order }}">{{ item.ingestion_order }}</span>
             <span class="template-card-heading">
-              <span>
-                <span class="eyebrow d-block mb-1">{{ item.source_id }}</span>
+              <span class="template-card-heading-content">
                 <span class="h4 template-card-title" id="template-title-{{ loop.index }}" role="heading" aria-level="2">{{ definition.display_name or item.source_id }}</span>
-                <span class="template-card-description">{{ definition.description or 'No description added.' }}</span>
-                <span class="template-card-glance">{% if identity.role == 'IDENTITY_SEED' %}May propose new employees{% elif identity.role == 'IDENTITY_ENRICHMENT' %}Find existing employees{% else %}Evidence only{% endif %} · {{ identifier_names.values|join(', ') if identifier_names.values else 'No identifier selected' }} · {{ definition.watched_subfolder or 'No watcher folder' }}</span>
-                <span class="template-card-provenance"><span>Created by <strong>{{ item.created_by }}</strong> · <time datetime="{{ item.created_at_utc }}">{{ item.created_at_utc[:10] }}</time> UTC</span><span>Last edited by <strong>{{ item.updated_by }}</strong> · <time datetime="{{ item.updated_at_utc }}">{{ item.updated_at_utc[:10] }}</time> UTC</span></span>
+                <span class="template-card-glance">
+                  <span class="template-card-tag">{% if identity.role == 'IDENTITY_SEED' %}Can propose new objects{% elif identity.role == 'IDENTITY_ENRICHMENT' %}Links existing objects{% else %}Evidence only{% endif %}</span>
+                  {% if identifier_names.values %}<span class="template-card-tag">{{ identifier_names.values|join(', ') }}</span>{% else %}<span class="template-card-tag template-card-tag-muted">No identifiers</span>{% endif %}
+                  <span class="template-card-tag {% if definition.watched_subfolder %}template-card-tag-folder{% else %}template-card-tag-muted{% endif %}">{% if definition.watched_subfolder %}{{ definition.watched_subfolder }}{% else %}Folder not set{% endif %}</span>
+                </span>
               </span>
-              {% if item.status == 'APPROVED' %}<span class="status-pill status-approved"><span></span>Approved · v{{ item.version_number }}</span>{% else %}<span class="status-pill status-pending"><span></span>Draft · v{{ item.version_number }}</span>{% endif %}
+              <span class="template-card-heading-meta">
+                {% if item.status == 'APPROVED' %}<span class="status-pill status-approved"><span></span>Approved · v{{ item.version_number }}</span>{% else %}<span class="status-pill status-pending"><span></span>Draft · v{{ item.version_number }}</span>{% endif %}
+                <span class="template-card-accordion-action"><span class="template-card-show-label">Show settings</span><span class="template-card-hide-label">Hide settings</span><span class="template-card-accordion-chevron" aria-hidden="true"></span></span>
+              </span>
             </span>
-            <span class="template-card-accordion-action"><span class="template-card-show-label">Show settings</span><span class="template-card-hide-label">Hide settings</span><span class="template-card-accordion-chevron" aria-hidden="true"></span></span>
           </summary>
           <div class="template-card-accordion-body">
-            <div class="template-card-order-row">
-              <span><strong>Ingestion order</strong><small>Position {{ item.ingestion_order }} in the plan</small></span>
-              <div class="template-card-order-controls">
-                <form method="post" action="{{ url_for('ingestion_configuration.move_template', source_id=item.source_id) }}" hx-post="{{ url_for('ingestion_configuration.move_template', source_id=item.source_id) }}" hx-target="#template-cards" hx-swap="outerHTML"><input type="hidden" name="direction" value="up"><button class="btn btn-sm btn-light" type="submit" aria-label="Move {{ definition.display_name or item.source_id }} earlier" {% if loop.first %}disabled{% endif %}>↑ Earlier</button></form>
-                <form method="post" action="{{ url_for('ingestion_configuration.move_template', source_id=item.source_id) }}" hx-post="{{ url_for('ingestion_configuration.move_template', source_id=item.source_id) }}" hx-target="#template-cards" hx-swap="outerHTML"><input type="hidden" name="direction" value="down"><button class="btn btn-sm btn-light" type="submit" aria-label="Move {{ definition.display_name or item.source_id }} later" {% if loop.last %}disabled{% endif %}>↓ Later</button></form>
-              </div>
+            <div class="template-card-overview">
+              <div><span class="eyebrow">Internal key</span><code>{{ item.source_id }}</code></div>
+              <div><span class="eyebrow">Description</span><span>{{ definition.description or 'No description added.' }}</span></div>
+              <div class="template-card-provenance"><span>Created by <strong>{{ item.created_by }}</strong> · <time datetime="{{ item.created_at_utc }}">{{ item.created_at_utc[:10] }}</time> UTC</span><span>Last edited by <strong>{{ item.updated_by }}</strong> · <time datetime="{{ item.updated_at_utc }}">{{ item.updated_at_utc[:10] }}</time> UTC</span></div>
             </div>
             <div class="template-card-summary">
-              <div><span>Identity use</span><strong>{% if identity.role == 'IDENTITY_SEED' %}May propose new employees{% elif identity.role == 'IDENTITY_ENRICHMENT' %}Find existing employees{% else %}Evidence only{% endif %}</strong><small>{% if identity.can_create_employee %}New Employee UUID proposals are authorized{% else %}New employee creation is not authorized{% endif %}</small></div>
+              <div><span>Object use</span><strong>{% if identity.role == 'IDENTITY_SEED' %}Can propose new objects{% elif identity.role == 'IDENTITY_ENRICHMENT' %}Links existing objects{% else %}Evidence only{% endif %}</strong><small>{% if identity.can_create_employee %}Creation of new objects is authorized{% else %}Creation of new objects is not authorized{% endif %}</small></div>
               <div><span>Identifiers</span><strong>{{ identifier_names.values|join(', ') if identifier_names.values else 'No identifier selected' }}</strong><small>Maximum {{ identity.max_matching_fields }} matching field(s)</small></div>
               <div><span>Watcher folder</span><strong>{% if definition.watched_subfolder %}{{ definition.watched_subfolder }}{% else %}Folder not selected{% endif %}</strong><small>{% if definition.watched_subfolder %}Configured below the SharePoint root; watcher is not active{% else %}Choose a folder below the configured SharePoint root{% endif %}</small></div>
               <div><span>Date/time settings</span><strong>{% set date_settings = definition.date_time_settings %}{% if date_settings.timezone_mode == 'CUSTOM' %}{{ date_settings.source_timezone or 'Source time zone not set' }} → {{ date_settings.target_timezone or 'Target time zone not set' }}{% elif rule_calendar.available %}{{ date_settings.calendar_label or rule_calendar.label }} · {{ date_settings.target_timezone or rule_calendar.timezone }}{% else %}Rule calendar unavailable{% endif %}</strong><small>{% set date_names = namespace(values=[]) %}{% for key in date_settings.field_keys %}{% for field in definition.fields if field.field_key == key %}{% set _ = date_names.values.append(field.source_name) %}{% endfor %}{% endfor %}{% if date_names.values %}Convert: {{ date_names.values|join(', ') }}{% elif date_settings.timezone_mode == 'RULE_CALENDAR' %}Using the saved rules calendar default{% else %}No date/time fields selected for conversion{% endif %}</small></div>
@@ -64,6 +68,10 @@
             {% endif %}
           </div>
         </details>
+      </div>
+      <div class="template-card-reorder" aria-label="Change ingestion order">
+        <form method="post" action="{{ url_for('ingestion_configuration.move_template', source_id=item.source_id) }}" hx-post="{{ url_for('ingestion_configuration.move_template', source_id=item.source_id) }}" hx-target="#template-cards" hx-swap="outerHTML"><input type="hidden" name="direction" value="up"><button class="btn btn-sm btn-light" type="submit" aria-label="Move {{ definition.display_name or item.source_id }} earlier" title="Move earlier" {% if loop.first %}disabled{% endif %}>↑</button></form>
+        <form method="post" action="{{ url_for('ingestion_configuration.move_template', source_id=item.source_id) }}" hx-post="{{ url_for('ingestion_configuration.move_template', source_id=item.source_id) }}" hx-target="#template-cards" hx-swap="outerHTML"><input type="hidden" name="direction" value="down"><button class="btn btn-sm btn-light" type="submit" aria-label="Move {{ definition.display_name or item.source_id }} later" title="Move later" {% if loop.last %}disabled{% endif %}>↓</button></form>
       </div>
     </article>
   {% endfor %}

@@ -237,6 +237,41 @@ class TemplateRepository:
                                    updated_by = excluded.updated_by, updated_at_utc = excluded.updated_at_utc""",
                             (active_source_id, position, actor, now),
                         )
+                else:
+                    # Persist an initial position as soon as a new template is
+                    # saved. Backfill older templates that predate the order
+                    # table first, preserving their currently displayed order,
+                    # then append the newly created template.
+                    missing_order = connection.execute(
+                        """SELECT 1 FROM source_definition_versions v
+                           LEFT JOIN source_ingestion_orders o ON o.source_id = v.source_id
+                           WHERE o.source_id IS NULL AND NOT EXISTS (
+                               SELECT 1 FROM source_template_lifecycle_events d
+                               WHERE d.source_id = v.source_id AND d.restored_at_utc IS NULL
+                           ) LIMIT 1"""
+                    ).fetchone()
+                    if missing_order is not None:
+                        active_sources = [str(row[0]) for row in connection.execute(
+                            """SELECT v.source_id, MIN(COALESCE(o.ingestion_order, 2147483647)) AS sort_order
+                               FROM source_definition_versions v
+                               LEFT JOIN source_ingestion_orders o ON o.source_id = v.source_id
+                               WHERE NOT EXISTS (
+                                   SELECT 1 FROM source_template_lifecycle_events d
+                                   WHERE d.source_id = v.source_id AND d.restored_at_utc IS NULL
+                               )
+                               GROUP BY v.source_id ORDER BY sort_order, v.source_id COLLATE NOCASE"""
+                        ).fetchall()]
+                        active_sources = [item for item in active_sources if item != source_id]
+                        active_sources.append(source_id)
+                        for position, active_source_id in enumerate(active_sources, start=1):
+                            connection.execute(
+                                """INSERT INTO source_ingestion_orders
+                                   (source_id, ingestion_order, updated_by, updated_at_utc)
+                                   VALUES (?, ?, ?, ?)
+                                   ON CONFLICT(source_id) DO UPDATE SET ingestion_order = excluded.ingestion_order,
+                                       updated_by = excluded.updated_by, updated_at_utc = excluded.updated_at_utc""",
+                                (active_source_id, position, actor, now),
+                            )
         result = self.get(saved_id)
         assert result is not None
         result["reactivated"] = reactivated

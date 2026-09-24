@@ -6,7 +6,7 @@
       <select class="form-select" id="object-match-source-{{ row_index }}" name="object_match_source_{{ row_index }}" data-object-match-source required>
         <option value="">Choose a report</option>
         {% for source in object_sources if source.source_id in selected_sources %}
-          <option value="{{ source.source_id }}" {% if source.source_id == match.source_id %}selected{% endif %}>{{ source.source_label }}</option>
+          <option value="{{ source.source_id }}" data-ingestion-order="{{ source.ingestion_order|default(2147483647) }}" {% if source.source_id == match.source_id %}selected{% endif %}>Order {{ source.ingestion_order|default('—') }} · {{ source.source_label }}</option>
         {% endfor %}
       </select>
     </div>
@@ -15,7 +15,7 @@
       <select class="form-select" id="object-match-anchor-{{ row_index }}" name="object_match_anchor_{{ row_index }}" data-object-match-anchor required>
         <option value="">Choose an identifier</option>
         {% for option in identity_options if option.strength == 'STRONG' and option.source_id in selected_sources and (option.source_id, option.field_key) in selected_identifiers %}
-          <option value="{{ option.value }}" data-source-id="{{ option.source_id }}" {% if option.value == match.anchor_value %}selected{% endif %}>{{ option.source_name }} · {{ option.source_label }}</option>
+          <option value="{{ option.value }}" data-source-id="{{ option.source_id }}" data-source-label="{{ option.source_label }}" data-field-label="{{ option.source_name }}" data-field-key="{{ option.field_key }}" {% if option.value == match.anchor_value %}selected{% endif %}>{{ option.source_name }} · {{ option.source_label }}</option>
         {% endfor %}
       </select>
     </div>
@@ -33,7 +33,7 @@
               {% for option in report_options %}
                 {% if (option.source_id, option.field_key) in selected_identifiers %}
                   <label class="form-check d-flex gap-2 align-items-start mb-2" for="object-match-target-{{ row_index }}-{{ source.source_id }}-{{ option.field_key }}">
-                    <input class="form-check-input mt-1" type="checkbox" id="object-match-target-{{ row_index }}-{{ source.source_id }}-{{ option.field_key }}" name="object_match_targets_{{ row_index }}" value="{{ option.value }}" data-object-match-target data-source-id="{{ option.source_id }}" {% if option.value in match.target_values %}checked{% endif %}>
+                    <input class="form-check-input mt-1" type="checkbox" id="object-match-target-{{ row_index }}-{{ source.source_id }}-{{ option.field_key }}" name="object_match_targets_{{ row_index }}" value="{{ option.value }}" data-object-match-target data-source-id="{{ option.source_id }}" data-source-label="{{ option.source_label }}" data-field-label="{{ option.source_name }}" data-field-key="{{ option.field_key }}" {% if option.value in match.target_values %}checked{% endif %}>
                     <span>{{ option.source_name }} <small class="text-secondary">· {{ option.field_key }}</small></span>
                   </label>
                 {% endif %}

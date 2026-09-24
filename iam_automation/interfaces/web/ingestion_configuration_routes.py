@@ -134,6 +134,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 "source_definition_version_id": card["definition_version_id"],
                 "source_label": definition["display_name"] or card["source_id"],
                 "field_count": len(included_fields),
+                "ingestion_order": card["ingestion_order"],
             })
             for field in included_fields:
                 property_options.append({
@@ -164,7 +165,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 })
         property_options.sort(key=lambda option: (option["source_label"].casefold(), option["source_name"].casefold()))
         identity_options.sort(key=lambda option: (option["source_label"].casefold(), option["source_name"].casefold()))
-        object_sources.sort(key=lambda option: option["source_label"].casefold())
+        object_sources.sort(key=lambda option: (option["ingestion_order"], option["source_label"].casefold()))
         return {
             "cards": cards,
             "rule_calendar": active_rule_calendar(),
@@ -559,14 +560,14 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             indices = form_values.getlist("object_match_indices")
             matches = []
             for index in indices:
-                index = str(_positive_int(index, default=0))
+                index = _positive_int(index, default=0)
                 if any(item["index"] == index for item in matches):
                     continue
                 source_id = str(form_values.get(f"object_match_source_{index}", ""))
                 anchor_value = str(form_values.get(f"object_match_anchor_{index}", ""))
                 target_values = [str(value) for value in form_values.getlist(f"object_match_targets_{index}") if value]
                 matches.append({
-                    "index": str(index),
+                    "index": index,
                     "source_id": source_id,
                     "anchor_value": anchor_value,
                     "target_values": target_values,
@@ -600,8 +601,8 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 target_value = json.dumps(list(target_ref), ensure_ascii=False)
                 if target_value not in group["target_values"]:
                     group["target_values"].append(target_value)
-            matches = [dict(item, index=str(index)) for index, item in enumerate(grouped_matches.values())]
-        sources.sort(key=lambda item: str(item.get("source_label", item.get("source_id", ""))).casefold())
+            matches = [dict(item, index=index) for index, item in enumerate(grouped_matches.values())]
+        sources.sort(key=lambda item: (int(item.get("ingestion_order", 2147483647)), str(item.get("source_label", item.get("source_id", ""))).casefold()))
         identity_options.sort(key=lambda item: (str(item.get("source_label", "")).casefold(), str(item.get("source_name", "")).casefold()))
         property_options.sort(key=lambda item: (str(item.get("source_label", "")).casefold(), str(item.get("source_name", "")).casefold()))
         return render_template(
@@ -734,6 +735,21 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 frontier.extend(adjacency.get(source_id, ()) - connected)
             if connected != set(selected_sources):
                 return object_modal_error(request.form, "Link every contributing report template through Strong identifiers before saving.")
+            selected_library_sources = [current_sources[source_id] for source_id in selected_sources if source_id in current_sources]
+            if selected_library_sources and match_indices:
+                first_source = min(selected_library_sources, key=lambda item: (int(item["ingestion_order"]), str(item["source_id"])))
+                first_anchor_source = next((
+                    str(request.form.get(f"object_match_source_{index}", ""))
+                    for index in match_indices
+                    if request.form.get(f"object_match_source_{index}")
+                    or request.form.get(f"object_match_anchor_{index}")
+                    or request.form.getlist(f"object_match_targets_{index}")
+                ), "")
+                if first_anchor_source != first_source["source_id"]:
+                    return object_modal_error(
+                        request.form,
+                        f"The first Strong identifier link must start with the earliest selected report in Template Library: {first_source['source_label']} (ingestion order {first_source['ingestion_order']}).",
+                    )
 
         allow_creation = request.form.get("allow_object_creation") == "on"
         creation_authorized_by_source: dict[str, int] = {}
@@ -755,7 +771,13 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                     properties.append(option)
             if source_id not in current_sources:
                 properties.extend(item for key, item in prior_properties.items() if key[0] == source_id)
-        source_templates = [source_refs[source_id] for source_id in selected_sources]
+        # Template Library owns the live ingestion sequence. The Object
+        # Template stores membership and source-version references, not a
+        # second copy of order that could become stale after Library reorders.
+        source_templates = [
+            {key: value for key, value in source_refs[source_id].items() if key != "ingestion_order"}
+            for source_id in selected_sources
+        ]
         definition = {
             "object_name": object_name,
             "allow_object_creation": allow_creation,

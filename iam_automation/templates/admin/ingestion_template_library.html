@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell admin-page ingestion-config-page">
   <div class="page-heading">
-    <div><p class="eyebrow">Ingestion Engine · Configuration</p><h1>Template library</h1><p class="text-secondary mb-0">Configure record identifiers, scan folders, date/time handling and future row rules for each saved report. Set each template’s ingestion order.</p></div>
+    <div><p class="eyebrow">Ingestion Engine · Configuration</p><h1>Template library</h1><p class="text-secondary mb-0">Manage report fields, identity, folders, date handling and ingestion order.</p></div>
     <a class="btn btn-primary" href="{{ url_for('ingestion_configuration.start_new_template') }}">Define a new report</a>
   </div>
   <div class="alert alert-info mt-4" role="note"><strong>These are governed settings.</strong> They do not enable a watcher, create objects, match records, or import data. Changes to approved definitions start a new draft version.</div>
