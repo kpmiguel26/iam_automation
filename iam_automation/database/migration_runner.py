@@ -45,6 +45,7 @@ _REVISION_TO_LEGACY_VERSION = {
     "0021_pin_rule_calendar_version": "v021_pin_rule_calendar_version",
     "0022_source_rule_catalog": "v022_source_rule_catalog",
     "0023_ingestion_source_definition_versions": "v023_ingestion_source_definition_versions",
+    "0024_source_ingestion_order": "v024_source_ingestion_order",
 }
 _LEGACY_TO_REVISION = {value: key for key, value in _REVISION_TO_LEGACY_VERSION.items()}
 
@@ -125,6 +126,8 @@ def _legacy_version_for_revision(revision: str | None) -> tuple[str, ...]:
         return (*_legacy_version_for_revision("0021_pin_rule_calendar_version"), "v022_source_rule_catalog")
     if revision == "0023_ingestion_source_definition_versions":
         return (*_legacy_version_for_revision("0022_source_rule_catalog"), "v023_ingestion_source_definition_versions")
+    if revision == "0024_source_ingestion_order":
+        return (*_legacy_version_for_revision("0023_ingestion_source_definition_versions"), "v024_source_ingestion_order")
     if revision == "0001_baseline":
         return ("v001_initial_schema",)
     return ()

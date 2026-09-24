@@ -1,43 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Ingestion template library{% endblock %}
+{% block title %}Template library{% endblock %}
 {% block content %}
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell admin-page ingestion-config-page">
   <div class="page-heading">
-    <div><p class="eyebrow">Ingestion Engine · Configuration</p><h1>Template library</h1><p class="text-secondary mb-0">Review saved report definitions, approve ready versions, and continue configuration from an approved version.</p></div>
+    <div><p class="eyebrow">Ingestion Engine · Configuration</p><h1>Template library</h1><p class="text-secondary mb-0">Configure employee identifiers, scan folders, date/time handling and future row rules for each saved report. Set each template’s ingestion order.</p></div>
     <a class="btn btn-primary" href="{{ url_for('ingestion_configuration.start_new_template') }}">Define a new report</a>
   </div>
-  <div class="alert alert-info mt-4" role="note"><strong>Approval saves a governed version.</strong> It does not enable a watcher, create employees, match records, or import data. Later edits start a new version so approved definitions remain unchanged.</div>
+  <div class="alert alert-info mt-4" role="note"><strong>These are governed settings.</strong> They do not enable a watcher, create employees, match records, or import data. Changes to approved definitions start a new draft version.</div>
   {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
-  {% if templates %}
-  <div class="table-responsive surface p-2 mt-4">
-    <table class="table align-middle mb-0">
-      <caption class="visually-hidden">Saved ingestion template versions</caption>
-      <thead><tr><th scope="col">Report</th><th scope="col">Version</th><th scope="col">Identity use</th><th scope="col">Fields</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
-      <tbody>
-      {% for item in templates %}
-        {% set definition = item.definition %}
-        <tr>
-          <th scope="row"><strong>{{ definition.display_name or definition.source_id }}</strong><small class="d-block text-secondary">{{ definition.description or definition.source_id }}</small></th>
-          <td>{{ item.version_number }}</td>
-          <td>{{ {'IDENTITY_SEED': 'Can introduce employees', 'IDENTITY_ENRICHMENT': 'Find existing employees', 'EVIDENCE_ONLY': 'Evidence only'}.get(definition.identity_governance.role, 'Not configured') }}</td>
-          <td>{{ definition.fields|length }}</td>
-          <td>{% if item.status == 'APPROVED' %}<span class="status-pill status-approved"><span></span>Approved</span>{% else %}<span class="status-pill status-pending"><span></span>Draft</span>{% endif %}</td>
-          <td><span title="{{ item.updated_at_utc }}">{{ item.updated_at_utc[:16]|replace('T', ' ') }} UTC</span></td>
-          <td><div class="d-flex flex-wrap gap-2 justify-content-end">
-            {% if item.status == 'DRAFT' %}
-              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('ingestion_configuration.edit_saved_draft', version_id=item.definition_version_id) }}">Continue editing</a>
-              <form method="post" action="{{ url_for('ingestion_configuration.approve_template', version_id=item.definition_version_id) }}"><button class="btn btn-sm btn-primary" type="submit">Approve version</button></form>
-            {% else %}
-              <form method="post" action="{{ url_for('ingestion_configuration.create_version', version_id=item.definition_version_id) }}"><button class="btn btn-sm btn-outline-primary" type="submit">Configure next version</button></form>
-            {% endif %}
-          </div></td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  {% if cards %}
+    {% include "admin/_ingestion_template_cards.html" %}
   {% else %}
-  <div class="empty-state surface mt-4"><span class="empty-state-icon">1</span><strong>No templates saved yet</strong><span>Define a report and choose “Save template to the library” to keep its configuration here.</span><a class="btn btn-primary mt-2" href="{{ url_for('ingestion_configuration.start_new_template') }}">Start a report template</a></div>
+    <div class="empty-state surface mt-4"><span class="empty-state-icon">1</span><strong>No templates saved yet</strong><span>Define a report and choose “Save template to the library” to keep its configuration here.</span><a class="btn btn-primary mt-2" href="{{ url_for('ingestion_configuration.start_new_template') }}">Start a report template</a></div>
   {% endif %}
 </div>
+<div id="template-modal-region"></div>
 {% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/ingestion-template-library.js', v=static_version) }}"></script>{% endblock %}

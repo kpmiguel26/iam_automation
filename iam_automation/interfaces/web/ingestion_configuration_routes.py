@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from functools import wraps
+from datetime import date
 from pathlib import Path
 from typing import Any, Callable
+import os
 import re
 import time
 import uuid
 from dataclasses import replace
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from flask import Blueprint, redirect, render_template, request, session, url_for
 
@@ -25,7 +28,9 @@ from ...application.ingestion.configuration_contracts import (
     DRAFT_TRANSFORM_LABELS,
     DRAFT_TRANSFORMS,
     DRAFT_VALIDATION_KINDS,
+    DraftDateTimeSettings,
     DraftFieldDefinition,
+    DraftFieldSkipRule,
     DraftFieldMapping,
     DraftIdentityGovernance,
     DraftIdentityIdentifier,
@@ -36,17 +41,20 @@ from ...application.ingestion.configuration_contracts import (
 )
 from ...application.ingestion.configuration_service import DraftConfigurationService, suggest_source_transform
 from ...application.ingestion.template_repository import TemplateRepository
+from ...application.rules.configuration import RuleConfigurationService
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
+from ...infrastructure.sqlite.orm import RuleCalendarVersionModel, orm_session
 
 
 SESSION_KEY = "ingestion_configuration_draft"
 
 
-def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
+def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_root: Path | None = None) -> Blueprint:
     """Create the persisted, non-activating template configuration blueprint."""
     blueprint = Blueprint("ingestion_configuration", __name__, url_prefix="/admin/ingestion-sources")
     service = DraftConfigurationService(database_path)
     templates = TemplateRepository(database_path)
+    rule_configuration = RuleConfigurationService(database_path)
     sample_artifacts: dict[str, tuple[float, str, bytes]] = {}
 
     def admin_required(view: Callable):
@@ -71,6 +79,97 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
 
     def current_actor() -> str:
         return str(session.get("iam_user") or "administrator")
+
+    def active_rule_calendar() -> dict[str, Any]:
+        configuration = rule_configuration.configuration()
+        context = configuration.get("context_version")
+        if context is None:
+            return {"available": False, "timezone": "", "calendar_id": "", "version_id": "", "label": ""}
+        selected = next(
+            (item for item in configuration.get("calendars", ()) if item["model"].calendar_id == context.default_calendar_id),
+            None,
+        )
+        if selected is None:
+            return {"available": False, "timezone": "", "calendar_id": "", "version_id": "", "label": ""}
+        with orm_session(database_path) as database_session:
+            version = database_session.get(RuleCalendarVersionModel, context.default_calendar_version_id) if context.default_calendar_version_id else None
+        if version is None:
+            return {"available": False, "timezone": "", "calendar_id": "", "version_id": "", "label": ""}
+        return {
+            "available": True,
+            "timezone": str(version.timezone or context.timezone or "UTC"),
+            "calendar_id": str(selected["model"].calendar_id),
+            "version_id": str(version.calendar_version_id),
+            "label": str(selected["model"].label or selected["model"].calendar_key),
+        }
+
+    def card_context() -> dict[str, Any]:
+        cards = templates.list_template_cards()
+        for card in cards:
+            card["definition"] = DraftSourceDefinition.from_dict(card["definition"]).to_dict()
+        return {"cards": cards, "rule_calendar": active_rule_calendar()}
+
+    def sharepoint_folders() -> tuple[str, ...]:
+        if sharepoint_root is None:
+            return ()
+        root = Path(sharepoint_root).expanduser().resolve()
+        if not root.is_dir():
+            return ()
+        found: list[str] = []
+        for current, directories, _files in os.walk(root, followlinks=False):
+            current_path = Path(current)
+            depth = len(current_path.relative_to(root).parts)
+            directories[:] = [
+                name for name in directories
+                if not name.startswith(".") and not (current_path / name).is_symlink() and depth < 4
+            ]
+            found.extend((current_path / name).relative_to(root).as_posix() for name in directories)
+            if len(found) >= 500:
+                found = found[:500]
+                break
+        return tuple(sorted(found, key=str.casefold))
+
+    def behavior_modal(version_id: str, *, error: str | None = None, form_values=None):
+        saved = templates.get(version_id)
+        if saved is None:
+            return "Template version not found.", 404
+        draft = DraftSourceDefinition.from_dict(saved["definition"])
+        calendar = active_rule_calendar()
+        date_settings = draft.date_time_settings
+        if not date_settings.source_timezone and calendar["available"]:
+            date_settings = replace(date_settings, source_timezone=calendar["timezone"])
+        if not date_settings.target_timezone and calendar["available"]:
+            date_settings = replace(date_settings, target_timezone=calendar["timezone"])
+        timezone_names = tuple(sorted(available_timezones()))
+        return render_template(
+            "admin/_ingestion_template_behavior_modal.html",
+            item=saved,
+            draft=draft,
+            rule_calendar=calendar,
+            sharepoint_folders=sharepoint_folders(),
+            timezone_names=timezone_names,
+            date_settings=date_settings,
+            temporal_fields=tuple(field for field in draft.fields if field.include and field.data_type.casefold() in {"date", "datetime", "timestamp"}),
+            form_values=form_values,
+            error=error,
+        )
+
+    def safe_sharepoint_subfolder(value: str, *, create: bool, allow_missing: bool = False) -> str:
+        if sharepoint_root is None:
+            raise ValueError("The configured SharePoint root is not available.")
+        normalized = str(value or "").replace("\\", "/").strip()
+        parts = normalized.split("/")
+        if not normalized or normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized) or any(part in {"", ".", ".."} for part in parts):
+            raise ValueError("Choose a folder below the SharePoint root using a relative path.")
+        root = Path(sharepoint_root).expanduser().resolve()
+        target = root.joinpath(*parts).resolve()
+        if target == root or root not in target.parents:
+            raise ValueError("The selected folder must remain below the SharePoint root.")
+        if create:
+            target.mkdir(parents=True, exist_ok=True)
+        elif not target.is_dir() and not allow_missing:
+            raise ValueError("Choose an existing folder or enter a new folder to create.")
+        return target.relative_to(root).as_posix()
 
     def render_page(*, draft: DraftSourceDefinition, message: str | None = None, error: str | None = None, preview: dict | None = None, structure: dict | None = None, inspection: dict | None = None, artifact_id: str | None = None, raw_rows: tuple | None = None, recommended_header_rows: tuple[int, ...] = (), raw_column_count: int | None = None, status_code: int = 200):
         return render_template(
@@ -323,7 +422,145 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
     @blueprint.get("/library")
     @admin_required
     def template_library():
-        return render_template("admin/ingestion_template_library.html", templates=templates.list_versions())
+        return render_template("admin/ingestion_template_library.html", **card_context())
+
+    @blueprint.get("/library/<version_id>/identity-settings")
+    @admin_required
+    def identity_settings_modal(version_id: str):
+        saved = templates.get(version_id)
+        if saved is None:
+            return "Template version not found.", 404
+        draft = DraftSourceDefinition.from_dict(saved["definition"])
+        return render_template("admin/_ingestion_identity_settings_modal.html", item=saved, draft=draft, identity_rows=_identity_rows(draft), available_fields=tuple(field for field in draft.fields if field.include), next_identity_row_index=max(1, len(draft.identity_governance.identifiers)))
+
+    @blueprint.get("/library/<version_id>/identity-field-row")
+    @admin_required
+    def identity_field_row(version_id: str):
+        saved = templates.get(version_id)
+        if saved is None:
+            return "Template version not found.", 404
+        draft = DraftSourceDefinition.from_dict(saved["definition"])
+        return render_template(
+            "admin/_ingestion_identity_field_row.html",
+            row_index=max(0, _positive_int(request.args.get("index", "0"), default=0)),
+            available_fields=tuple(field for field in draft.fields if field.include),
+            selected_key="",
+            selected_strength="STRONG",
+            selected_create=False,
+        )
+
+    @blueprint.post("/library/<version_id>/identity-settings")
+    @admin_required
+    def save_identity_settings(version_id: str):
+        saved = templates.get(version_id)
+        if saved is None:
+            return "Template version not found.", 404
+        draft = DraftSourceDefinition.from_dict(saved["definition"])
+        configured = _identity_settings_from_form(draft, request.form)
+        try:
+            if saved["status"] == "APPROVED":
+                saved = templates.save_draft(configured.to_dict(), current_actor())
+            else:
+                templates.save_draft(configured.to_dict(), current_actor(), version_id)
+        except ValueError as exc:
+            return render_template("admin/_ingestion_identity_settings_modal.html", item=saved, draft=configured, identity_rows=_identity_rows(configured), available_fields=tuple(field for field in configured.fields if field.include), next_identity_row_index=max(1, len(configured.identity_governance.identifiers)), error=str(exc)), 400
+        if request.headers.get("HX-Request") == "true":
+            return render_template("admin/_ingestion_template_cards.html", **card_context(), message="Identity settings saved as a template draft.")
+        return redirect(url_for("ingestion_configuration.template_library"))
+
+    @blueprint.post("/library/<source_id>/move")
+    @admin_required
+    def move_template(source_id: str):
+        try:
+            cards = templates.move_template(source_id, -1 if request.form.get("direction") == "up" else 1, current_actor())
+        except ValueError as exc:
+            return str(exc), 404
+        if request.headers.get("HX-Request") == "true":
+            return render_template("admin/_ingestion_template_cards.html", **card_context())
+        return redirect(url_for("ingestion_configuration.template_library"))
+
+    @blueprint.get("/library/<version_id>/behavior-settings")
+    @admin_required
+    def behavior_settings_modal(version_id: str):
+        return behavior_modal(version_id)
+
+    @blueprint.post("/library/<version_id>/behavior-settings")
+    @admin_required
+    def save_behavior_settings(version_id: str):
+        saved = templates.get(version_id)
+        if saved is None:
+            return "Template version not found.", 404
+        draft = DraftSourceDefinition.from_dict(saved["definition"])
+        try:
+            folder = str(request.form.get("folder_path", "")).strip()
+            new_folder = str(request.form.get("create_folder_path", "")).strip()
+            watched_subfolder = safe_sharepoint_subfolder(new_folder, create=False, allow_missing=True) if new_folder else safe_sharepoint_subfolder(folder, create=False) if folder else ""
+
+            mode = str(request.form.get("timezone_mode", "RULE_CALENDAR")).strip().upper()
+            if mode not in {"RULE_CALENDAR", "CUSTOM"}:
+                raise ValueError("Choose a valid time-zone source.")
+            calendar = active_rule_calendar()
+            source_timezone = str(request.form.get("source_timezone", "")).strip()
+            target_timezone = str(request.form.get("target_timezone", "")).strip()
+            if mode == "RULE_CALENDAR" and calendar["available"]:
+                source_timezone = source_timezone or calendar["timezone"]
+                target_timezone = target_timezone or calendar["timezone"]
+            for timezone_name in (source_timezone, target_timezone):
+                if timezone_name:
+                    ZoneInfo(timezone_name)
+                elif mode == "CUSTOM":
+                    raise ValueError("Choose both the report time zone and the time zone for date/time values.")
+            valid_temporal_keys = {
+                field.field_key for field in draft.fields
+                if field.include and field.data_type.casefold() in {"date", "datetime", "timestamp"}
+            }
+            timezone_field_keys = tuple(
+                key for key in request.form.getlist("timezone_field_keys")
+                if key in valid_temporal_keys
+            )
+            date_time_settings = DraftDateTimeSettings(
+                timezone_mode=mode,
+                source_timezone=source_timezone,
+                target_timezone=target_timezone,
+                calendar_id=calendar["calendar_id"] if calendar["available"] else "",
+                calendar_version_id=calendar["version_id"] if calendar["available"] else "",
+                calendar_label=calendar["label"] if calendar["available"] else "",
+                field_keys=timezone_field_keys,
+            )
+
+            skip_field_key = str(request.form.get("skip_field_key", "")).strip()
+            skip_rules: tuple[DraftFieldSkipRule, ...] = ()
+            if skip_field_key:
+                if skip_field_key not in valid_temporal_keys:
+                    raise ValueError("Choose an included date or date/time field for the restriction.")
+                condition = str(request.form.get("skip_condition", "")).strip().upper()
+                if condition not in {"BEFORE", "AFTER", "ON_OR_BEFORE", "ON_OR_AFTER"}:
+                    raise ValueError("Choose how the date field should be compared.")
+                comparison_value = str(request.form.get("skip_comparison_value", "")).strip()
+                try:
+                    comparison_value = date.fromisoformat(comparison_value).isoformat()
+                except ValueError as exc:
+                    raise ValueError("Choose a valid comparison date.") from exc
+                skip_rules = (DraftFieldSkipRule(field_key=skip_field_key, condition=condition, comparison_value=comparison_value),)
+
+            configured = replace(
+                draft,
+                watched_subfolder=watched_subfolder,
+                date_time_settings=date_time_settings,
+                skip_rules=skip_rules,
+            )
+            if new_folder:
+                safe_sharepoint_subfolder(new_folder, create=True)
+            if saved["status"] == "APPROVED":
+                templates.save_draft(configured.to_dict(), current_actor())
+            else:
+                templates.save_draft(configured.to_dict(), current_actor(), version_id)
+        except (ValueError, OSError, ZoneInfoNotFoundError) as exc:
+            response = behavior_modal(version_id, error=str(exc), form_values=request.form)
+            return response, 400
+        if request.headers.get("HX-Request") == "true":
+            return render_template("admin/_ingestion_template_cards.html", **card_context(), message="Template settings saved.")
+        return redirect(url_for("ingestion_configuration.template_library"))
 
     @blueprint.get("/new")
     @admin_required
@@ -355,11 +592,11 @@ def create_ingestion_configuration_blueprint(database_path: Path) -> Blueprint:
             return "Template version not found.", 404
         errors = DraftConfigurationService.validate(DraftSourceDefinition.from_dict(saved["definition"]))
         if errors:
-            return render_template("admin/ingestion_template_library.html", templates=templates.list_versions(), error=" ".join(errors)), 400
+            return render_template("admin/ingestion_template_library.html", **card_context(), error=" ".join(errors)), 400
         try:
             templates.approve(version_id, current_actor())
         except ValueError as exc:
-            return render_template("admin/ingestion_template_library.html", templates=templates.list_versions(), error=str(exc)), 409
+            return render_template("admin/ingestion_template_library.html", **card_context(), error=str(exc)), 409
         return redirect(url_for("ingestion_configuration.template_library"))
 
     @blueprint.post("/library/<version_id>/new-version")
@@ -493,9 +730,18 @@ def _draft_from_inspection(draft: DraftSourceDefinition, inspection: dict[str, A
         else:
             fields.append(replace(previous, source_name=header, inferred_type=inferred_type, inferred_transform=inferred_transform))
     fields = tuple(fields)
+    temporal_field_keys = {
+        field.field_key for field in fields
+        if field.include and field.data_type.casefold() in {"date", "datetime", "timestamp"}
+    }
     return replace(
         _draft_with_source_basics(draft, {}, filename),
         fields=fields,
+        date_time_settings=replace(
+            draft.date_time_settings,
+            field_keys=tuple(key for key in draft.date_time_settings.field_keys if key in temporal_field_keys),
+        ),
+        skip_rules=tuple(rule for rule in draft.skip_rules if rule.field_key in temporal_field_keys),
         reader_settings=replace(draft.reader_settings, format=str(inspection.get("format", "XLSX")), sheet_name=str(inspection.get("selected_sheet", "")), header_row=max(tuple(inspection.get("header_rows", (1,)))), header_rows=tuple(inspection.get("header_rows", (1,)))),
         recognition_settings=replace(draft.recognition_settings, extension=".csv" if inspection.get("format") == "CSV" else ".xlsx", sheet_name=str(inspection.get("selected_sheet", "")), required_headers=tuple(str(header) for header in inspection.get("headers", ()))),
         # The configuration laboratory describes source schema only. Canonical
@@ -505,9 +751,10 @@ def _draft_from_inspection(draft: DraftSourceDefinition, inspection: dict[str, A
 
 
 def _draft_from_mapping_form(draft: DraftSourceDefinition, form) -> DraftSourceDefinition:
+    legacy_identity_post = form.get("identity_role") is not None
     fields = []
     for index, field in enumerate(draft.fields):
-        identity_selected = (
+        legacy_identity_selected = legacy_identity_post and (
             form.get(f"identity_field_{index}_match") == "on"
             or form.get(f"identity_field_{index}_create") == "on"
         )
@@ -515,20 +762,85 @@ def _draft_from_mapping_form(draft: DraftSourceDefinition, form) -> DraftSourceD
             field,
             include=form.get(f"field_include_{index}") == "on",
             field_key=str(form.get(f"field_key_{index}", field.field_key)).strip() or field.field_key,
-            data_type=(
-                "string" if identity_selected
-                else str(form.get(f"field_type_{index}", field.data_type)).strip() or field.data_type
-            ),
-            identifier=identity_selected,
+            data_type=("string" if legacy_identity_selected else str(form.get(f"field_type_{index}", field.data_type)).strip() or field.data_type),
+            identifier=legacy_identity_selected,
             transform_name=str(form.get(f"field_transform_{index}", field.transform_name)).strip() or field.transform_name,
         ))
     fields = tuple(fields)
+    fields_by_key = {field.field_key.casefold(): field for field in fields if field.include}
+    identifiers = tuple(
+        replace(identifier, field_key=fields_by_key[identifier.field_key.casefold()].field_key)
+        for identifier in draft.identity_governance.identifiers
+        if identifier.field_key.casefold() in fields_by_key
+    )
+    identity_governance = _identity_governance_from_form(draft, fields, form) if legacy_identity_post else replace(draft.identity_governance, identifiers=identifiers)
+    identifier_keys = {item.field_key.casefold() for item in identity_governance.identifiers}
+    fields = tuple(
+        replace(field, identifier=field.field_key.casefold() in identifier_keys,
+                data_type="string" if field.field_key.casefold() in identifier_keys else field.data_type)
+        for field in fields
+    )
+    temporal_field_keys = {
+        field.field_key for field in fields
+        if field.include and field.data_type.casefold() in {"date", "datetime", "timestamp"}
+    }
     return replace(
         _draft_with_source_basics(draft, form, draft.reader_settings.filename_pattern or draft.display_name),
         fields=fields,
-        identity_governance=_identity_governance_from_form(draft, fields, form),
+        identity_governance=identity_governance,
+        date_time_settings=replace(
+            draft.date_time_settings,
+            field_keys=tuple(key for key in draft.date_time_settings.field_keys if key in temporal_field_keys),
+        ),
+        skip_rules=tuple(rule for rule in draft.skip_rules if rule.field_key in temporal_field_keys),
         mappings=(),
     )
+
+
+def _identity_settings_from_form(draft: DraftSourceDefinition, form) -> DraftSourceDefinition:
+    role = str(form.get("identity_role", "EVIDENCE_ONLY")).strip().upper()
+    if role not in DRAFT_IDENTITY_ROLES:
+        role = "EVIDENCE_ONLY"
+    can_create_employee = role == "IDENTITY_SEED" and form.get("identity_can_create_employee") == "on"
+    identifiers: list[DraftIdentityIdentifier] = []
+    fields: list[DraftFieldDefinition] = []
+    field_by_key = {field.field_key.casefold(): field for field in draft.fields if field.include}
+    used_keys: set[str] = set()
+    for raw_index in form.getlist("identity_row_indices"):
+        index = _positive_int(raw_index, default=0)
+        field_key = str(form.get(f"identity_field_{index}_key", "")).strip()
+        identity_field = field_by_key.get(field_key.casefold())
+        if identity_field is None or role == "EVIDENCE_ONLY" or field_key.casefold() in used_keys:
+            continue
+        used_keys.add(field_key.casefold())
+        strength = str(form.get(f"identity_field_{index}_strength", "STRONG")).strip().upper()
+        if strength not in DRAFT_IDENTITY_STRENGTHS:
+            strength = "STRONG"
+        can_create_identity = can_create_employee and strength == "STRONG" and form.get(f"identity_field_{index}_create") == "on"
+        identifiers.append(DraftIdentityIdentifier(field_key=identity_field.field_key, strength=strength, can_match=True, can_create_identity=can_create_identity))
+    selected_keys = {identifier.field_key.casefold() for identifier in identifiers}
+    for field in draft.fields:
+        selected = field.include and field.field_key.casefold() in selected_keys
+        fields.append(replace(field, identifier=selected, data_type="string" if selected else field.data_type))
+    return replace(
+        draft,
+        fields=tuple(fields),
+        identity_governance=DraftIdentityGovernance(
+            role=role,
+            can_create_employee=can_create_employee,
+            identifiers=tuple(identifiers),
+        ),
+        status="DRAFT",
+    )
+
+
+def _identity_rows(draft: DraftSourceDefinition) -> tuple[dict[str, Any], ...]:
+    rows = tuple(
+        {"index": index, "field_key": item.field_key, "strength": item.strength, "can_create_identity": item.can_create_identity}
+        for index, item in enumerate(draft.identity_governance.identifiers)
+        if item.can_match
+    )
+    return rows or ({"index": 0, "field_key": "", "strength": "STRONG", "can_create_identity": False},)
 
 
 def _identity_governance_from_form(
@@ -640,6 +952,9 @@ def _with_field(draft: DraftSourceDefinition, field: DraftFieldDefinition) -> Dr
         recognition_settings=draft.recognition_settings,
         fields=draft.fields + (field,),
         identity_governance=draft.identity_governance,
+        watched_subfolder=draft.watched_subfolder,
+        date_time_settings=draft.date_time_settings,
+        skip_rules=draft.skip_rules,
         mappings=draft.mappings,
         validations=draft.validations,
         schema_drift_policy=draft.schema_drift_policy,
@@ -666,6 +981,12 @@ def _without_field(draft: DraftSourceDefinition, index: int) -> DraftSourceDefin
                 if removed_field_key is None or identifier.field_key != removed_field_key
             ),
         ),
+        watched_subfolder=draft.watched_subfolder,
+        date_time_settings=replace(
+            draft.date_time_settings,
+            field_keys=tuple(key for key in draft.date_time_settings.field_keys if removed_field_key is None or key != removed_field_key),
+        ),
+        skip_rules=tuple(rule for rule in draft.skip_rules if removed_field_key is None or rule.field_key != removed_field_key),
         mappings=tuple(mapping for mapping in draft.mappings if removed_source is None or mapping.source_field != removed_source),
         validations=draft.validations,
         schema_drift_policy=draft.schema_drift_policy,

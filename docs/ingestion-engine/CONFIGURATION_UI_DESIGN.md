@@ -1,8 +1,8 @@
 # Configuration UI Design
 
-**Status:** Persisted template library implemented; runtime activation remains out of scope
+**Status:** Persisted template library with identity cards and ingestion ordering; runtime activation remains out of scope
 
-**Date:** 2026-09-22
+**Date:** 2026-09-24
 
 **Related architecture:** [Ingestion Engine Architecture](../architecture/INGESTION_ENGINE_ARCHITECTURE.md)
 
@@ -11,8 +11,8 @@
 This prototype validates the future source-configuration workflow before any
 production ingestion lifecycle is changed. It lets an administrator describe a
 source schema, choose imported columns, configure inferred data types and
-structural validation expectations, declare the source's identity authority,
-then test a bounded sample in memory.
+structural validation expectations, then test a bounded sample in memory.
+Identity authority is configured from the saved template library.
 
 The page saves versioned draft snapshots in SQLite and offers a separate
 template library for continuing configuration and approval. These records are
@@ -22,7 +22,7 @@ existing orchestrator.
 ## 2. User workflow
 
 ```text
-READ FILE -> REVIEW RAW STRUCTURE -> COMPOSE HEADERS -> REVIEW DATA -> SELECT COLUMNS -> DECLARE IDENTITY AUTHORITY -> CHECK DRAFT
+READ FILE -> REVIEW RAW STRUCTURE -> COMPOSE HEADERS -> REVIEW DATA -> SELECT COLUMNS -> CHECK DRAFT -> CONFIGURE TEMPLATE IDENTITY AND ORDER IN LIBRARY
 ```
 
 - **READ FILE:** upload a bounded CSV/XLSX sample; the file is held in memory only.
@@ -38,38 +38,43 @@ READ FILE -> REVIEW RAW STRUCTURE -> COMPOSE HEADERS -> REVIEW DATA -> SELECT CO
   review the inferred data type and change it when needed. The UI also offers a
   human-readable cleanup recommendation based on explainable source-column
   signals; the administrator can keep it, choose another option or leave the
-  value unchanged.
-- **DECLARE IDENTITY AUTHORITY:** first choose in plain language whether the
-  report may introduce new employees, may only help find existing employees,
-  or is evidence only. The draft shows the corresponding Identity Seed,
-  Identity Enrichment or Evidence Only contract role. Identity Seed has a
-  separate source-level permission to propose Employee UUIDs. Then, for each
-  included field, the administrator can allow identity matching and classify
-  the field as Strong or Supporting. A field can authorize creation only when
-  it is included, marked for identity matching, classified Strong, and the
-  source-level permission is enabled. Templates that only link or validate
-  existing employees need at least one Strong matching field. A template
-  authorized to create Employee UUIDs needs at least two distinct Strong fields,
-  both selected for matching and creation. Identity Seed without creation
-  permission still needs one Strong matching field; Evidence Only is exempt.
-  Identity fields remain strings so leading zeroes are preserved. This is
-  source governance, not Employee/canonical field mapping. The laboratory allows
-  at most three fields for identity matching; the counter is visible and
-  remaining choices are disabled after the third selection.
+  value unchanged. Columns appear as a vertical accordion list. Each closed row
+  shows inclusion, source name, template key, selected cleanup, type and position;
+  field settings expand one at a time. Cleanup remains editable inside the expanded
+  settings, while its selected value updates in the closed-row summary. The
+  included-field count follows checkbox changes.
 - **CHECK DRAFT:** run structural checks and a normalized preview in memory.
+- **CONFIGURE IN THE LIBRARY:** each saved source appears as a card. A modal
+  lets the administrator choose whether the report may introduce employees,
+  find existing employees, or remain evidence only, then select identifier
+  fields from that template. Identifier values stay strings. A report that may
+  propose new Employee UUIDs needs at least two distinct included Strong IDs,
+  both selected for matching and explicitly authorized for creation. Approved
+  definitions start a new draft when identity settings change.
+- **SET INGESTION ORDER:** move template cards earlier or later. The order is
+  stored by stable source key in separate metadata, so changing order does not
+  rewrite immutable approved definition versions.
+- **CONFIGURE TEMPLATE BEHAVIOR:** an HTMX modal on each card can select or
+  create a watched subfolder strictly below the configured SharePoint root,
+  choose the active Business Rules calendar time zone or a custom IANA time
+  zone, and select date/time fields for future conversion. If no saved default
+  calendar context exists, the card shows a warning. A date-field skip rule can
+  also be saved by choosing a comparison and a calendar date. Folder paths, calendar
+  references, timezone choices and skip rules are configuration metadata only;
+  they do not activate the watcher, convert values or exclude rows.
 
 The interaction is server-rendered with HTMX partial swaps and retains normal
 form actions as a full-page fallback. This keeps the screen approachable for
 Business Rules users while preserving explicit loading, error and empty states.
 
-Advanced source identity, reader hints, validation constraints and drift severity
-remain available in a disclosure after the guided flow; they are not the first
-thing a user must understand.
+Reader hints, validation constraints and drift severity remain available in a
+disclosure after the guided flow; they are not the first thing a user must
+understand.
 
-The template library lists draft and approved versions. Administrators can
-continue a draft, approve a valid draft, or create a new draft from an approved
-version. Approved versions are immutable. There is no Activate, Publish, Enable
-watcher or Run ingestion action.
+The template library shows one card per source with version history. Administrators
+can configure identity, reorder templates, continue a draft, approve a valid draft,
+or create a new draft from an approved version. Approved versions are immutable.
+There is no Activate, Publish, Enable watcher or Run ingestion action.
 
 ## 3. Draft contract
 
@@ -116,14 +121,24 @@ Transforms are an explicit allow-list; arbitrary Python is never evaluated. The
 The configuration library:
 
 - stores draft and approved template snapshots in an additive SQLite table;
+- stores source-template execution order in a separate additive table;
 - keeps the current editing pointer in the signed Flask session;
 - records the actor and timestamps for creation, edits and approval;
 - preserves approved versions and starts a new version when further configuration is needed;
 - does not use the governed employee-field catalog for source selection;
 - persists identity governance with the versioned template snapshot;
+- persists the selected SharePoint subfolder, the pinned calendar/timezone
+  settings, selected date/time fields and future date-age skip rules with the
+  template snapshot;
+- edits identity settings only through the template library; source-column editing
+  remains focused on inclusion, field keys, data types and cleanup;
 - never creates `ImportBatch`, `IngestionRecord` or `QuarantineRecord` rows;
 - never writes source facts or the star schema;
-- never invokes Business Rules, matching, `EmployeeService` or canonical promotion;
+- reads the saved Business Rules calendar configuration only; it never executes
+  the Rules Engine, matching, `EmployeeService` or canonical promotion;
+- does not execute saved time conversion or row skip policies;
+- validates created or selected watcher paths remain below the configured
+  SharePoint root, and does not connect them to the production watcher;
 - never changes FileWatchService, active adapters, result contracts or `BEFORE` semantics.
 
 ## 6. Integration boundary with the future engine
@@ -142,6 +157,9 @@ a runtime registry and batch-pinned policy snapshots remain future work.
 - `iam_automation/application/ingestion/configuration_service.py`
 - `iam_automation/application/ingestion/template_repository.py`
 - `iam_automation/templates/admin/ingestion_template_library.html`
+- `iam_automation/templates/admin/_ingestion_template_cards.html`
+- `iam_automation/templates/admin/_ingestion_template_behavior_modal.html`
+- `iam_automation/static/js/ingestion-template-library.js`
 - `iam_automation/interfaces/web/ingestion_configuration_routes.py`
 - `iam_automation/templates/admin/ingestion_source_configuration.html`
 - `iam_automation/static/css/app.css`

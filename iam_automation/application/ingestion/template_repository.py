@@ -27,6 +27,71 @@ class TemplateRepository:
             ).fetchall()
         return tuple(self._decode_row(row) for row in rows)
 
+    def list_template_cards(self) -> tuple[dict[str, Any], ...]:
+        """Return the latest version per source with its version history and run order."""
+        with self._connection() as connection:
+            rows = connection.execute(
+                """SELECT v.definition_version_id, v.source_id, v.version_number, v.status,
+                          v.definition_json, v.created_by, v.created_at_utc, v.updated_by,
+                          v.updated_at_utc, v.approved_by, v.approved_at_utc,
+                          COALESCE(o.ingestion_order, 2147483647) AS ingestion_order
+                   FROM source_definition_versions v
+                   LEFT JOIN source_ingestion_orders o ON o.source_id = v.source_id
+                   ORDER BY v.source_id, v.version_number DESC"""
+            ).fetchall()
+            history_rows = connection.execute(
+                """SELECT definition_version_id, source_id, version_number, status,
+                          definition_json, created_by, created_at_utc, updated_by,
+                          updated_at_utc, approved_by, approved_at_utc
+                   FROM source_definition_versions
+                   ORDER BY source_id, version_number DESC"""
+            ).fetchall()
+        versions: dict[str, list[dict[str, Any]]] = {}
+        for row in history_rows:
+            versions.setdefault(str(row["source_id"]), []).append(self._decode_row(row))
+        latest_by_source: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            source_id = str(row["source_id"])
+            if source_id in latest_by_source:
+                continue
+            item = self._decode_row(row)
+            item["ingestion_order"] = int(row["ingestion_order"])
+            item["versions"] = versions.get(source_id, [])
+            latest_by_source[source_id] = item
+        cards = sorted(latest_by_source.values(), key=lambda item: (item["ingestion_order"], item["source_id"].casefold()))
+        for index, card in enumerate(cards, start=1):
+            if card["ingestion_order"] == 2147483647:
+                card["ingestion_order"] = index
+        return tuple(cards)
+
+    def move_template(self, source_id: str, direction: int, actor: str) -> tuple[dict[str, Any], ...]:
+        """Move a source template one position while keeping positions contiguous."""
+        if direction not in (-1, 1):
+            raise ValueError("Template order direction must be -1 or 1.")
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connection() as connection:
+            sources = [str(row[0]) for row in connection.execute(
+                """SELECT v.source_id, MIN(COALESCE(o.ingestion_order, 2147483647)) AS sort_order
+                   FROM source_definition_versions v
+                   LEFT JOIN source_ingestion_orders o ON o.source_id = v.source_id
+                   GROUP BY v.source_id ORDER BY sort_order, v.source_id COLLATE NOCASE"""
+            ).fetchall()]
+            if source_id not in sources:
+                raise ValueError("Template not found.")
+            current = sources.index(source_id)
+            target = max(0, min(len(sources) - 1, current + direction))
+            if target != current:
+                sources.insert(target, sources.pop(current))
+                for position, item_source_id in enumerate(sources, start=1):
+                    connection.execute(
+                        """INSERT INTO source_ingestion_orders(source_id, ingestion_order, updated_by, updated_at_utc)
+                           VALUES (?, ?, ?, ?)
+                           ON CONFLICT(source_id) DO UPDATE SET ingestion_order = excluded.ingestion_order,
+                               updated_by = excluded.updated_by, updated_at_utc = excluded.updated_at_utc""",
+                        (item_source_id, position, actor, now),
+                    )
+        return self.list_template_cards()
+
     def get(self, definition_version_id: str) -> dict[str, Any] | None:
         with self._connection() as connection:
             row = connection.execute(

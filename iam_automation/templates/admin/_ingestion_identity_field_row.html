@@ -1,0 +1,10 @@
+<div class="identity-template-field" data-identity-row>
+  <input type="hidden" name="identity_row_indices" value="{{ row.index if row is mapping else row_index }}">
+  {% set index = row.index if row is mapping else row_index %}
+  {% set selected_key = row.field_key if row is mapping else selected_key %}
+  {% set selected_strength = row.strength if row is mapping else selected_strength %}
+  {% set selected_create = row.can_create_identity if row is mapping else selected_create %}
+  <div><label class="form-label small mb-1" for="identity-key-{{ index }}">Identifier field</label><select class="form-select" id="identity-key-{{ index }}" name="identity_field_{{ index }}_key"><option value="">Choose a field</option>{% for field in available_fields %}<option value="{{ field.field_key }}" {% if selected_key == field.field_key %}selected{% endif %}>{{ field.field_key }} · {{ field.source_name }}</option>{% endfor %}</select></div>
+  <div><label class="form-label small mb-1" for="identity-strength-{{ index }}">Reliability</label><select class="form-select" id="identity-strength-{{ index }}" name="identity_field_{{ index }}_strength"><option value="STRONG" {% if selected_strength == 'STRONG' %}selected{% endif %}>Strong · unique and dependable</option><option value="SUPPORTING" {% if selected_strength == 'SUPPORTING' %}selected{% endif %}>Supporting · helpful context</option></select></div>
+  <div class="form-check identity-template-create"><input class="form-check-input" id="identity-create-{{ index }}" name="identity_field_{{ index }}_create" type="checkbox" {% if selected_create %}checked{% endif %}><label class="form-check-label small" for="identity-create-{{ index }}">May authorize identity creation</label></div>
+</div>

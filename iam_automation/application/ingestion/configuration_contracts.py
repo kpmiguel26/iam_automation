@@ -142,6 +142,24 @@ class DraftIdentityGovernance:
 
 
 @dataclass(frozen=True)
+class DraftDateTimeSettings:
+    timezone_mode: str = "RULE_CALENDAR"
+    source_timezone: str = ""
+    target_timezone: str = ""
+    calendar_id: str = ""
+    calendar_version_id: str = ""
+    calendar_label: str = ""
+    field_keys: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class DraftFieldSkipRule:
+    field_key: str
+    condition: str
+    comparison_value: str
+
+
+@dataclass(frozen=True)
 class DraftValidationDefinition:
     kind: str
     field_key: str = ""
@@ -157,6 +175,9 @@ class DraftSourceDefinition:
     recognition_settings: DraftRecognitionSettings = field(default_factory=DraftRecognitionSettings)
     fields: tuple[DraftFieldDefinition, ...] = ()
     identity_governance: DraftIdentityGovernance = field(default_factory=DraftIdentityGovernance)
+    watched_subfolder: str = ""
+    date_time_settings: DraftDateTimeSettings = field(default_factory=DraftDateTimeSettings)
+    skip_rules: tuple[DraftFieldSkipRule, ...] = ()
     mappings: tuple[DraftFieldMapping, ...] = ()
     validations: tuple[DraftValidationDefinition, ...] = ()
     schema_drift_policy: str = "WARNING"
@@ -218,6 +239,19 @@ class DraftSourceDefinition:
             for item in payload.get("validations", ()) or ()
             if isinstance(item, dict)
         )
+        date_time_payload = payload.get("date_time_settings") or {}
+        skip_rules = tuple(
+            DraftFieldSkipRule(
+                field_key=str(item.get("field_key", "")),
+                condition=str(item.get("condition", "")).upper(),
+                comparison_value=str(item.get("comparison_value", "")),
+            )
+            for item in payload.get("skip_rules", ()) or ()
+            if isinstance(item, dict)
+            and str(item.get("field_key", "")).strip()
+            and str(item.get("condition", "")).upper() in {"BEFORE", "AFTER", "ON_OR_BEFORE", "ON_OR_AFTER"}
+            and str(item.get("comparison_value", "")).strip()
+        )
         return cls(
             source_id=str(payload.get("source_id", "")),
             display_name=str(payload.get("display_name", "")),
@@ -243,6 +277,17 @@ class DraftSourceDefinition:
                 can_create_employee=bool(identity_payload.get("can_create_employee", False)),
                 identifiers=identity_identifiers,
             ),
+            watched_subfolder=str(payload.get("watched_subfolder", "")),
+            date_time_settings=DraftDateTimeSettings(
+                timezone_mode=str(date_time_payload.get("timezone_mode", "RULE_CALENDAR")).upper(),
+                source_timezone=str(date_time_payload.get("source_timezone", "")),
+                target_timezone=str(date_time_payload.get("target_timezone", "")),
+                calendar_id=str(date_time_payload.get("calendar_id", "")),
+                calendar_version_id=str(date_time_payload.get("calendar_version_id", "")),
+                calendar_label=str(date_time_payload.get("calendar_label", "")),
+                field_keys=tuple(str(value) for value in date_time_payload.get("field_keys", ()) or ()),
+            ),
+            skip_rules=skip_rules,
             mappings=mappings,
             validations=validations,
             schema_drift_policy=str(payload.get("schema_drift_policy", "WARNING")),

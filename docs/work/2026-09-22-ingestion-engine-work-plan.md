@@ -41,6 +41,8 @@ preserved; this task does not expand or reconnect the production lifecycle.
 - [x] Tests verify page access, draft editing, identifiers, CSV/XLSX inspection,
   preview diagnostics and production-write isolation.
 - [x] Persisted draft/approved template snapshots and a separate template library.
+- [x] Template library presents one card per source, with HTMX identity settings and source-level ingestion order.
+- [x] Template cards configure the SharePoint-root subfolder, saved/default or custom timezone, selected date/time fields, and an inert user-selected date comparison for future skipping.
 - [ ] Runtime `SourceDefinition` adapter and `SourceRegistry`.
 - [ ] `SourceRegistry`.
 - [ ] Production batch lifecycle extraction or source migration for this revised sequence.
@@ -55,6 +57,7 @@ preserved; this task does not expand or reconnect the production lifecycle.
 - Do not invoke Rules Engine, `EmployeeService`, matching or canonical promotion
   from sample inspection or preview.
 - Do not connect the production FileWatchService to draft watched paths.
+- Keep configured folder, timezone conversion and skip policies inert until a later runtime phase is approved.
 - Do not add database tables or migrations for drafts in this phase.
 - Preserve current adapter imports, result shapes and legacy behavior.
 - When a later migration moves a function/class to a new file, follow the
@@ -198,10 +201,11 @@ and `SourceRegistry` only after the generic lifecycle boundary is proven.
 
 ### Gate
 
-Implemented so far: additive SQLite schema, draft editing, immutable approved
-versions and application/master administrator approval. Still required: runtime
-registry contract, batch pinning, publication authority and operational audit
-policy. Approved templates are not active runtime sources.
+Implemented so far: additive SQLite schemas for immutable draft/approved
+versions and independent source ordering, card-based library, HTMX identity
+configuration and application/master administrator approval. Still required:
+runtime registry contract, batch pinning, publication authority and operational
+audit policy. Approved templates are not active runtime sources.
 
 ## Phase F — Roster Lock migration
 
