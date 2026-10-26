@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Parallel Ingestion Engine{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 px-lg-5 py-4">
+  <div class="page-heading mb-4">
+    <div><p class="eyebrow mb-1">INGESTION · RUNTIME V2</p><h1 class="h2 mb-1">Parallel Ingestion Engine</h1>
+      <p class="text-secondary mb-0">Review files discovered by runtime v2.</p></div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('ingestion_configuration.template_library') }}">Open template library</a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}
+    <div class="alert alert-{{ category }}" role="status">{{ message }}</div>
+  {% endfor %}{% endwith %}
+
+  <section class="alert alert-warning" role="status">
+    Discovery is active. File processing is paused until the physical object model, template lifecycle handling, and Rules Engine integration are complete.
+  </section>
+
+  {% if configuration_error %}<section class="alert alert-warning" role="alert"><h2 class="h5">Configuration needs attention</h2><p class="mb-0">{{ configuration_error }}</p></section>{% endif %}
+  <div class="row g-3 mb-4" aria-label="Engine status">
+    <div class="col-sm-6 col-xl-4"><section class="surface p-4 h-100"><span class="section-label">Watcher status</span>
+      <strong class="fs-4 d-block mt-2 {% if health and health.status == 'HEALTHY' %}text-success{% elif health and health.status == 'DEGRADED' %}text-danger{% endif %}">{{ health.status|title if health else 'Waiting' }}</strong>
+      <span class="small text-secondary">{% if health and health.last_cycle_at_utc %}Last cycle {{ health.last_cycle_at_utc|human_datetime }}{% else %}No watcher cycle recorded yet{% endif %}</span>
+      {% if health and health.last_error %}<p class="small text-danger mt-2 mb-0">{{ health.last_error }}</p>{% endif %}</section></div>
+    <div class="col-sm-6 col-xl-4"><section class="surface p-4 h-100"><span class="section-label">Active Object Template</span>
+      <strong class="fs-5 d-block mt-2">{{ object_name or 'None approved' }}</strong><span class="small text-secondary">{{ approved_object_templates }} approved version(s)</span></section></div>
+    <div class="col-sm-6 col-xl-4"><section class="surface p-4 h-100"><span class="section-label">Configured sources</span>
+      <strong class="fs-4 d-block mt-2">{{ sources|length }}</strong><span class="small text-secondary">Pinned report-template snapshots</span></section></div>
+  </div>
+
+  <section class="surface p-4 mb-4">
+    <div class="section-heading mb-3"><div><p class="eyebrow mb-1">CURRENT CONFIGURATION</p><h2 class="h5 mb-0">Runtime sources</h2></div></div>
+    {% if sources %}<div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th scope="col">Source</th><th scope="col">Version</th><th scope="col">Watched folder</th><th scope="col">Order</th></tr></thead><tbody>
+      {% for source in sources %}<tr><th scope="row">{{ source.display_name }}<span class="d-block small text-secondary">{{ source.source_id }}</span></th><td>{{ source.version_number }}</td><td class="text-break">{{ source.watched_path }}</td><td>{{ source.ingestion_order }}</td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<p class="text-secondary mb-0">No executable source configuration is available.</p>{% endif %}
+  </section>
+
+  <section class="surface p-4 mb-4"><div class="section-heading mb-3"><div><p class="eyebrow mb-1">PROCESSING HISTORY</p><h2 class="h5 mb-0">Recent batches</h2></div></div>
+    {% if batches %}<div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th scope="col">Started</th><th scope="col">Source</th><th scope="col">File</th><th scope="col">Status</th><th scope="col">Rows</th><th scope="col">Objects</th></tr></thead><tbody>
+      {% for batch in batches %}<tr><td>{{ batch.started_at_utc|human_datetime }}</td><th scope="row">{{ batch.source_id }}</th><td class="text-break">{{ batch.source_file }}</td><td><span class="badge text-bg-secondary">{{ batch.status|replace('_', ' ')|title }}</span></td><td>{{ batch.evidence_rows }} evidence / {{ batch.quarantined_rows }} review</td><td>{{ batch.objects_created }} new / {{ batch.objects_linked }} linked</td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<p class="text-secondary mb-0">No files processed yet.</p>{% endif %}
+  </section>
+
+  <section class="surface p-4"><div class="section-heading mb-3"><div><p class="eyebrow mb-1">WATCHER ACTIVITY</p><h2 class="h5 mb-0">File observations</h2></div></div>
+    {% if observations %}<div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th scope="col">Last seen</th><th scope="col">Source</th><th scope="col">File</th><th scope="col">Status</th><th scope="col">Authorized by</th><th scope="col">Diagnostic</th><th scope="col">Action</th></tr></thead><tbody>
+      {% for item in observations %}<tr><td>{{ item.last_seen_at_utc|human_datetime }}</td><th scope="row">{{ item.source_id }}</th><td class="text-break">{{ item.path }}</td><td><span class="badge text-bg-secondary">{{ item.status|replace('_', ' ')|title }}</span></td><td>{{ item.authorized_by or '—' }}</td><td>{{ item.last_error or '—' }}</td><td>{% if item.status == 'PENDING_AUTHORIZATION' and can_authorize_processing %}<form method="post" action="{{ url_for('parallel_engine.authorize_file_processing', observation_id=item.observation_id) }}"><button class="btn btn-sm btn-primary" type="submit" aria-label="Authorize and process {{ item.path.rsplit('/', 1)[-1] }}">Authorize and process this file</button></form>{% elif item.status == 'PENDING_AUTHORIZATION' %}Processing paused{% else %}—{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<p class="text-secondary mb-0">No configured-folder files have been observed.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

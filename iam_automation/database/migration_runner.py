@@ -18,6 +18,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine
 
 
@@ -49,6 +50,8 @@ _REVISION_TO_LEGACY_VERSION = {
     "0025_employee_template_versions": "v025_employee_template_versions",
     "0026_source_template_deletions": "v026_source_template_deletions",
     "0027_source_template_lifecycle_events": "v027_source_template_lifecycle_events",
+    "0028_source_template_cascade_audit": "v028_source_template_cascade_audit",
+    "0029_source_template_validation": "v029_source_template_validation",
 }
 _LEGACY_TO_REVISION = {value: key for key, value in _REVISION_TO_LEGACY_VERSION.items()}
 
@@ -137,6 +140,10 @@ def _legacy_version_for_revision(revision: str | None) -> tuple[str, ...]:
         return (*_legacy_version_for_revision("0025_employee_template_versions"), "v026_source_template_deletions")
     if revision == "0027_source_template_lifecycle_events":
         return (*_legacy_version_for_revision("0026_source_template_deletions"), "v027_source_template_lifecycle_events")
+    if revision == "0028_source_template_cascade_audit":
+        return (*_legacy_version_for_revision("0027_source_template_lifecycle_events"), "v028_source_template_cascade_audit")
+    if revision == "0029_source_template_validation":
+        return (*_legacy_version_for_revision("0028_source_template_cascade_audit"), "v029_source_template_validation")
     if revision == "0001_baseline":
         return ("v001_initial_schema",)
     return ()
@@ -213,4 +220,9 @@ def current_database_revision(database_path: Path) -> str | None:
             return _current_revision(connection)
     finally:
         engine.dispose()
+
+
+def current_migration_head() -> str | None:
+    """Return the repository's Alembic head revision for schema diagnostics."""
+    return ScriptDirectory.from_config(_alembic_config(None)).get_current_head()
 #endfile

@@ -21,8 +21,11 @@ from pathlib import Path
 from iam_automation import webapp
 from iam_automation.application.employee_service import EmployeeService
 from iam_automation.application.notification_service import NotificationService
+from iam_automation.application.workspace_refresh_service import record_published_source_checksum
 from iam_automation.database.runtime_schema import initialize_runtime_database
-from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN
+from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN, validate_app_user_from_sqlite
+from iam_automation.application.user_service import UserService
+from iam_automation.runtime_sync import sha256_file
 from iam_automation.startup import PreflightResult, StartupSettings, StartupState
 
 
@@ -59,6 +62,56 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(b"Workspace overview", dashboard.data)
         self.assertEqual(client.get("/logout").status_code, 302)
         self.assertEqual(client.get("/dashboard").status_code, 302)
+
+    def test_first_master_admin_sets_password_and_publishes_initial_account(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "OneDrive - Test" / "IAMAutomation"
+            published = initialize_runtime_database(root / "database" / "snapshots" / "iam_runtime.sqlite")
+            local = initialize_runtime_database(base / "runtime.sqlite")
+            record_published_source_checksum(local, sha256_file(published))
+            service = UserService(local)
+            service.create_user("DOMAIN\\user", "DOMAIN\\user", "old-password-for-bootstrap", ["MASTER_ADMIN"])
+            settings = StartupSettings(
+                root,
+                None,
+                published,
+                local,
+                base / "workspace",
+                root / "backups",
+                root / "audit",
+            )
+            result = PreflightResult(StartupState.READY, True, "ready", settings)
+            app = webapp.create_app(result)
+            client = app.test_client()
+
+            with patch("iam_automation.webapp.windows_username", return_value="DOMAIN\\user"):
+                response = client.get("/login")
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("/first-run/admin", response.headers["Location"])
+                with client.session_transaction() as session:
+                    csrf_token = session["iam_csrf_token"]
+                response = client.post(
+                    "/first-run/admin",
+                    data={
+                        "csrf_token": csrf_token,
+                        "application_username": "migue",
+                        "display_name": "Miguel Fernandez",
+                        "password": "a-long-first-password",
+                        "confirm_password": "a-long-first-password",
+                    },
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Miguel Fernandez is ready as MASTER_ADMIN", response.data)
+            self.assertIn(b"Sign in with this application username: <code>migue</code>", response.data)
+            user = validate_app_user_from_sqlite(published, "migue", "a-long-first-password")
+            self.assertEqual(user.roles, ("MASTER_ADMIN",))
+            published_user = UserService(published).get_user("migue")
+            self.assertIsNotNone(published_user)
+            self.assertEqual(published_user.display_name, "Miguel Fernandez")
+            self.assertIsNone(UserService(published).get_user("DOMAIN\\user"))
+            self.assertFalse((local.with_name("runtime.publish-pending.json")).exists())
 
     def test_testing_help_requires_login_and_is_available_in_session(self):
         user = type("User", (), {"username": "tester", "roles": ("REQUESTER",)})()

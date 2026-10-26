@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parallel Ingestion Engine</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='engine.css') }}">
+</head>
+<body>
+<header class="topbar"><div><p class="eyebrow">IAM Automation · Runtime v2</p><h1>Parallel Ingestion Engine</h1></div><div class="topbar-user">{{ username }} <a href="/legacy/logout">Sign out</a></div></header>
+<main>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<section class="notice" role="status">{{ message }}</section>{% endfor %}{% endwith %}
+  <section class="notice" role="status">Discovery is active. File processing is paused until the physical object model, template lifecycle handling, and Rules Engine integration are complete.</section>
+  <section class="summary-grid" aria-label="Engine status">
+    <article class="card"><h2>Watcher</h2><p class="status">{{ health.status if health else 'WAITING' }}</p><p class="muted">Last cycle: {{ health.last_cycle_at_utc if health and health.last_cycle_at_utc else 'Not started' }}</p>{% if health and health.last_error %}<p class="error">{{ health.last_error }}</p>{% endif %}</article>
+    <article class="card"><h2>Approved object</h2><p>{{ object_name or 'No active Object Template' }}</p><p class="muted">{{ approved_object_templates }} approved version(s)</p></article>
+    <article class="card"><h2>Configured sources</h2><p class="metric">{{ sources|length }}</p><p class="muted">Source snapshots pinned by the Object Template</p></article>
+  </section>
+
+  {% if configuration_error %}<section class="notice error" role="alert"><h2>Configuration needs attention</h2><p>{{ configuration_error }}</p></section>{% endif %}
+  <section class="card"><h2>Runtime sources</h2>{% if sources %}<div class="table-wrap"><table><thead><tr><th>Source</th><th>Version</th><th>Configured folder</th><th>Order</th></tr></thead><tbody>{% for source in sources %}<tr><th scope="row">{{ source.display_name }} <span class="muted">({{ source.source_id }})</span></th><td>{{ source.version_number }}</td><td class="path">{{ source.watched_path }}</td><td>{{ source.ingestion_order }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty">No executable source configuration is available.</p>{% endif %}</section>
+
+  <section class="card"><h2>Recent batches</h2>{% if batches %}<div class="table-wrap"><table><thead><tr><th>Started</th><th>Source</th><th>File</th><th>Status</th><th>Rows</th><th>Objects</th></tr></thead><tbody>{% for batch in batches %}<tr><td>{{ batch.started_at_utc }}</td><th scope="row">{{ batch.source_id }}</th><td class="path">{{ batch.source_file }}</td><td><span class="badge">{{ batch.status }}</span></td><td>{{ batch.evidence_rows }} evidence / {{ batch.quarantined_rows }} review</td><td>{{ batch.objects_created }} new / {{ batch.objects_linked }} linked</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty">No files processed yet.</p>{% endif %}</section>
+
+  <section class="card"><h2>File observations</h2>{% if observations %}<div class="table-wrap"><table><thead><tr><th>Last seen</th><th>Source</th><th>File</th><th>Status</th><th>Authorized by</th><th>Diagnostic</th><th>Action</th></tr></thead><tbody>{% for item in observations %}<tr><td>{{ item.last_seen_at_utc }}</td><th scope="row">{{ item.source_id }}</th><td class="path">{{ item.path }}</td><td><span class="badge">{{ item.status }}</span></td><td>{{ item.authorized_by or '—' }}</td><td>{{ item.last_error }}</td><td>{% if item.status == 'PENDING_AUTHORIZATION' and can_authorize_processing %}<form method="post" action="{{ url_for('parallel_engine.authorize_file_processing', observation_id=item.observation_id) }}"><button type="submit">Authorize and process this file</button></form>{% elif item.status == 'PENDING_AUTHORIZATION' %}Processing paused{% else %}—{% endif %}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty">No configured-folder files have been observed.</p>{% endif %}</section>
+</main>
+</body></html>

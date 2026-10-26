@@ -34,15 +34,21 @@ from pathlib import Path
 from typing import Callable
 from urllib.request import Request, urlopen
 
-from .identity import CurrentUser, validate_app_user_from_sqlite
+from .identity import CurrentUser, validate_app_user_from_sqlite, windows_username
 from .identity_discovery import discovery_path, traceability_path
 from .application.session_service import SessionService
 from .application.notification_service import NotificationService
 from .application.file_watch_service import FileWatchService
 from .application.overview_service import OverviewService
-from .application.workspace_refresh_service import WorkspaceRefreshService
-from .application.publication_state import publication_pending
+from .application.workspace_refresh_service import (
+    WorkspaceRefreshService,
+    read_published_source_checksum,
+    record_published_source_checksum,
+)
+from .application.publication_state import mark_publication_pending, publication_pending
 from .application.user_service import UserService
+from .application.governance_service import GovernanceService
+from .application.audit_service import record_audit
 from .application.temporary_super_operator_service import TemporarySuperOperatorService
 from .interfaces.web.admin_routes import create_admin_blueprint
 from .interfaces.web.ingestion_configuration_routes import create_ingestion_configuration_blueprint
@@ -52,6 +58,7 @@ from .interfaces.web.request_routes import create_request_blueprint
 from .interfaces.web.bug_report_routes import create_bug_report_blueprint
 from .interfaces.web.employee_routes import create_employee_blueprint
 from .interfaces.web.report_routes import create_report_blueprint
+from .interfaces.web.parallel_engine_app import create_parallel_engine_blueprint
 from .startup import PreflightResult
 
 try:
@@ -285,11 +292,28 @@ def create_app(
         return "-".join(asset_versions) or "dev"
 
     runtime_path = preflight_result.settings.local_runtime_db_path if preflight_result.settings else None
+
+    def initial_admin_setup_available() -> bool:
+        return bool(
+            runtime_path
+            and runtime_path.is_file()
+            and UserService(runtime_path).initial_master_admin_setup_available(windows_username())
+        )
+
     app.extensions["iam_file_watcher"] = None
+    app.extensions["parallel_engine_watcher"] = None
+    app.extensions["parallel_engine"] = None
     app.extensions["iam_refresh_lock"] = threading.Lock()
     if runtime_path:
         app.register_blueprint(create_admin_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), sharepoint_root=preflight_result.settings.sharepoint_root_path, local_runtime_path=preflight_result.settings.local_runtime_db_path, published_runtime_path=preflight_result.settings.published_runtime_db_path, audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_ingestion_configuration_blueprint(runtime_path, sharepoint_root=preflight_result.settings.sharepoint_root_path))
+        engine_blueprint = create_parallel_engine_blueprint(
+            runtime_path,
+            preflight_result.settings.sharepoint_root_path,
+            dashboard_template="parallel_engine/dashboard_integrated.html",
+        )
+        app.register_blueprint(engine_blueprint)
+        app.extensions.update(engine_blueprint.parallel_engine_extensions)
         app.register_blueprint(create_master_blueprint(runtime_path, preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_user_blueprint(runtime_path, audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), traceability_directory=traceability_path(preflight_result.settings.sharepoint_root_path), audit_path=preflight_result.settings.audit_folder_path))
@@ -361,12 +385,78 @@ def create_app(
     def login():
         if not preflight_result.ok or not runtime_path:
             return {"status": "blocked", "message": "SharePoint preflight has not passed."}, 503
+        if initial_admin_setup_available():
+            return redirect(url_for("first_admin_setup"))
         return render_template("auth/login.html", sharepoint_path=str(preflight_result.settings.sharepoint_root_path), error=None)
+
+    @app.route("/first-run/admin", methods=["GET", "POST"])
+    def first_admin_setup():
+        if not preflight_result.ok or not runtime_path or not preflight_result.settings:
+            return {"status": "blocked", "message": "SharePoint preflight has not passed."}, 503
+        username = windows_username()
+        service = UserService(runtime_path)
+        if not runtime_path.is_file() or not service.initial_master_admin_setup_available(username):
+            return redirect(url_for("login"))
+        if request.method == "GET":
+            return render_template(
+                "auth/first_admin.html",
+                username=username,
+                application_username="",
+                display_name="",
+                error=None,
+                success=None,
+                publish_warning=None,
+            )
+
+        application_username = str(request.form.get("application_username", "")).strip()
+        display_name = str(request.form.get("display_name", "")).strip()
+        password = str(request.form.get("password", ""))
+        confirmation = str(request.form.get("confirm_password", ""))
+        if password != confirmation:
+            return render_template("auth/first_admin.html", username=username, application_username=application_username, display_name=display_name, error="The passwords do not match.", success=None, publish_warning=None), 400
+        try:
+            service.complete_initial_master_admin_setup(username, application_username, display_name, password)
+        except ValueError as exc:
+            return render_template("auth/first_admin.html", username=username, application_username=application_username, display_name=display_name, error=str(exc), success=None, publish_warning=None), 400
+
+        mark_publication_pending(runtime_path, actor=username, reason="Initial MASTER_ADMIN account setup")
+        record_audit(
+            preflight_result.settings.audit_folder_path,
+            username,
+            "INITIAL_MASTER_ADMIN_PASSWORD_SET",
+            "app_user",
+            application_username,
+            computer=preflight_result.current_user.computer if preflight_result.current_user else "local-web",
+            new_values={"username": application_username, "display_name": display_name, "roles": ["MASTER_ADMIN"], "status": "ACTIVE"},
+        )
+        publish_warning = None
+        try:
+            expected_checksum = read_published_source_checksum(runtime_path)
+            snapshot = GovernanceService(
+                local_runtime_path=runtime_path,
+                published_runtime_path=preflight_result.settings.published_runtime_db_path,
+                audit_path=preflight_result.settings.audit_folder_path,
+            ).publish(username, expected_checksum=expected_checksum)
+            record_published_source_checksum(runtime_path, snapshot.checksum)
+        except Exception as exc:
+            app.logger.exception("Initial MASTER_ADMIN snapshot publication failed")
+            publish_warning = f"The account is ready on this workstation, but the shared snapshot was not updated: {exc}"
+        return render_template(
+            "auth/first_admin.html",
+            username=application_username,
+            application_username=application_username,
+            display_name=display_name,
+            error=None,
+            success=f"{display_name} is ready as MASTER_ADMIN. Sign in with the username and password you just created.",
+            publish_warning=publish_warning,
+        )
 
     @app.post("/login")
     def sign_in():
         if not preflight_result.ok or not runtime_path:
             return {"status": "blocked", "message": "SharePoint preflight has not passed."}, 503
+        if initial_admin_setup_available():
+            return redirect(url_for("first_admin_setup"))
         try:
             username = str(request.form.get("username", ""))
             password = str(request.form.get("password", ""))
@@ -595,6 +685,7 @@ def _serve_webapp_process(preflight_result: PreflightResult, ready_queue, log_qu
     app = create_app(preflight_result, shutdown_callback=shutdown_server, shutdown_token=shutdown_token)
     watcher = start_file_watcher(preflight_result)
     app.extensions["iam_file_watcher"] = watcher
+    parallel_watcher = app.extensions.get("parallel_engine_watcher")
     server = LocalWebAppServer(app)
     server_holder["server"] = server
     url = server.start()
@@ -610,6 +701,8 @@ def _serve_webapp_process(preflight_result: PreflightResult, ready_queue, log_qu
         raise RuntimeError("Waitress did not become ready within the expected time.")
     ready_queue.put(url)
     try:
+        if parallel_watcher is not None:
+            parallel_watcher.start()
         if server._thread:
             # Keep the child alive while Waitress serves requests. The control
             # panel stops it through the internal shutdown endpoint; SIGINT is
@@ -623,6 +716,8 @@ def _serve_webapp_process(preflight_result: PreflightResult, ready_queue, log_qu
     finally:
         if watcher:
             watcher.stop()
+        if parallel_watcher:
+            parallel_watcher.stop()
         server.stop()
         try:
             webapp_pid_path().unlink()

@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 from iam_automation.sharepoint_discovery import discover_candidates
 from iam_automation.startup import StartupController, StartupState
-from iam_automation.settings_store import load_user_settings
+from iam_automation.settings_store import load_user_settings, save_user_settings
 
 
 def make_sharepoint_root(base: Path, name: str = "OneDrive - Test/IAMAutomation") -> Path:
@@ -72,6 +72,59 @@ class StartupTests(unittest.TestCase):
             self.assertEqual(result.state, StartupState.NOT_FOUND)
             self.assertFalse(result.ok)
 
+    def test_deleted_saved_sharepoint_root_is_recreated_with_basic_folders(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            parent = base / "OneDrive - Test"
+            parent.mkdir()
+            root = parent / "IAMAutomation"
+            settings_path = base / "settings.toml"
+            save_user_settings({"paths": {"sharepoint_root_path": str(root)}}, settings_path)
+            controller = StartupController(settings_path=settings_path)
+
+            with patch.dict("os.environ", {"IAM_SHAREPOINT_ROOT_PATH": ""}, clear=False):
+                discovered = controller.discover_sharepoint()
+            self.assertEqual(discovered.state, StartupState.CANDIDATE_FOUND)
+            self.assertTrue(root.is_dir())
+
+            result = controller.validate_environment()
+            self.assertTrue(result.ok)
+            self.assertTrue((root / "database" / "snapshots" / "iam_runtime.sqlite").is_file())
+            for relative in (
+                "database/snapshots/identity_discoveries",
+                "database/snapshots/windows_traceability",
+                "requests/pending",
+                "audit",
+                "backups",
+                "reports",
+                "templates",
+                "generated_templates",
+            ):
+                self.assertTrue((root / relative).is_dir(), relative)
+            self.assertEqual(list((root / "reports").iterdir()), [])
+
+    def test_empty_sharepoint_folder_gets_an_empty_runtime_database(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "OneDrive - Test" / "IAMAutomation"
+            root.mkdir(parents=True)
+            controller = StartupController(settings_path=base / "settings.toml")
+            with patch.dict("os.environ", {"IAM_SHAREPOINT_ROOT_PATH": str(root)}, clear=False), patch(
+                "iam_automation.startup.project_runtime_path", return_value=base / "runtime.sqlite"
+            ):
+                self.assertEqual(controller.discover_sharepoint().state, StartupState.CANDIDATE_FOUND)
+                result = controller.validate_environment()
+
+            self.assertTrue(result.ok)
+            published = root / "database" / "snapshots" / "iam_runtime.sqlite"
+            self.assertTrue(published.is_file())
+            connection = sqlite3.connect(published)
+            try:
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM workers").fetchone()[0], 0)
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM app_users").fetchone()[0], 0)
+            finally:
+                connection.close()
+
     def test_preflight_is_hard_gate_before_user_validation(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
@@ -106,6 +159,34 @@ class StartupTests(unittest.TestCase):
             self.assertEqual(len(audit_files), 1)
             self.assertIn("WINDOWS_IDENTITY_RECORDED", audit_files[0].read_text(encoding="utf-8"))
 
+    def test_shared_traceability_write_failure_does_not_block_login_or_admin_setup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = make_sharepoint_root(base)
+            runtime_path = base / "local-runtime.sqlite"
+            controller = StartupController(settings_path=base / "settings.toml")
+            with patch.dict("os.environ", {"IAM_SHAREPOINT_ROOT_PATH": str(root)}, clear=False), patch(
+                "iam_automation.startup.project_runtime_path", return_value=runtime_path
+            ):
+                self.assertTrue(controller.discover_sharepoint().ok)
+                self.assertTrue(controller.validate_environment().ok)
+                with patch("iam_automation.startup.sys.platform", "win32"), patch(
+                    "iam_automation.startup.windows_username", return_value="DOMAIN\\user"
+                ), patch("iam_automation.startup.computer_name", return_value="VDI-01"), patch(
+                    "iam_automation.startup.record_windows_traceability", side_effect=FileNotFoundError("OneDrive sync race")
+                ):
+                    user = controller.continue_to_login()
+
+            self.assertEqual(user.username, "DOMAIN\\user")
+            connection = sqlite3.connect(runtime_path)
+            try:
+                roles = connection.execute(
+                    "SELECT role_name FROM user_roles WHERE username = ?", ("DOMAIN\\user",)
+                ).fetchall()
+                self.assertIn(("MASTER_ADMIN",), roles)
+            finally:
+                connection.close()
+
     def test_missing_sharepoint_folders_are_created_after_database_validation(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
@@ -125,6 +206,8 @@ class StartupTests(unittest.TestCase):
             self.assertEqual(result.state, StartupState.READY)
             self.assertTrue((root / "audit").is_dir())
             self.assertTrue((root / "requests" / "pending").is_dir())
+            self.assertTrue((root / "database" / "snapshots" / "identity_discoveries").is_dir())
+            self.assertTrue((root / "database" / "snapshots" / "windows_traceability").is_dir())
 
 
 if __name__ == "__main__":

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Set up the first administrator{% endblock %}
+{% block content %}
+<div class="auth-page">
+  <div class="container auth-container">
+    <div class="row">
+    <section class="surface p-4 p-lg-5 col-lg-8 col-xl-6 mx-auto" aria-labelledby="first-admin-heading">
+      <p class="eyebrow mb-2">One-time workspace setup</p>
+      <h1 id="first-admin-heading" class="h2">Set up the first administrator</h1>
+      <p class="text-secondary">Your Windows identity verifies who is completing setup. Choose a separate application username, the name shown in the app, and a password.</p>
+      {% if not success %}<div class="alert alert-light border" role="status"><strong>Setup authorized for Windows user:</strong> <code>{{ username }}</code></div>{% endif %}
+      {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+      {% if publish_warning %}<div class="alert alert-warning" role="alert">{{ publish_warning }}</div>{% endif %}
+      {% if success %}
+        <div class="alert alert-success" role="status">{{ success }}</div>
+        <p class="mb-3">Sign in with this application username: <code>{{ username }}</code></p>
+        <a class="btn btn-primary" href="{{ url_for('login') }}">Go to sign in</a>
+      {% else %}
+        <form method="post" action="{{ url_for('first_admin_setup') }}">
+          <div class="mb-3">
+            <label class="form-label" for="first-admin-application-username">Application username</label>
+            <input class="form-control" id="first-admin-application-username" name="application_username" type="text" value="{{ application_username }}" maxlength="100" autocomplete="username" required>
+            <div class="form-text">Use this username when signing in. It is separate from your Windows account.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="first-admin-display-name">Administrator name</label>
+            <input class="form-control" id="first-admin-display-name" name="display_name" type="text" value="{{ display_name }}" maxlength="100" autocomplete="name" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="first-admin-password">New password</label>
+            <input class="form-control" id="first-admin-password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+            <div class="form-text">Use at least 12 characters.</div>
+          </div>
+          <div class="mb-4">
+            <label class="form-label" for="first-admin-confirm-password">Confirm password</label>
+            <input class="form-control" id="first-admin-confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="12" required>
+          </div>
+          <button class="btn btn-primary" type="submit">Create administrator password</button>
+        </form>
+      {% endif %}
+    </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

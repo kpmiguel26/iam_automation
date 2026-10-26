@@ -17,7 +17,7 @@
           <span class="template-card-glance">{{ properties|length }} propert{{ 'y' if properties|length == 1 else 'ies' }} · {{ identifiers|length }} identifier{{ '' if identifiers|length == 1 else 's' }} · {{ matches|length }} strong link{{ '' if matches|length == 1 else 's' }} · {{ sources|length }} report template{{ '' if sources|length == 1 else 's' }}{% if object_template %} · {{ 'Creation authorized' if definition.get('allow_object_creation') else 'Creation not authorized' }}{% endif %}</span>
           {% if object_template %}<span class="template-card-provenance"><span>Owned by <strong>{{ object_template.created_by }}</strong></span><span>Last edited by <strong>{{ object_template.updated_by }}</strong> · <time datetime="{{ object_template.updated_at_utc }}">{{ object_template.updated_at_utc[:10] }}</time> UTC</span></span>{% endif %}
         </span>
-        {% if object_template %}<span class="status-pill status-pending"><span></span>Draft · v{{ object_template.version_number }}</span>{% else %}<span class="status-pill status-pending"><span></span>Not configured</span>{% endif %}</span>
+        {% if object_template %}{% if object_template.is_approved %}<span class="status-pill status-approved"><span></span>Approved · v{{ object_template.version_number }}</span>{% else %}<span class="status-pill status-pending"><span></span>Draft · v{{ object_template.version_number }}</span>{% endif %}{% else %}<span class="status-pill status-pending"><span></span>Not configured</span>{% endif %}</span>
         <span class="template-card-accordion-action"><span class="template-card-show-label">Show settings</span><span class="template-card-hide-label">Hide settings</span><span class="template-card-accordion-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="template-card-accordion-body">
@@ -32,7 +32,14 @@
           <p class="text-secondary py-3 mb-0">Save report templates and configure their identity fields first. Included fields become object properties automatically.</p>
         {% endif %}
         <div class="template-card-actions mt-3">
-          <button class="btn btn-outline-primary" type="button" hx-get="{{ url_for('ingestion_configuration.object_template_modal') }}" hx-target="#template-modal-region" hx-swap="innerHTML">Configure Template Object</button>
+          <a class="btn btn-outline-primary" href="{{ url_for('ingestion_configuration.object_template_settings_page') }}">Configure Template Object</a>
+          {% if object_template and not object_template.is_approved and can_approve_object_template %}
+            <form method="post" action="{{ url_for('ingestion_configuration.approve_object_template', version_id=object_template.employee_template_version_id) }}">
+              <button class="btn btn-success" type="submit">Approve for engine</button>
+            </form>
+          {% elif object_template and not object_template.is_approved %}
+            <span class="small text-warning-emphasis" role="status">Awaiting approval by an Application Administrator or Master Administrator.</span>
+          {% endif %}
         </div>
       </div>
     </details>

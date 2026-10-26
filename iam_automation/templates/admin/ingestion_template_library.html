@@ -7,6 +7,7 @@
     <a class="btn btn-primary" href="{{ url_for('ingestion_configuration.start_new_template') }}">Define a new report</a>
   </div>
   <div class="alert alert-info mt-4" role="note"><strong>These are governed settings.</strong> They do not enable a watcher, create objects, match records, or import data. Changes to approved definitions start a new draft version.</div>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="alert alert-{{ category }}" role="status">{{ message }}</div>{% endfor %}{% endwith %}
   {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
   {% include "admin/_ingestion_template_cards.html" %}
   <section class="mt-5" aria-labelledby="object-template-section-title">

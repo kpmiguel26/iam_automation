@@ -22,16 +22,32 @@ class ObjectTemplateRepository:
 
     def latest(self) -> dict[str, Any] | None:
         with self._connection() as connection:
+            approvals_table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'engine_v2_object_template_approvals'"
+            ).fetchone()
+            approval_join = (
+                "LEFT JOIN engine_v2_object_template_approvals a "
+                "ON a.object_template_version_id = v.employee_template_version_id"
+                if approvals_table else ""
+            )
+            approval_columns = (
+                "a.approved_by, a.approved_at_utc"
+                if approvals_table else "NULL AS approved_by, NULL AS approved_at_utc"
+            )
             row = connection.execute(
-                """SELECT employee_template_version_id, template_key, version_number,
-                          status, definition_json, created_by, created_at_utc,
-                          updated_by, updated_at_utc
-                   FROM employee_template_versions
-                   WHERE template_key = ?
-                   ORDER BY version_number DESC LIMIT 1""",
+                f"""SELECT v.employee_template_version_id, v.template_key, v.version_number,
+                          v.status, v.definition_json, v.created_by, v.created_at_utc,
+                          v.updated_by, v.updated_at_utc, {approval_columns}
+                   FROM employee_template_versions v
+                   {approval_join}
+                   WHERE v.template_key = ?
+                   ORDER BY v.version_number DESC LIMIT 1""",
                 (self.TEMPLATE_KEY,),
             ).fetchone()
-        return self._decode(row) if row else None
+        result = self._decode(row) if row else None
+        if result is not None:
+            result["is_approved"] = bool(result.get("approved_at_utc"))
+        return result
 
     def save_draft(self, definition: dict[str, Any], actor: str) -> dict[str, Any]:
         now = datetime.now(timezone.utc).isoformat()

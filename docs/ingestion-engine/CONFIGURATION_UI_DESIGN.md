@@ -44,15 +44,13 @@ READ FILE -> REVIEW RAW STRUCTURE -> COMPOSE HEADERS -> REVIEW DATA -> SELECT CO
   settings, while its selected value updates in the closed-row summary. The
   included-field count follows checkbox changes.
 - **CHECK DRAFT:** run structural checks and a normalized preview in memory.
-- **CONFIGURE IN THE LIBRARY:** each saved source appears as a card. A modal
-  lets the administrator choose whether the report may introduce employees,
-  find existing employees, or remain evidence only, then select identifier
-  fields from that template and set its maximum matching-field count. Identifier
-  values stay strings. New and older templates start with a limit of three until
-  changed in the modal. A report that may
-  propose new Employee UUIDs needs at least two distinct included Strong IDs,
-  both selected for matching and explicitly authorized for creation. Approved
-  definitions start a new draft when identity settings change.
+- **CONFIGURE IN THE LIBRARY:** each saved source appears as a card. One settings
+  page lets the administrator configure identity, watcher folder, date/time
+  handling and skip rules, then validates the combined report-template version
+  before saving. Identity fields remain strings. A report that may propose new
+  objects needs at least two distinct included Strong identifiers, selected for
+  matching and explicitly authorized for creation. Saving changes to an
+  approved definition creates a draft; the approved definition stays unchanged.
 - **SET INGESTION ORDER:** move template cards earlier or later. The order is
   stored by stable source key in separate metadata, so changing order does not
   rewrite immutable approved definition versions.
@@ -61,13 +59,12 @@ READ FILE -> REVIEW RAW STRUCTURE -> COMPOSE HEADERS -> REVIEW DATA -> SELECT CO
   choices; its version snapshots, attribution and existing Employee-template
   references remain preserved as evidence. Recreating a report with the same
   internal key restores it as a new draft version and records the restoration.
-- **CONFIGURE TEMPLATE BEHAVIOR:** an HTMX modal on each card can select or
-  create a watched subfolder strictly below the configured SharePoint root,
-  choose the active Business Rules calendar time zone or a custom IANA time
-  zone, and select date/time fields for future conversion. If no saved default
-  calendar context exists, the card shows a warning. A date-field skip rule can
-  also be saved by choosing a comparison and a calendar date. Folder paths, calendar
-  references, timezone choices and skip rules are configuration metadata only;
+- **VALIDATE AND APPROVE:** a draft cannot be approved until the combined
+  settings page validates and saves its current content. Validation is recorded
+  against that version's content digest. Any later edit changes the digest and
+  requires validation again. The server checks this marker during approval as
+  well as disabling the approval button in the library. Folder paths, calendar
+  references, timezone choices and skip rules remain configuration metadata;
   they do not activate the watcher, convert values or exclude rows.
 - **CONFIGURE TEMPLATE OBJECT:** a separate card lets the user name an object,
   select saved report templates as sources, and automatically builds its
@@ -88,17 +85,19 @@ disclosure after the guided flow; they are not the first thing a user must
 understand.
 
 The template library shows one card per source with version history, creator and
-last editor attribution. Administrators can configure identity, reorder templates,
-continue a draft, approve a valid draft, or create a new draft from an approved
-version. Approved versions are immutable.
+last editor attribution. Administrators can open one settings page for a report,
+reorder templates, continue a draft, validate a draft, approve a validated draft,
+or create a new draft from an approved version. Approved versions are immutable.
 There is no Activate, Publish, Enable watcher or Run ingestion action.
 
 ## 3. Parallel runtime and deprecation register
 
 The new template library and the production ingestion path are parallel systems
-for now. Report and Template Object versions are configuration evidence only.
-They do not replace the current source-specific adapters, the hard-coded runtime
-dispatcher, canonical Employee matching, or approval/application workflows.
+for now. Runtime v2 already reads approved report-template snapshots to discover
+files and recognize their format. Its file processor is gated off and its object
+records remain isolated prototype data. It does not replace the current
+source-specific adapters, the legacy Rules Engine lifecycle, canonical Employee
+matching, or approval/application workflows.
 
 Legacy entry points carry source-level `DEPRECATED` notes to preserve the
 migration trail. The marker means “planned replacement, still active”; it does
@@ -107,15 +106,16 @@ replacement exists and source-specific parity is demonstrated.
 
 | Legacy entry point | Replacement target | Current status |
 |---|---|---|
-| `IngestionOrchestrator` hard-coded factory dispatch | Future `SourceRecognizer` + `SourceRegistry` | Active dispatcher; no runtime registry is wired yet. |
-| Master Roster, AccessNow and RSR hand-written batch persistence | `IngestionBatchService` | Still active per source; Roster Lock already delegates to the generic batch service. |
-| `find_worker_matches` and source-specific matching calls | Future runtime resolver consuming Template Object relationships | Still active for the existing Employee model; the Template Object only stores configuration. |
-| `DraftFieldMapping` and `template_mappings` | Draft field keys/cleanup plus versioned report-template snapshots | Legacy configuration compatibility is retained; new library editing does not write the legacy mapping table. |
+| Source-report discovery in `FileWatchService._discover_files` | Template-configured discovery in `ParallelFileWatcher` | **DEPRECATED overlap; still active.** V2 covers configured report folders and recognition rules. Keep legacy scans until v2 import and source cutover are ready; other workspace-operation scans remain in scope. |
+| `IngestionOrchestrator` source selection | Approved-template recognition in runtime v2 | **DEPRECATED overlap; still active.** V2 recognizes configured files, but this facade still runs legacy imports and Rules Engine hooks. |
+| Master Roster, AccessNow and RSR hand-written batch persistence | `IngestionBatchService` / future v2 physical import coordinator | Still active per source; Roster Lock already delegates to the generic batch service. |
+| `find_worker_matches` and source-specific matching calls | Runtime resolver consuming Template Object relationships | Still active for canonical Employees. V2 matching is isolated to prototype objects and is not a replacement for Worker identifiers or links. |
+| `DraftFieldMapping` and `template_mappings` | Draft field keys/cleanup plus versioned report-template snapshots | **DEPRECATED for new template authoring; still retained for compatibility.** New library editing does not write the legacy mapping table. |
 
-Do not treat existing matching or application workflows as switched or
-inactive: the new object configuration is not consumed by runtime ingestion.
-No adapter, canonical Employee flow or old mapping table is deleted by this
-phase.
+These markers document overlap and migration targets; they do not disable the
+legacy paths. No adapter, canonical Employee flow or old mapping table is
+deleted by this phase. The runtime Object Template drives discovery and
+prototype matching, but cannot yet execute the production import lifecycle.
 
 ## 4. Draft contract
 
@@ -165,6 +165,8 @@ The configuration library:
 - stores source-template execution order in a separate additive table;
 - stores removal/restoration events in `source_template_lifecycle_events` and
   retains all report version rows and source lineage;
+- stores append-only validation events in `source_template_validation_events`,
+  tied to the exact content digest that passed the combined settings validation;
 - stores the user-named Template Object as versioned configuration in the
   existing `employee_template_versions` history table; selected identifiers,
   cross-report Strong links and generated property references retain their
@@ -180,6 +182,11 @@ The configuration library:
   template snapshot;
 - edits identity settings only through the template library; source-column editing
   remains focused on inclusion, field keys, data types and cleanup;
+- edits the Template Object on a dedicated full page, with server validation for
+  selected report sources, configured identifiers, connected Strong identity
+  links, source order and object-creation authorization; validation errors keep
+  the submitted selections on that page, and a successful save returns to the
+  Template Library;
 - never creates `ImportBatch`, `IngestionRecord` or `QuarantineRecord` rows;
 - never writes source facts or the star schema;
 - reads the saved Business Rules calendar configuration only; it never executes
@@ -214,11 +221,14 @@ runtime registry and batch-pinned policy snapshots remain future work.
 - `iam_automation/application/ingestion/object_template_repository.py`
 - `iam_automation/templates/admin/ingestion_template_library.html`
 - `iam_automation/templates/admin/_object_template_card.html`
-- `iam_automation/templates/admin/_object_template_modal.html`
+- `iam_automation/templates/admin/ingestion_object_template_settings.html`
 - `iam_automation/templates/admin/_object_template_match_row.html`
 - `iam_automation/templates/admin/_ingestion_delete_template_modal.html`
 - `iam_automation/templates/admin/_ingestion_template_cards.html`
-- `iam_automation/templates/admin/_ingestion_template_behavior_modal.html`
+- `iam_automation/templates/admin/ingestion_template_settings.html`
+- `iam_automation/templates/admin/_ingestion_template_identity_fields.html`
+- `iam_automation/templates/admin/_ingestion_template_behavior_fields.html`
+- `iam_automation/database/alembic/versions/0029_source_template_validation.py`
 - `iam_automation/static/js/ingestion-template-library.js`
 - `iam_automation/interfaces/web/ingestion_configuration_routes.py`
 - `iam_automation/templates/admin/ingestion_source_configuration.html`

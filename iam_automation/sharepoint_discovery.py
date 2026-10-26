@@ -20,7 +20,7 @@ from pathlib import Path
 from .config import looks_like_onedrive_path
 
 
-EXPECTED_MARKERS = ("database", "requests", "audit", "backups", "templates", "generated_templates", "exports")
+EXPECTED_MARKERS = ("database", "requests", "audit", "backups", "reports", "templates", "generated_templates", "exports")
 
 
 @dataclass(frozen=True)

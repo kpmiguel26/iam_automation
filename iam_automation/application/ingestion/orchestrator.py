@@ -21,10 +21,11 @@ from ..rules import RuleContext, RulePhase, RuleRegistry, RuleResult
 class IngestionOrchestrator:
     """Dispatch a source file to the adapter responsible for its format.
 
-    DEPRECATED (migration pending): this hard-coded factory is the active
-    runtime dispatcher until SourceRecognizer/SourceRegistry have a production
-    contract and parity coverage. Keep this facade and its result behavior in
-    place while sources migrate one at a time.
+    DEPRECATED (migration in progress): runtime v2 now recognizes configured
+    report files from approved template snapshots, overlapping the source
+    selection responsibility here. This facade still dispatches imports to
+    legacy adapters and runs their Rules Engine lifecycle; keep it active until
+    v2 has physical-model writes, rule parity, and source-by-source cutover.
     """
 
     FILE_SOURCES: frozenset[str] = frozenset(

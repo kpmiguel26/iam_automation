@@ -15,14 +15,16 @@ from __future__ import annotations
 
 from functools import wraps
 import hashlib
+import json
 import logging
 import threading
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
-from flask import Blueprint, redirect, render_template, request, session, url_for
+from flask import Blueprint, current_app, redirect, render_template, request, session, url_for
 from sqlalchemy import select
 
 from ...application.audit_service import record_audit
@@ -31,6 +33,8 @@ from ...application.employee_service import EmployeeService
 from ...application.file_watch_service import load_watcher_health, load_watcher_manifest
 from ...application.ingestion.orchestrator import IngestionOrchestrator
 from ...application.notification_service import NotificationService
+from ...application.parallel_engine.database import connect as connect_parallel_engine
+from ...application.parallel_engine.feature_flags import FILE_PROCESSING_ENABLED
 from ...application.request_service import OPERATION_OPTIONS, RequestService
 from ...application.shared_request_service import SharedRequestService
 from ...infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, orm_session
@@ -90,6 +94,137 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             and str(item.get("path", "")) not in imported_paths
         )
         return count + discovered_only
+
+    def parallel_engine_panel() -> dict[str, object] | None:
+        """Build an admin-only, read-only summary for the runtime-v2 watcher."""
+        roles = {str(role).strip().upper() for role in session.get("iam_roles", ())}
+        if not roles & {"APPLICATION_ADMIN", "MASTER_ADMIN", "SUPER_OPERATOR"}:
+            return None
+        engine = current_app.extensions.get("parallel_engine")
+        if engine is None:
+            return {"available": False, "error": "Runtime v2 is not connected to this app process."}
+        watcher = current_app.extensions.get("parallel_engine_watcher")
+        watcher_runtime = watcher.runtime_status() if watcher is not None else {
+            "active": False,
+            "activity": "IDLE",
+            "files_checked_this_cycle": 0,
+            "processing_file": "",
+        }
+
+        configuration = None
+        configuration_error = ""
+        try:
+            configuration = engine.configuration()
+        except Exception as exc:
+            configuration_error = f"{type(exc).__name__}: {exc}"
+
+        connection = connect_parallel_engine(database_path)
+        try:
+            health_row = connection.execute(
+                "SELECT * FROM engine_v2_watcher_state WHERE singleton_id = 1"
+            ).fetchone()
+            status_counts = {
+                str(row["status"]): int(row["count"])
+                for row in connection.execute(
+                    "SELECT status, COUNT(*) AS count FROM engine_v2_file_observations GROUP BY status"
+                ).fetchall()
+            }
+            observation_count = int(connection.execute(
+                "SELECT COUNT(*) FROM engine_v2_file_observations"
+            ).fetchone()[0])
+            observations = [dict(row) for row in connection.execute(
+                """SELECT o.observation_id, o.source_id, o.source_version_id, o.path, o.signature,
+                          o.status, o.first_seen_at_utc, o.last_seen_at_utc,
+                          o.authorized_by, o.authorized_at_utc, o.last_error,
+                          b.batch_id, b.status AS batch_status, b.total_rows,
+                          b.evidence_rows, b.quarantined_rows, b.objects_created, b.objects_linked,
+                          b.message AS batch_message
+                   FROM engine_v2_file_observations o
+                   LEFT JOIN engine_v2_batches b ON b.batch_id = (
+                       SELECT candidate.batch_id FROM engine_v2_batches candidate
+                       WHERE candidate.source_id = o.source_id
+                         AND candidate.source_version_id = o.source_version_id
+                         AND candidate.source_file = o.path
+                         AND candidate.source_checksum = o.signature
+                       ORDER BY candidate.started_at_utc DESC LIMIT 1
+                   )
+                   ORDER BY o.last_seen_at_utc DESC LIMIT 50"""
+            ).fetchall()]
+            batches = [dict(row) for row in connection.execute(
+                """SELECT batch_id, source_id, source_version_id, source_file, status,
+                          total_rows, evidence_rows, quarantined_rows, objects_created,
+                          objects_linked, started_at_utc, completed_at_utc, message
+                   FROM engine_v2_batches ORDER BY started_at_utc DESC LIMIT 50"""
+            ).fetchall()]
+            for batch in batches:
+                diagnostic_counts: Counter[str] = Counter()
+                for row in connection.execute(
+                    "SELECT diagnostics_json, COUNT(*) AS row_count FROM engine_v2_evidence WHERE batch_id = ? GROUP BY diagnostics_json",
+                    (batch["batch_id"],),
+                ).fetchall():
+                    try:
+                        diagnostics = json.loads(row["diagnostics_json"] or "[]")
+                    except (TypeError, json.JSONDecodeError):
+                        diagnostics = ["Unparseable diagnostics payload"]
+                    for diagnostic in diagnostics if isinstance(diagnostics, list) else [str(diagnostics)]:
+                        diagnostic_counts[str(diagnostic)] += int(row["row_count"])
+                batch["diagnostics"] = [
+                    {"message": message, "row_count": count}
+                    for message, count in diagnostic_counts.most_common(4)
+                ]
+            batches_by_id = {str(batch["batch_id"]): batch for batch in batches}
+        finally:
+            connection.close()
+
+        sources = []
+        if configuration:
+            for source in configuration.sources:
+                try:
+                    folder = str(source.watched_path.relative_to(engine.sharepoint_root)) or "."
+                except ValueError:
+                    folder = source.watched_path.name
+                sources.append({
+                    "source_id": source.source_id,
+                    "display_name": source.display_name,
+                    "version_number": source.version_number,
+                    "folder": folder,
+                    "ingestion_order": source.ingestion_order,
+                })
+        for observation in observations:
+            observation["filename"] = Path(str(observation["path"])).name
+            observation["diagnostic"] = observation["last_error"] or observation["batch_message"] or ""
+            batch = batches_by_id.get(str(observation.get("batch_id") or ""), {})
+            observation["diagnostics"] = batch.get("diagnostics", [])
+        for batch in batches:
+            batch["filename"] = Path(str(batch["source_file"])).name
+        configured_source_ids = set()
+        for source in sources:
+            configured_source_ids.add(source["source_id"])
+            source_observations = [item for item in observations if item["source_id"] == source["source_id"]]
+            source["observations"] = source_observations
+            source["file_count"] = len(source_observations)
+            source["pending_count"] = sum(item["status"] == "PENDING_AUTHORIZATION" for item in source_observations)
+            source["error_count"] = sum(
+                item["status"] in {"UNRECOGNIZED", "AMBIGUOUS", "ERROR"}
+                or int(item.get("quarantined_rows") or 0) > 0
+                for item in source_observations
+            )
+        other_observations = [item for item in observations if item["source_id"] not in configured_source_ids]
+        return {
+            "available": True,
+            "health": dict(health_row) if health_row else {"status": "STARTING"},
+            "watcher_runtime": watcher_runtime,
+            "configuration_error": configuration_error,
+            "has_configuration": configuration is not None,
+            "sources": sources,
+            "status_counts": status_counts,
+            "observation_count": observation_count,
+            "observations": observations,
+            "other_observations": other_observations,
+            "batches": batches,
+            "can_authorize": FILE_PROCESSING_ENABLED and bool(roles & {"APPLICATION_ADMIN", "MASTER_ADMIN"}),
+            "processing_enabled": FILE_PROCESSING_ENABLED,
+        }
 
     def notify_import_result(task: dict[str, object], actor: str, *, status: str, result: dict[str, object] | None = None, error: str = "") -> str:
         """Persist the import outcome for the actor in the shared notification center."""
@@ -374,6 +509,7 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             view=view,
             source_timeline=source_timeline(include_imported=view == "RECENT_FILES", max_files=25 if view == "RECENT_FILES" else None),
             watcher_health=load_watcher_health(database_path),
+            parallel_engine_panel=parallel_engine_panel() if not source_system else None,
         )
 
     @blueprint.get("/source-updates/watcher-status")
@@ -384,6 +520,8 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             watcher_health=load_watcher_health(database_path),
             source_timeline=source_timeline(include_imported=request.args.get("view", "ATTENTION").upper() == "RECENT_FILES", max_files=25 if request.args.get("view", "ATTENTION").upper() == "RECENT_FILES" else None),
             show_history_files=request.args.get("view", "ATTENTION").upper() == "RECENT_FILES",
+            view=request.args.get("view", "ATTENTION").upper(),
+            parallel_engine_panel=parallel_engine_panel(),
         )
 
     @blueprint.get("/source-updates/history")

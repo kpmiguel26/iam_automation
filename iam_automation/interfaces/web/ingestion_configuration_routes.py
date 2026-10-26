@@ -6,6 +6,7 @@ from functools import wraps
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable
+import hashlib
 import json
 import os
 import re
@@ -14,7 +15,7 @@ import uuid
 from dataclasses import replace
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
-from flask import Blueprint, make_response, redirect, render_template, request, session, url_for
+from flask import Blueprint, flash, make_response, redirect, render_template, request, session, url_for
 
 from ...application.ingestion.configuration_contracts import (
     DRAFT_DRIFT_POLICIES,
@@ -42,6 +43,7 @@ from ...application.ingestion.configuration_contracts import (
 from ...application.ingestion.configuration_service import DraftConfigurationService, suggest_source_transform
 from ...application.ingestion.object_template_repository import ObjectTemplateRepository
 from ...application.ingestion.template_repository import TemplateRepository
+from ...application.parallel_engine.templates import RuntimeTemplateCatalog
 from ...application.rules.configuration import RuleConfigurationService
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
 from ...infrastructure.sqlite.orm import RuleCalendarVersionModel, orm_session
@@ -56,6 +58,10 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
     service = DraftConfigurationService(database_path)
     templates = TemplateRepository(database_path)
     object_templates = ObjectTemplateRepository(database_path)
+    object_template_catalog = (
+        RuntimeTemplateCatalog(database_path, sharepoint_root)
+        if sharepoint_root is not None else None
+    )
     rule_configuration = RuleConfigurationService(database_path)
     sample_artifacts: dict[str, tuple[float, str, bytes]] = {}
 
@@ -88,15 +94,6 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             return 200
         return status_code
 
-    def modal_validation_response(body):
-        """Retarget rendered validation feedback into the modal without replacing library cards."""
-        if request.headers.get("HX-Request") == "true":
-            response = make_response(body, 200)
-            response.headers["HX-Retarget"] = "#template-modal-region"
-            response.headers["HX-Reswap"] = "innerHTML"
-            return response
-        return body, 400
-
     def active_rule_calendar() -> dict[str, Any]:
         configuration = rule_configuration.configuration()
         context = configuration.get("context_version")
@@ -127,26 +124,36 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         object_sources: list[dict[str, Any]] = []
         for card in cards:
             card["definition"] = DraftSourceDefinition.from_dict(card["definition"]).to_dict()
-            definition = card["definition"]
-            included_fields = [field for field in definition["fields"] if field["include"]]
+            # Object templates pin approved report snapshots. Keep library cards
+            # on their current draft, but derive object choices from the latest
+            # approved snapshot so a draft cannot create an unapprovable object.
+            approved_version = next(
+                (version for version in card.get("versions", ()) if version.get("status") == "APPROVED"),
+                card if card.get("status") == "APPROVED" else None,
+            )
+            if approved_version is None:
+                continue
+            approved_definition = DraftSourceDefinition.from_dict(approved_version["definition"]).to_dict()
+            included_fields = [field for field in approved_definition["fields"] if field["include"]]
             object_sources.append({
                 "source_id": card["source_id"],
-                "source_definition_version_id": card["definition_version_id"],
-                "source_label": definition["display_name"] or card["source_id"],
+                "source_definition_version_id": approved_version["definition_version_id"],
+                "version_number": approved_version["version_number"],
+                "source_label": approved_definition["display_name"] or card["source_id"],
                 "field_count": len(included_fields),
                 "ingestion_order": card["ingestion_order"],
             })
             for field in included_fields:
                 property_options.append({
                     "source_id": card["source_id"],
-                    "source_definition_version_id": card["definition_version_id"],
-                    "source_label": definition["display_name"] or card["source_id"],
+                    "source_definition_version_id": approved_version["definition_version_id"],
+                    "source_label": approved_definition["display_name"] or card["source_id"],
                     "field_key": field["field_key"],
                     "source_name": field["source_name"],
                     "data_type": field["data_type"],
                     "value": json.dumps([card["source_id"], field["field_key"]], ensure_ascii=False),
                 })
-            identity = definition["identity_governance"]
+            identity = approved_definition["identity_governance"]
             included_by_key = {field["field_key"]: field for field in included_fields}
             for identifier in identity["identifiers"]:
                 field = included_by_key.get(identifier["field_key"])
@@ -154,8 +161,8 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                     continue
                 identity_options.append({
                     "source_id": card["source_id"],
-                    "source_definition_version_id": card["definition_version_id"],
-                    "source_label": definition["display_name"] or card["source_id"],
+                    "source_definition_version_id": approved_version["definition_version_id"],
+                    "source_label": approved_definition["display_name"] or card["source_id"],
                     "field_key": identifier["field_key"],
                     "source_name": field["source_name"],
                     "strength": identifier["strength"],
@@ -173,6 +180,10 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             "object_sources": object_sources,
             "object_property_options": property_options,
             "object_identity_options": identity_options,
+            "can_approve_object_template": bool(
+                {normalize_role(role) for role in session.get("iam_roles", ())}
+                & {ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN}
+            ),
         }
 
     def sharepoint_folders() -> tuple[str, ...]:
@@ -195,11 +206,14 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 break
         return tuple(sorted(found, key=str.casefold))
 
-    def behavior_modal(version_id: str, *, error: str | None = None, form_values=None):
+    def render_template_settings_page(
+        version_id: str, *, error: str | None = None, form_values=None,
+        configured: DraftSourceDefinition | None = None,
+    ):
         saved = templates.get(version_id)
         if saved is None:
             return "Template version not found.", 404
-        draft = DraftSourceDefinition.from_dict(saved["definition"])
+        draft = configured or DraftSourceDefinition.from_dict(saved["definition"])
         calendar = active_rule_calendar()
         date_settings = draft.date_time_settings
         if not date_settings.source_timezone and calendar["available"]:
@@ -208,9 +222,12 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             date_settings = replace(date_settings, target_timezone=calendar["timezone"])
         timezone_names = tuple(sorted(available_timezones()))
         return render_template(
-            "admin/_ingestion_template_behavior_modal.html",
+            "admin/ingestion_template_settings.html",
             item=saved,
             draft=draft,
+            identity_rows=_identity_rows(draft),
+            available_fields=tuple(field for field in draft.fields if field.include),
+            next_identity_row_index=max(1, len(draft.identity_governance.identifiers)),
             rule_calendar=calendar,
             sharepoint_folders=sharepoint_folders(),
             timezone_names=timezone_names,
@@ -375,6 +392,9 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
     @blueprint.post("/draft/mapping")
     @admin_required
     def save_draft_mapping():
+        action = str(request.form.get("action", "validate")).strip().lower()
+        if action not in {"validate", "save"}:
+            action = "validate"
         draft = _draft_from_mapping_form(DraftSourceDefinition.from_dict(session.get(SESSION_KEY)), request.form)
         selection = session.get("ingestion_sample_selection") or {}
         artifact = get_sample(str(selection.get("artifact_id", "")))
@@ -387,6 +407,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             inspection = service.inspect_sample(artifact[0], artifact[1], sheet_name=str(selection.get("sheet_name", "")), header_row=max(header_rows), header_rows=header_rows)
         errors = DraftConfigurationService.validate(draft)
         if errors:
+            session.pop("ingestion_template_validation", None)
             return partial_or_page(
                 "admin/_ingestion_sample_mapping.html",
                 draft=draft,
@@ -395,17 +416,70 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 error=" ".join(errors),
                 status_code=400,
             )
+        sample_checks = service.preview(draft, inspection)
+        blocking_sample_checks = [
+            diagnostic for diagnostic in sample_checks["diagnostics"]
+            if diagnostic["severity"] == "BLOCKING"
+        ]
+        if blocking_sample_checks:
+            session.pop("ingestion_template_validation", None)
+            return partial_or_page(
+                "admin/_ingestion_sample_mapping.html",
+                draft=draft,
+                inspection=inspection,
+                preview=sample_checks,
+                artifact_id=str(selection.get("artifact_id", "")),
+                error="This sample fails runtime checks. Resolve the blocking header or field-type issues before saving this draft.",
+                status_code=400,
+            )
+        validation_fingerprint = hashlib.sha256(json.dumps(
+            {"draft": draft.to_dict(), "selection": selection},
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")).hexdigest()
+        if action == "validate":
+            session[SESSION_KEY] = draft.to_dict()
+            session["ingestion_template_validation"] = validation_fingerprint
+            return partial_or_page(
+                "admin/_ingestion_sample_mapping.html",
+                draft=draft,
+                inspection=inspection,
+                preview=sample_checks,
+                artifact_id=str(selection.get("artifact_id", "")),
+                validation_passed=True,
+                message="Validation passed. Review the checks, then choose Save template.",
+            )
+        if session.get("ingestion_template_validation") != validation_fingerprint:
+            session.pop("ingestion_template_validation", None)
+            session[SESSION_KEY] = draft.to_dict()
+            return partial_or_page(
+                "admin/_ingestion_sample_mapping.html",
+                draft=draft,
+                inspection=inspection,
+                preview=sample_checks,
+                artifact_id=str(selection.get("artifact_id", "")),
+                error="This template changed after validation. Validate it again before saving.",
+                status_code=400,
+            )
         try:
             saved = templates.save_draft(draft.to_dict(), current_actor(), session.get("ingestion_definition_version_id"))
         except ValueError as exc:
-            return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, artifact_id=str(selection.get("artifact_id", "")), error=f"Could not save the report template: {exc}", status_code=400)
+            return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, preview=sample_checks, artifact_id=str(selection.get("artifact_id", "")), error=f"Could not save the report template: {exc}", status_code=400)
         session[SESSION_KEY] = draft.to_dict()
         session["ingestion_definition_version_id"] = saved["definition_version_id"]
+        session.pop("ingestion_template_validation", None)
         if saved.get("reactivated"):
             message = f"The deleted report template was restored as draft version {saved['version_number']}. Its earlier versions and audit history were retained."
         else:
-            message = f"Source schema saved in this browser session and in the template library as draft version {saved['version_number']}."
-        return partial_or_page("admin/_ingestion_sample_mapping.html", draft=draft, inspection=inspection, artifact_id=str(selection.get("artifact_id", "")), message=message)
+            message = f"Template saved to the library as draft version {saved['version_number']}."
+        flash(message, "success")
+        library_url = url_for("ingestion_configuration.template_library")
+        if request.headers.get("HX-Request") == "true":
+            response = make_response("", 200)
+            response.headers["HX-Redirect"] = library_url
+            return response
+        return redirect(library_url)
 
     @blueprint.post("/sample/preview")
     @admin_required
@@ -469,7 +543,8 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 return render_page(draft=draft, error=str(exc), status_code=400)
             session[SESSION_KEY] = draft.to_dict()
             session["ingestion_definition_version_id"] = saved["definition_version_id"]
-            return render_page(draft=draft, message=f"Template saved to the library as draft version {saved['version_number']}.")
+            flash(f"Template saved to the library as draft version {saved['version_number']}.", "success")
+            return redirect(url_for("ingestion_configuration.template_library"))
         if action == "preview":
             upload = request.files.get("sample_file")
             if not upload or not upload.filename:
@@ -500,20 +575,32 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         item = next((card for card in templates.list_template_cards() if card["source_id"] == source_id), None)
         if item is None:
             return "Report template not found.", 404
-        return render_template("admin/_ingestion_delete_template_modal.html", item=item)
+        impact = templates.deletion_impact(source_id)
+        return render_template("admin/_ingestion_delete_template_modal.html", item=item, impact=impact)
 
     @blueprint.post("/library/<source_id>/delete")
     @admin_required
     def delete_template(source_id: str):
         try:
-            templates.delete_template(source_id, current_actor())
+            summary = templates.delete_template(
+                source_id, current_actor(),
+                confirm_full_object_data=request.form.get("confirm_full_object_data") == "on",
+            )
         except ValueError as exc:
-            return str(exc), 404
+            message = str(exc)
+            if request.headers.get("HX-Request") == "true":
+                return render_template("admin/_ingestion_template_cards.html", **card_context(), error=message)
+            return render_template("admin/ingestion_template_library.html", **card_context(), error=message), 409
+        message = (
+            f"Report template removed. Purged {summary['import_batches']} engine batch(es), "
+            f"{summary['evidence_rows']} imported row(s), and {summary['objects_removed']} object(s). "
+            "Template version history and purge audit were retained."
+        )
         if request.headers.get("HX-Request") == "true":
             return render_template(
                 "admin/_ingestion_template_cards.html",
                 **card_context(),
-                message="Report template removed from the active library. Its versions and audit history were retained.",
+                message=message,
             )
         return redirect(url_for("ingestion_configuration.template_library"))
 
@@ -526,7 +613,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             return None
         return str(source_id), str(field_key)
 
-    def object_modal_context(form_values=None, *, error: str | None = None):
+    def object_template_context(form_values=None, *, error: str | None = None):
         context = card_context()
         saved = context["object_template"]
         prior_definition = (saved or {}).get("definition", {})
@@ -606,7 +693,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         identity_options.sort(key=lambda item: (str(item.get("source_label", "")).casefold(), str(item.get("source_name", "")).casefold()))
         property_options.sort(key=lambda item: (str(item.get("source_label", "")).casefold(), str(item.get("source_name", "")).casefold()))
         return render_template(
-            "admin/_object_template_modal.html",
+            "admin/ingestion_object_template_settings.html",
             object_sources=sources,
             identity_options=identity_options,
             property_options=property_options,
@@ -620,13 +707,14 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             error=error,
         )
 
-    def object_modal_error(form_values, message: str):
-        return modal_validation_response(object_modal_context(form_values, error=message))
+    def object_template_error(form_values, message: str):
+        return object_template_context(form_values, error=message), 400
 
-    @blueprint.get("/library/template-object/settings")
+    @blueprint.get("/library/template-object/settings", endpoint="object_template_settings_page")
+    @blueprint.get("/library/template-object/settings", endpoint="object_template_modal")
     @admin_required
-    def object_template_modal():
-        return object_modal_context()
+    def object_template_settings_page():
+        return object_template_context()
 
     @blueprint.get("/library/template-object/match-row")
     @admin_required
@@ -664,11 +752,17 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         source_refs = {**prior_sources, **current_sources}
         object_name = str(request.form.get("object_name", "")).strip()
         if not object_name:
-            return object_modal_error(request.form, "Enter a name for this object template.")
+            return object_template_error(request.form, "Enter a name for this object template.")
         if len(object_name) > 120:
-            return object_modal_error(request.form, "Keep the object name to 120 characters or fewer.")
+            return object_template_error(request.form, "Keep the object name to 120 characters or fewer.")
         if not selected_sources or any(source_id not in source_refs for source_id in selected_sources):
-            return object_modal_error(request.form, "Choose at least one saved report template for this object.")
+            return object_template_error(request.form, "Choose at least one saved report template for this object.")
+        unavailable_sources = [source_id for source_id in selected_sources if source_id not in current_sources]
+        if unavailable_sources:
+            return object_template_error(
+                request.form,
+                "Remove report sources without a current approved version, then select approved sources from the library.",
+            )
 
         identity_options = {(item["source_id"], item["field_key"]): item for item in context["object_identity_options"]}
         prior_identities = {
@@ -683,13 +777,25 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 continue
             candidate = identity_options.get(ref) or prior_identities.get(ref)
             if candidate is None:
-                return object_modal_error(request.form, "Choose only strong or weak identifiers configured in the selected report templates.")
+                return object_template_error(request.form, "Choose only strong or weak identifiers configured in the selected report templates.")
+            current_source = current_sources.get(ref[0])
+            if (
+                current_source is not None
+                and candidate.get("source_definition_version_id")
+                and candidate.get("source_definition_version_id") != current_source.get("source_definition_version_id")
+            ):
+                return object_template_error(
+                    request.form,
+                    f"Refresh the identifier selection for {current_source['source_label']}; its approved report version changed.",
+                )
+            if current_source is None:
+                return object_template_error(request.form, "The selected identifier no longer has an approved report source.")
             selected_identifiers.append(candidate)
             seen_identifier_refs.add(ref)
 
         selected_identity_map = {(item["source_id"], item["field_key"]): item for item in selected_identifiers}
         if not selected_identifiers:
-            return object_modal_error(request.form, "Choose at least one configured Strong or Supporting identifier for this object.")
+            return object_template_error(request.form, "Choose at least one configured Strong or Supporting identifier for this object.")
         match_indices = list(dict.fromkeys(_positive_int(value, default=0) for value in request.form.getlist("object_match_indices")))
         matches: list[dict[str, Any]] = []
         used_match_pairs: set[frozenset[tuple[str, str]]] = set()
@@ -703,19 +809,19 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             anchor_ref = parse_object_ref(anchor_value)
             anchor = selected_identity_map.get(anchor_ref) if anchor_ref else None
             if source_id not in selected_sources or anchor is None or anchor["strength"] != "STRONG" or anchor["source_id"] != source_id:
-                return object_modal_error(request.form, "Choose a selected Strong identifier from the selected anchor report.")
+                return object_template_error(request.form, "Choose a selected Strong identifier from the selected anchor report.")
             if not target_values:
-                return object_modal_error(request.form, "Choose at least one Strong identifier from another report for each match group.")
+                return object_template_error(request.form, "Choose at least one Strong identifier from another report for each match group.")
             for target_value in target_values:
                 target_ref = parse_object_ref(target_value)
                 target = selected_identity_map.get(target_ref) if target_ref else None
                 if target is None or target["strength"] != "STRONG":
-                    return object_modal_error(request.form, "Each target must be a selected Strong identifier.")
+                    return object_template_error(request.form, "Each target must be a selected Strong identifier.")
                 if target["source_id"] == source_id:
-                    return object_modal_error(request.form, "Choose target identifiers from reports other than the anchor report.")
+                    return object_template_error(request.form, "Choose target identifiers from reports other than the anchor report.")
                 pair_ref = frozenset((anchor_ref, target_ref))
                 if pair_ref in used_match_pairs:
-                    return object_modal_error(request.form, "This Strong identifier pair is already included in another match group.")
+                    return object_template_error(request.form, "This Strong identifier pair is already included in another match group.")
                 used_match_pairs.add(pair_ref)
                 adjacency[anchor["source_id"]].add(target["source_id"])
                 adjacency[target["source_id"]].add(anchor["source_id"])
@@ -724,7 +830,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         if len(selected_sources) > 1:
             sources_with_strong_ids = {item["source_id"] for item in selected_identifiers if item["strength"] == "STRONG"}
             if any(source_id not in sources_with_strong_ids for source_id in selected_sources):
-                return object_modal_error(request.form, "Choose a Strong identifier for every report template that contributes fields.")
+                return object_template_error(request.form, "Choose a Strong identifier for every report template that contributes fields.")
             connected = set()
             frontier = [selected_sources[0]]
             while frontier:
@@ -734,7 +840,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 connected.add(source_id)
                 frontier.extend(adjacency.get(source_id, ()) - connected)
             if connected != set(selected_sources):
-                return object_modal_error(request.form, "Link every contributing report template through Strong identifiers before saving.")
+                return object_template_error(request.form, "Link every contributing report template through Strong identifiers before saving.")
             selected_library_sources = [current_sources[source_id] for source_id in selected_sources if source_id in current_sources]
             if selected_library_sources and match_indices:
                 first_source = min(selected_library_sources, key=lambda item: (int(item["ingestion_order"]), str(item["source_id"])))
@@ -746,7 +852,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                     or request.form.getlist(f"object_match_targets_{index}")
                 ), "")
                 if first_anchor_source != first_source["source_id"]:
-                    return object_modal_error(
+                    return object_template_error(
                         request.form,
                         f"The first Strong identifier link must start with the earliest selected report in Template Library: {first_source['source_label']} (ingestion order {first_source['ingestion_order']}).",
                     )
@@ -757,7 +863,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             if item["strength"] == "STRONG" and item.get("source_can_create_object") and item.get("can_create_identity"):
                 creation_authorized_by_source[item["source_id"]] = creation_authorized_by_source.get(item["source_id"], 0) + 1
         if allow_creation and max(creation_authorized_by_source.values(), default=0) < 2:
-            return object_modal_error(request.form, "Object creation requires at least two selected Strong identifiers that their report templates explicitly authorize for creation.")
+            return object_template_error(request.form, "Object creation requires at least two selected Strong identifiers that their report templates explicitly authorize for creation.")
 
         property_options = {(item["source_id"], item["field_key"]): item for item in context["object_property_options"]}
         prior_properties = {
@@ -787,18 +893,43 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             "matches": matches,
         }
         saved = object_templates.save_draft(definition, current_actor())
+        flash(f"{object_name} object template saved as draft v{saved['version_number']}.", "success")
         if request.headers.get("HX-Request") == "true":
-            return render_template("admin/_object_template_card.html", **card_context(), message=f"{object_name} object template saved as draft v{saved['version_number']}.")
+            response = make_response("", 200)
+            response.headers["HX-Redirect"] = url_for("ingestion_configuration.template_library")
+            return response
+        return redirect(url_for("ingestion_configuration.template_library"))
+
+    @blueprint.post("/library/template-object/<version_id>/approve")
+    @approver_required
+    def approve_object_template(version_id: str):
+        if object_template_catalog is None:
+            return render_template(
+                "admin/ingestion_template_library.html",
+                **card_context(),
+                error="The SharePoint root is not configured; this Object Template cannot be approved for the engine.",
+            ), 400
+        saved = object_templates.latest()
+        if saved is None or saved["employee_template_version_id"] != version_id:
+            return render_template(
+                "admin/ingestion_template_library.html",
+                **card_context(),
+                error="Only the current saved Object Template draft can be approved here.",
+            ), 409
+        if saved.get("is_approved"):
+            flash(f"Object Template v{saved['version_number']} is already approved for the engine.", "info")
+            return redirect(url_for("ingestion_configuration.template_library"))
+        try:
+            object_template_catalog.approve_object_template(version_id, current_actor())
+        except ValueError as exc:
+            return render_template("admin/ingestion_template_library.html", **card_context(), error=str(exc)), 400
+        flash(f"Object Template v{saved['version_number']} approved and available to the engine.", "success")
         return redirect(url_for("ingestion_configuration.template_library"))
 
     @blueprint.get("/library/<version_id>/identity-settings")
     @admin_required
-    def identity_settings_modal(version_id: str):
-        saved = templates.get(version_id)
-        if saved is None:
-            return "Template version not found.", 404
-        draft = DraftSourceDefinition.from_dict(saved["definition"])
-        return render_template("admin/_ingestion_identity_settings_modal.html", item=saved, draft=draft, identity_rows=_identity_rows(draft), available_fields=tuple(field for field in draft.fields if field.include), next_identity_row_index=max(1, len(draft.identity_governance.identifiers)))
+    def identity_settings_page(version_id: str):
+        return redirect(url_for("ingestion_configuration.template_settings_page", version_id=version_id))
 
     @blueprint.get("/library/<version_id>/identity-field-row")
     @admin_required
@@ -823,40 +954,114 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             selected_create=False,
         )
 
-    @blueprint.post("/library/<version_id>/identity-settings")
-    @admin_required
-    def save_identity_settings(version_id: str):
+    def save_template_settings_response(version_id: str):
         saved = templates.get(version_id)
         if saved is None:
             return "Template version not found.", 404
         draft = DraftSourceDefinition.from_dict(saved["definition"])
-        configured = _identity_settings_from_form(draft, request.form)
-        identity_limit = configured.identity_governance.max_matching_fields
-        matching_count = _identity_matching_count(configured)
-        if identity_limit < 1 or matching_count > identity_limit:
-            if identity_limit < 1:
-                error = "Set the identity matching limit to at least one field."
-            else:
-                error = f"This template allows up to {identity_limit} identity fields. Remove extra selections or increase the limit."
-            return modal_validation_response(render_template(
-                "admin/_ingestion_identity_settings_modal.html",
-                item=saved,
-                draft=configured,
-                identity_rows=_identity_rows(configured),
-                available_fields=tuple(field for field in configured.fields if field.include),
-                next_identity_row_index=max(1, len(configured.identity_governance.identifiers)),
-                error=error,
-            ))
+        configured = _identity_settings_from_form(draft, request.form) if "identity_role" in request.form else draft
         try:
-            if saved["status"] == "APPROVED":
-                saved = templates.save_draft(configured.to_dict(), current_actor())
-            else:
-                templates.save_draft(configured.to_dict(), current_actor(), version_id)
-        except ValueError as exc:
-            return modal_validation_response(render_template("admin/_ingestion_identity_settings_modal.html", item=saved, draft=configured, identity_rows=_identity_rows(configured), available_fields=tuple(field for field in configured.fields if field.include), next_identity_row_index=max(1, len(configured.identity_governance.identifiers)), error=str(exc)))
-        if request.headers.get("HX-Request") == "true":
-            return render_template("admin/_ingestion_template_cards.html", **card_context(), message="Identity settings saved as a template draft.")
+            folder = str(request.form.get("folder_path", draft.watched_subfolder)).strip()
+            new_folder = str(request.form.get("create_folder_path", "")).strip()
+            if not folder and not new_folder:
+                raise ValueError("Choose an existing watch folder or enter a folder to create before validating this template.")
+            watched_subfolder = (
+                safe_sharepoint_subfolder(new_folder, create=False, allow_missing=True)
+                if new_folder else safe_sharepoint_subfolder(folder, create=False)
+            )
+
+            mode = str(request.form.get("timezone_mode", draft.date_time_settings.timezone_mode)).strip().upper()
+            if mode not in {"RULE_CALENDAR", "CUSTOM"}:
+                raise ValueError("Choose a valid time-zone source.")
+            calendar = active_rule_calendar()
+            source_timezone = str(request.form.get("source_timezone", draft.date_time_settings.source_timezone)).strip()
+            target_timezone = str(request.form.get("target_timezone", draft.date_time_settings.target_timezone)).strip()
+            if mode == "RULE_CALENDAR" and calendar["available"]:
+                source_timezone = source_timezone or calendar["timezone"]
+                target_timezone = target_timezone or calendar["timezone"]
+            for timezone_name in (source_timezone, target_timezone):
+                if timezone_name:
+                    ZoneInfo(timezone_name)
+                elif mode == "CUSTOM":
+                    raise ValueError("Choose both the report time zone and the time zone for date/time values.")
+            valid_temporal_keys = {
+                field.field_key for field in configured.fields
+                if field.include and field.data_type.casefold() in {"date", "datetime", "timestamp"}
+            }
+            timezone_field_keys = (
+                tuple(key for key in request.form.getlist("timezone_field_keys") if key in valid_temporal_keys)
+                if request.form.get("combined_settings") == "1" or "timezone_field_keys" in request.form
+                else configured.date_time_settings.field_keys
+            )
+            date_time_settings = DraftDateTimeSettings(
+                timezone_mode=mode,
+                source_timezone=source_timezone,
+                target_timezone=target_timezone,
+                calendar_id=calendar["calendar_id"] if calendar["available"] else "",
+                calendar_version_id=calendar["version_id"] if calendar["available"] else "",
+                calendar_label=calendar["label"] if calendar["available"] else "",
+                field_keys=timezone_field_keys,
+            )
+
+            skip_rules = configured.skip_rules
+            if "skip_field_key" in request.form:
+                skip_field_key = str(request.form.get("skip_field_key", "")).strip()
+                skip_rules = ()
+                if skip_field_key:
+                    if skip_field_key not in valid_temporal_keys:
+                        raise ValueError("Choose an included date or date/time field for the restriction.")
+                    condition = str(request.form.get("skip_condition", "")).strip().upper()
+                    if condition not in {"BEFORE", "AFTER", "ON_OR_BEFORE", "ON_OR_AFTER"}:
+                        raise ValueError("Choose how the date field should be compared.")
+                    comparison_value = str(request.form.get("skip_comparison_value", "")).strip()
+                    try:
+                        comparison_value = date.fromisoformat(comparison_value).isoformat()
+                    except ValueError as exc:
+                        raise ValueError("Choose a valid comparison date.") from exc
+                    skip_rules = (DraftFieldSkipRule(field_key=skip_field_key, condition=condition, comparison_value=comparison_value),)
+
+            configured = replace(
+                configured,
+                watched_subfolder=watched_subfolder,
+                date_time_settings=date_time_settings,
+                skip_rules=skip_rules,
+            )
+            validation_errors = DraftConfigurationService.validate(configured)
+            if validation_errors:
+                raise ValueError(" ".join(validation_errors))
+            if new_folder:
+                safe_sharepoint_subfolder(new_folder, create=True)
+            templates.save_draft(
+                configured.to_dict(), current_actor(),
+                version_id if saved["status"] == "DRAFT" else None,
+                mark_validated=True,
+            )
+        except (ValueError, OSError, ZoneInfoNotFoundError) as exc:
+            return render_template_settings_page(
+                version_id, error=str(exc), form_values=request.form, configured=configured,
+            ), 400
+        flash("Template settings validated and saved. This version is ready for approval.", "success")
         return redirect(url_for("ingestion_configuration.template_library"))
+
+    @blueprint.post("/library/<version_id>/identity-settings")
+    @admin_required
+    def save_identity_settings(version_id: str):
+        return save_template_settings_response(version_id)
+
+    @blueprint.post("/library/<version_id>/behavior-settings")
+    @admin_required
+    def save_behavior_settings(version_id: str):
+        return save_template_settings_response(version_id)
+
+    @blueprint.get("/library/<version_id>/settings")
+    @admin_required
+    def template_settings_page(version_id: str):
+        return render_template_settings_page(version_id)
+
+    @blueprint.post("/library/<version_id>/settings")
+    @admin_required
+    def save_template_settings(version_id: str):
+        return save_template_settings_response(version_id)
 
     @blueprint.post("/library/<source_id>/move")
     @admin_required
@@ -871,86 +1076,8 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
 
     @blueprint.get("/library/<version_id>/behavior-settings")
     @admin_required
-    def behavior_settings_modal(version_id: str):
-        return behavior_modal(version_id)
-
-    @blueprint.post("/library/<version_id>/behavior-settings")
-    @admin_required
-    def save_behavior_settings(version_id: str):
-        saved = templates.get(version_id)
-        if saved is None:
-            return "Template version not found.", 404
-        draft = DraftSourceDefinition.from_dict(saved["definition"])
-        try:
-            folder = str(request.form.get("folder_path", "")).strip()
-            new_folder = str(request.form.get("create_folder_path", "")).strip()
-            watched_subfolder = safe_sharepoint_subfolder(new_folder, create=False, allow_missing=True) if new_folder else safe_sharepoint_subfolder(folder, create=False) if folder else ""
-
-            mode = str(request.form.get("timezone_mode", "RULE_CALENDAR")).strip().upper()
-            if mode not in {"RULE_CALENDAR", "CUSTOM"}:
-                raise ValueError("Choose a valid time-zone source.")
-            calendar = active_rule_calendar()
-            source_timezone = str(request.form.get("source_timezone", "")).strip()
-            target_timezone = str(request.form.get("target_timezone", "")).strip()
-            if mode == "RULE_CALENDAR" and calendar["available"]:
-                source_timezone = source_timezone or calendar["timezone"]
-                target_timezone = target_timezone or calendar["timezone"]
-            for timezone_name in (source_timezone, target_timezone):
-                if timezone_name:
-                    ZoneInfo(timezone_name)
-                elif mode == "CUSTOM":
-                    raise ValueError("Choose both the report time zone and the time zone for date/time values.")
-            valid_temporal_keys = {
-                field.field_key for field in draft.fields
-                if field.include and field.data_type.casefold() in {"date", "datetime", "timestamp"}
-            }
-            timezone_field_keys = tuple(
-                key for key in request.form.getlist("timezone_field_keys")
-                if key in valid_temporal_keys
-            )
-            date_time_settings = DraftDateTimeSettings(
-                timezone_mode=mode,
-                source_timezone=source_timezone,
-                target_timezone=target_timezone,
-                calendar_id=calendar["calendar_id"] if calendar["available"] else "",
-                calendar_version_id=calendar["version_id"] if calendar["available"] else "",
-                calendar_label=calendar["label"] if calendar["available"] else "",
-                field_keys=timezone_field_keys,
-            )
-
-            skip_field_key = str(request.form.get("skip_field_key", "")).strip()
-            skip_rules: tuple[DraftFieldSkipRule, ...] = ()
-            if skip_field_key:
-                if skip_field_key not in valid_temporal_keys:
-                    raise ValueError("Choose an included date or date/time field for the restriction.")
-                condition = str(request.form.get("skip_condition", "")).strip().upper()
-                if condition not in {"BEFORE", "AFTER", "ON_OR_BEFORE", "ON_OR_AFTER"}:
-                    raise ValueError("Choose how the date field should be compared.")
-                comparison_value = str(request.form.get("skip_comparison_value", "")).strip()
-                try:
-                    comparison_value = date.fromisoformat(comparison_value).isoformat()
-                except ValueError as exc:
-                    raise ValueError("Choose a valid comparison date.") from exc
-                skip_rules = (DraftFieldSkipRule(field_key=skip_field_key, condition=condition, comparison_value=comparison_value),)
-
-            configured = replace(
-                draft,
-                watched_subfolder=watched_subfolder,
-                date_time_settings=date_time_settings,
-                skip_rules=skip_rules,
-            )
-            if new_folder:
-                safe_sharepoint_subfolder(new_folder, create=True)
-            if saved["status"] == "APPROVED":
-                templates.save_draft(configured.to_dict(), current_actor())
-            else:
-                templates.save_draft(configured.to_dict(), current_actor(), version_id)
-        except (ValueError, OSError, ZoneInfoNotFoundError) as exc:
-            response = behavior_modal(version_id, error=str(exc), form_values=request.form)
-            return modal_validation_response(response)
-        if request.headers.get("HX-Request") == "true":
-            return render_template("admin/_ingestion_template_cards.html", **card_context(), message="Template settings saved.")
-        return redirect(url_for("ingestion_configuration.template_library"))
+    def behavior_settings_page(version_id: str):
+        return redirect(url_for("ingestion_configuration.template_settings_page", version_id=version_id))
 
     @blueprint.get("/new")
     @admin_required
@@ -983,6 +1110,17 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         errors = DraftConfigurationService.validate(DraftSourceDefinition.from_dict(saved["definition"]))
         if errors:
             return render_template("admin/ingestion_template_library.html", **card_context(), error=" ".join(errors)), 400
+        if not templates.is_validated(version_id):
+            return render_template(
+                "admin/ingestion_template_library.html",
+                **card_context(),
+                error="Validate and save all template settings before approving this version.",
+            ), 400
+        draft = DraftSourceDefinition.from_dict(saved["definition"])
+        try:
+            safe_sharepoint_subfolder(draft.watched_subfolder, create=False)
+        except ValueError as exc:
+            return render_template("admin/ingestion_template_library.html", **card_context(), error=str(exc)), 400
         try:
             templates.approve(version_id, current_actor())
         except ValueError as exc:
@@ -1136,7 +1274,18 @@ def _draft_from_inspection(draft: DraftSourceDefinition, inspection: dict[str, A
         ),
         skip_rules=tuple(rule for rule in draft.skip_rules if rule.field_key in temporal_field_keys),
         reader_settings=replace(draft.reader_settings, format=str(inspection.get("format", "XLSX")), sheet_name=str(inspection.get("selected_sheet", "")), header_row=max(tuple(inspection.get("header_rows", (1,)))), header_rows=tuple(inspection.get("header_rows", (1,)))),
-        recognition_settings=replace(draft.recognition_settings, extension=".csv" if inspection.get("format") == "CSV" else ".xlsx", sheet_name=str(inspection.get("selected_sheet", "")), required_headers=tuple(str(header) for header in inspection.get("headers", ()))),
+        recognition_settings=replace(
+            draft.recognition_settings,
+            extension=".csv" if inspection.get("format") == "CSV" else ".xlsx",
+            sheet_name=str(inspection.get("selected_sheet", "")),
+            required_headers=tuple(
+                str(header)
+                for header in draft.recognition_settings.required_headers
+                if str(header).strip().casefold() in {
+                    field.source_name.strip().casefold() for field in fields if field.include
+                }
+            ),
+        ),
         # The configuration laboratory describes source schema only. Canonical
         # or shared object mappings are intentionally deferred to the future Object Engine.
         mappings=(),
@@ -1177,10 +1326,27 @@ def _draft_from_mapping_form(draft: DraftSourceDefinition, form) -> DraftSourceD
         field.field_key for field in fields
         if field.include and field.data_type.casefold() in {"date", "datetime", "timestamp"}
     }
+    included_source_names = {
+        field.source_name.strip().casefold() for field in fields if field.include
+    }
+    if form.get("recognition_headers_present") == "1":
+        recognition_headers = tuple(
+            field.source_name for index, field in enumerate(fields)
+            if field.include and form.get(f"recognition_header_{index}") == "on"
+        )
+    else:
+        recognition_headers = tuple(
+            header for header in draft.recognition_settings.required_headers
+            if str(header).strip().casefold() in included_source_names
+        )
     return replace(
         _draft_with_source_basics(draft, form, draft.reader_settings.filename_pattern or draft.display_name),
         fields=fields,
         identity_governance=identity_governance,
+        recognition_settings=replace(
+            draft.recognition_settings,
+            required_headers=recognition_headers,
+        ),
         date_time_settings=replace(
             draft.date_time_settings,
             field_keys=tuple(key for key in draft.date_time_settings.field_keys if key in temporal_field_keys),
@@ -1364,12 +1530,21 @@ def _without_field(draft: DraftSourceDefinition, index: int) -> DraftSourceDefin
     fields = tuple(field for position, field in enumerate(draft.fields) if position != index)
     removed_source = draft.fields[index].source_name if 0 <= index < len(draft.fields) else None
     removed_field_key = draft.fields[index].field_key if 0 <= index < len(draft.fields) else None
+    included_source_names = {
+        field.source_name.strip().casefold() for field in fields if field.include
+    }
     return DraftSourceDefinition(
         source_id=draft.source_id,
         display_name=draft.display_name,
         description=draft.description,
         reader_settings=draft.reader_settings,
-        recognition_settings=draft.recognition_settings,
+        recognition_settings=replace(
+            draft.recognition_settings,
+            required_headers=tuple(
+                header for header in draft.recognition_settings.required_headers
+                if str(header).strip().casefold() in included_source_names
+            ),
+        ),
         fields=fields,
         identity_governance=DraftIdentityGovernance(
             role=draft.identity_governance.role,

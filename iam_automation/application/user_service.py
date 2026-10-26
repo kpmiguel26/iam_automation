@@ -13,11 +13,12 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 
-from ..domain.users import ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_INACTIVE, ACCOUNT_STATUSES, ApplicationUser
+from ..domain.users import ACCOUNT_STATUS_ACTIVE, ACCOUNT_STATUS_INACTIVE, ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED, ACCOUNT_STATUSES, ApplicationUser
 from ..identity import ROLE_APPLICATION_ADMIN, ROLE_AUDITOR, ROLE_MASTER_ADMIN, ROLE_REQUESTER, ROLE_REVIEWER, ROLE_WRITER, normalize_role
 from ..infrastructure.sqlite.user_repository import UserRepository
 
@@ -46,6 +47,99 @@ class UserService:
         if self.repository.get_user(username):
             raise ValueError(f"Application user already exists: {username}")
         self.repository.create_user(username, display_name.strip(), generate_password_hash(password), normalized_roles)
+
+    def ensure_initial_master_admin(self, windows_username: str) -> bool:
+        """Stage a one-time MASTER_ADMIN for the current OS identity if none is active."""
+        username = self._required(windows_username, "Windows username")
+        users = self.repository.list_users()
+        if any(user.active and set(user.roles) & ADMINISTRATIVE_ROLES for user in users):
+            return False
+
+        password_hash = generate_password_hash(secrets.token_urlsafe(48))
+        existing = next((user for user in users if user.username.lower() == username.lower()), None)
+        if existing:
+            self.repository.update_user(
+                existing.username,
+                display_name=existing.display_name or username,
+                roles=tuple(sorted(set(existing.roles) | {ROLE_MASTER_ADMIN})),
+                active=False,
+                status=ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED,
+                password_hash=password_hash,
+            )
+        else:
+            self.repository.create_user(
+                username,
+                username,
+                password_hash,
+                (ROLE_MASTER_ADMIN,),
+                active=False,
+                status=ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED,
+            )
+        return True
+
+    def initial_master_admin_setup_pending(self, windows_username: str) -> bool:
+        username = windows_username.strip().lower()
+        if not username:
+            return False
+        users = self.repository.list_users()
+        if any(user.active and set(user.roles) & ADMINISTRATIVE_ROLES for user in users):
+            return False
+        return any(
+            user.username.lower() == username
+            and user.status == ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED
+            and ROLE_MASTER_ADMIN in user.roles
+            for user in users
+        )
+
+    def initial_master_admin_setup_available(self, windows_username: str) -> bool:
+        """Allow the current Windows account to finish or rename its bootstrap admin once."""
+        username = windows_username.strip().lower()
+        if not username:
+            return False
+        if self.initial_master_admin_setup_pending(username):
+            return True
+        active_admins = [
+            user for user in self.repository.list_users()
+            if user.active and set(user.roles) & ADMINISTRATIVE_ROLES
+        ]
+        return (
+            len(active_admins) == 1
+            and active_admins[0].username.lower() == username
+            and ROLE_MASTER_ADMIN in active_admins[0].roles
+        )
+
+    def complete_initial_master_admin_setup(
+        self,
+        windows_username: str,
+        application_username: str,
+        display_name: str,
+        password: str,
+    ) -> None:
+        windows_username = self._required(windows_username, "Windows username")
+        application_username = self._required(application_username, "Application username")
+        display_name = self._required(display_name, "Administrator name")
+        if application_username.lower() == windows_username.lower():
+            raise ValueError("Choose an application username separate from your Windows username.")
+        if len(password) < 12:
+            raise ValueError("Choose a password with at least 12 characters.")
+        if not self.initial_master_admin_setup_available(windows_username):
+            raise ValueError("First administrator setup is no longer available for this Windows user.")
+        users = self.repository.list_users()
+        user = next(user for user in users if user.username.lower() == windows_username.lower())
+        if any(
+            existing.username.lower() == application_username.lower()
+            and existing.username.lower() != windows_username.lower()
+            for existing in users
+        ):
+            raise ValueError("That application username is already in use.")
+        roles = tuple(sorted(set(user.roles) | {ROLE_MASTER_ADMIN}))
+        self.repository.complete_initial_master_admin_setup(
+            user.username,
+            application_username,
+            display_name=display_name,
+            roles=roles,
+            password_hash=generate_password_hash(password),
+        )
 
     def update_user(
         self,

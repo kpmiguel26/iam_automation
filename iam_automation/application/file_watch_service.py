@@ -293,6 +293,14 @@ class FileWatchService:
             return 3
 
     def _discover_files(self) -> list[FileObservation]:
+        """Find pending work across legacy folders and workspace operations.
+
+        DEPRECATED (migration in progress): the four source-report scans below
+        overlap with runtime v2's template-configured discovery and recognition.
+        Keep them active until v2 import and source-by-source cutover are ready;
+        the remaining request, configuration, snapshot and approval scans are
+        outside the parallel engine's scope.
+        """
         roots = (
             (self.sharepoint_root / "requests" / "pending", "PENDING_REQUEST"),
             (self.sharepoint_root / "config", "CONFIGURATION"),

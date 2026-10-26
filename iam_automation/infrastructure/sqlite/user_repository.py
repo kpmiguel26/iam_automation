@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from ...domain.users import ApplicationUser
 from ...identity import normalize_role
@@ -38,9 +38,18 @@ class UserRepository:
             row = session.scalar(select(AppUserModel).where(AppUserModel.username == username))
             return self._to_user(row) if row else None
 
-    def create_user(self, username: str, display_name: str, password_hash: str, roles: tuple[str, ...]) -> None:
+    def create_user(
+        self,
+        username: str,
+        display_name: str,
+        password_hash: str,
+        roles: tuple[str, ...],
+        *,
+        active: bool = True,
+        status: str = "ACTIVE",
+    ) -> None:
         with orm_session(self.database_path) as session:
-            user = AppUserModel(username=username, display_name=display_name, password_hash=password_hash, active=True, status="ACTIVE")
+            user = AppUserModel(username=username, display_name=display_name, password_hash=password_hash, active=active, status=status)
             user.roles = [UserRoleModel(username=username, role_name=role) for role in roles]
             session.add(user)
 
@@ -65,6 +74,36 @@ class UserRepository:
                 user.password_hash = password_hash
             session.execute(delete(UserRoleModel).where(UserRoleModel.username == username))
             user.roles = [UserRoleModel(username=username, role_name=role) for role in roles]
+
+    def complete_initial_master_admin_setup(
+        self,
+        windows_username: str,
+        application_username: str,
+        *,
+        display_name: str,
+        password_hash: str,
+        roles: tuple[str, ...],
+    ) -> None:
+        """Activate and optionally rename the staged first administrator atomically."""
+        with orm_session(self.database_path) as session:
+            session.execute(delete(UserRoleModel).where(UserRoleModel.username == windows_username))
+            result = session.execute(
+                update(AppUserModel)
+                .where(AppUserModel.username == windows_username)
+                .values(
+                    username=application_username,
+                    display_name=display_name,
+                    password_hash=password_hash,
+                    active=True,
+                    status="ACTIVE",
+                )
+            )
+            if result.rowcount != 1:
+                raise ValueError("The staged first administrator account could not be found.")
+            session.add_all(
+                UserRoleModel(username=application_username, role_name=role)
+                for role in roles
+            )
 
     @staticmethod
     def _to_user(row: AppUserModel) -> ApplicationUser:

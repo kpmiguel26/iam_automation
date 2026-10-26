@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Configure template · {{ draft.display_name or draft.source_id }}{% endblock %}
+{% block content %}
+<main class="container-fluid px-4 px-lg-5 py-4 page-shell admin-page ingestion-config-page">
+  <a class="back-link" href="{{ url_for('ingestion_configuration.template_library') }}">← Template library</a>
+  <div class="page-heading mt-3 mb-4"><div><p class="eyebrow">Report template · Configuration and validation</p><h1>Configure template</h1><p class="text-secondary mb-0">{{ draft.display_name or draft.source_id }} · version {{ item.version_number }}</p></div></div>
+  {% if item.status == 'APPROVED' %}<div class="alert alert-info" role="note">Saving creates a new draft version. The approved version stays unchanged.</div>{% endif %}
+  {% if error %}<div class="alert alert-danger" role="alert" aria-live="assertive"><strong>Validation needs attention.</strong> {{ error }}</div>{% endif %}
+  <form id="templateSettingsForm" method="post" action="{{ url_for('ingestion_configuration.save_template_settings', version_id=item.definition_version_id) }}" class="surface p-4">
+    <input type="hidden" name="combined_settings" value="1">
+    {% include "admin/_ingestion_template_identity_fields.html" %}
+    {% include "admin/_ingestion_template_behavior_fields.html" %}
+    <div class="d-flex flex-wrap justify-content-end gap-2 border-top mt-4 pt-3"><a class="btn btn-light" href="{{ url_for('ingestion_configuration.template_library') }}">Cancel</a><button type="submit" class="btn btn-primary">Validate and save</button></div>
+  </form>
+</main>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/ingestion-template-library.js', v=static_version) }}"></script>{% endblock %}

@@ -70,6 +70,7 @@ class TemplateRepository:
         for index, card in enumerate(cards, start=1):
             if card["ingestion_order"] == 2147483647:
                 card["ingestion_order"] = index
+            card["is_validated"] = self.is_validated(card["definition_version_id"])
         return tuple(cards)
 
     def move_template(self, source_id: str, direction: int, actor: str) -> tuple[dict[str, Any], ...]:
@@ -121,12 +122,27 @@ class TemplateRepository:
             ).fetchone()
             if deleted is not None:
                 raise ValueError("Report template is already removed from the active library.")
-            connection.execute(
-                """INSERT INTO source_template_lifecycle_events
-                   (lifecycle_event_id, source_id, deleted_by, deleted_at_utc)
-                   VALUES (?, ?, ?, ?)""",
-                (str(uuid.uuid4()), source_id, actor, now),
-            )
+            impact = self._deletion_impact(connection, source_id)
+            if impact["object_references"]:
+                names = ", ".join(impact["object_references"])
+                raise ValueError(
+                    f"This report is still linked to {names}. Edit and save the Object Template without this report before removing it."
+                )
+            columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(source_template_lifecycle_events)")}
+            if "removal_impact_json" in columns:
+                connection.execute(
+                    """INSERT INTO source_template_lifecycle_events
+                       (lifecycle_event_id, source_id, deleted_by, deleted_at_utc, removal_impact_json)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (str(uuid.uuid4()), source_id, actor, now, json.dumps(impact, ensure_ascii=False, sort_keys=True)),
+                )
+            else:
+                connection.execute(
+                    """INSERT INTO source_template_lifecycle_events
+                       (lifecycle_event_id, source_id, deleted_by, deleted_at_utc)
+                       VALUES (?, ?, ?, ?)""",
+                    (str(uuid.uuid4()), source_id, actor, now),
+                )
             active_sources = [str(row[0]) for row in connection.execute(
                 """SELECT v.source_id, MIN(COALESCE(o.ingestion_order, 2147483647)) AS sort_order
                    FROM source_definition_versions v
@@ -146,6 +162,72 @@ class TemplateRepository:
                     (active_source_id, position, actor, now),
                 )
 
+    def deletion_impact(self, source_id: str) -> dict[str, Any]:
+        """Preview active object-template dependencies without changing stored data."""
+        with self._connection() as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM source_definition_versions WHERE source_id = ? LIMIT 1",
+                (source_id,),
+            ).fetchone()
+            if exists is None:
+                raise ValueError("Report template not found.")
+            return self._deletion_impact(connection, source_id)
+
+    @staticmethod
+    def _deletion_impact(connection: sqlite3.Connection, source_id: str) -> dict[str, Any]:
+        references: list[str] = []
+        table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'employee_template_versions'"
+        ).fetchone()
+        if table is not None:
+            rows = connection.execute(
+                """SELECT v.employee_template_version_id, v.definition_json, v.version_number
+                   FROM employee_template_versions v
+                   WHERE v.template_key = 'EMPLOYEE_PROFILE'
+                   ORDER BY v.version_number DESC"""
+            ).fetchall()
+            approved_ids: set[str] = set()
+            approval_table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'engine_v2_object_template_approvals'"
+            ).fetchone()
+            if approval_table is not None:
+                approved_ids = {
+                    str(row[0]) for row in connection.execute(
+                        "SELECT object_template_version_id FROM engine_v2_object_template_approvals"
+                    ).fetchall()
+                }
+            active_ids = {str(rows[0]["employee_template_version_id"])} if rows else set()
+            latest_approved = next((str(row["employee_template_version_id"]) for row in rows if str(row["employee_template_version_id"]) in approved_ids), None)
+            if latest_approved:
+                active_ids.add(latest_approved)
+            for row in rows:
+                version_id = str(row["employee_template_version_id"])
+                if version_id not in active_ids:
+                    continue
+                try:
+                    definition = json.loads(row["definition_json"] or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    definition = {}
+                if any(
+                    isinstance(source, dict) and str(source.get("source_id", "")) == source_id
+                    for source in definition.get("source_templates", ())
+                ):
+                    references.append(str(definition.get("object_name") or "the current Object Template"))
+        counts: dict[str, int] = {}
+        for table_name, column in (
+            ("engine_v2_file_observations", "source_id"),
+            ("engine_v2_batches", "source_id"),
+            ("engine_v2_evidence", "source_id"),
+        ):
+            exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table_name,)
+            ).fetchone()
+            if exists is not None:
+                counts[table_name] = int(connection.execute(
+                    f"SELECT COUNT(*) FROM {table_name} WHERE {column} = ?", (source_id,)
+                ).fetchone()[0])
+        return {"source_id": source_id, "object_references": tuple(references), "engine_data_counts": counts}
+
     def get(self, definition_version_id: str) -> dict[str, Any] | None:
         with self._connection() as connection:
             row = connection.execute(
@@ -155,9 +237,36 @@ class TemplateRepository:
                    FROM source_definition_versions WHERE definition_version_id = ?""",
                 (definition_version_id,),
             ).fetchone()
-        return self._decode_row(row) if row else None
+        if row is None:
+            return None
+        result = self._decode_row(row)
+        result["is_validated"] = self.is_validated(definition_version_id)
+        return result
 
-    def save_draft(self, definition: dict[str, Any], actor: str, version_id: str | None = None) -> dict[str, Any]:
+    def is_validated(self, definition_version_id: str) -> bool:
+        with self._connection() as connection:
+            table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'source_template_validation_events'"
+            ).fetchone()
+            if table is None:
+                return False
+            return connection.execute(
+                """SELECT 1 FROM source_template_validation_events e
+                   JOIN source_definition_versions v
+                     ON v.definition_version_id = e.definition_version_id
+                    AND v.content_sha256 = e.content_sha256
+                   WHERE e.definition_version_id = ? LIMIT 1""",
+                (definition_version_id,),
+            ).fetchone() is not None
+
+    def save_draft(
+        self,
+        definition: dict[str, Any],
+        actor: str,
+        version_id: str | None = None,
+        *,
+        mark_validated: bool = False,
+    ) -> dict[str, Any]:
         source_id = str(definition.get("source_id", "")).strip()
         if not source_id:
             raise ValueError("A source key is required before saving a template.")
@@ -272,9 +381,22 @@ class TemplateRepository:
                                        updated_by = excluded.updated_by, updated_at_utc = excluded.updated_at_utc""",
                                 (active_source_id, position, actor, now),
                             )
+            if mark_validated:
+                validation_table = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'source_template_validation_events'"
+                ).fetchone()
+                if validation_table is None:
+                    raise RuntimeError("Template validation schema is unavailable; apply database migrations before saving validated settings.")
+                connection.execute(
+                    """INSERT INTO source_template_validation_events
+                       (validation_event_id, definition_version_id, content_sha256, validated_by, validated_at_utc)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (str(uuid.uuid4()), saved_id, digest, actor, now),
+                )
         result = self.get(saved_id)
         assert result is not None
         result["reactivated"] = reactivated
+        result["is_validated"] = self.is_validated(saved_id)
         return result
 
     def approve(self, version_id: str, actor: str) -> dict[str, Any]:

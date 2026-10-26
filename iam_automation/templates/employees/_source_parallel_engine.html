@@ -1,0 +1,85 @@
+{% if parallel_engine_panel %}
+<section class="surface p-4 mb-4" id="source-parallel-engine" aria-labelledby="source-parallel-engine-heading" aria-live="polite">
+  {% if not parallel_engine_panel.available %}
+    <div class="section-heading mb-0"><div><p class="eyebrow mb-1">INGESTION · RUNTIME V2</p><h2 class="h5 mb-1" id="source-parallel-engine-heading">Parallel ingestion engine</h2><p class="small text-secondary mb-0">{{ parallel_engine_panel.error }}</p></div><span class="badge text-bg-secondary">Unavailable</span></div>
+  {% else %}
+    {% set engine_health = parallel_engine_panel.health %}
+    {% set engine_status = engine_health.get('status', 'UNKNOWN') %}
+    {% set watcher_runtime = parallel_engine_panel.watcher_runtime %}
+    {% set watcher_activity = watcher_runtime.get('activity', 'IDLE') %}
+    {% set watcher_busy = watcher_activity in ['SCANNING', 'PROCESSING'] %}
+    {% set checked_count = watcher_runtime.get('files_checked_this_cycle', 0) if watcher_activity == 'SCANNING' else engine_health.get('last_processed_count', 0) %}
+    <div class="border rounded p-3 mb-4">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+        <div><p class="eyebrow mb-1">INGESTION · RUNTIME V2</p><h2 class="h5 mb-1" id="source-parallel-engine-heading">Parallel ingestion engine</h2><p class="small text-secondary mb-0">Discovery runs automatically. File ingestion is paused while the physical object model and Rules Engine integration are completed.</p></div>
+        <div class="d-flex gap-2 align-items-center flex-wrap"><span class="badge {% if engine_status == 'HEALTHY' %}text-bg-success{% elif engine_status in ['DEGRADED', 'WAITING_FOR_APPROVAL'] %}text-bg-warning{% else %}text-bg-secondary{% endif %}">{{ engine_status|replace('_', ' ')|title }}</span><span class="badge {% if watcher_busy %}text-bg-primary{% elif watcher_runtime.get('active') %}text-bg-success{% else %}text-bg-secondary{% endif %}" role="status" aria-live="polite" aria-atomic="true">
+          {% if watcher_busy %}<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>{% endif %}
+          {% if watcher_activity == 'PROCESSING' %}Processing{% elif watcher_activity == 'SCANNING' %}Watcher active · Scanning{% elif not watcher_runtime.get('active') %}Watcher inactive{% elif not parallel_engine_panel.has_configuration %}Watcher active · Waiting for configuration{% else %}Watcher active · Monitoring{% endif %}
+        </span><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('parallel_engine.dashboard') }}">Full engine details</a></div>
+      </div>
+      <div class="small text-secondary mt-3 d-flex gap-3 flex-wrap">
+        <span>Last cycle: <strong>{{ engine_health.get('last_cycle_at_utc')|human_datetime or 'Not recorded' }}</strong></span>
+        <span>Last successful cycle: <strong>{{ engine_health.get('last_success_at_utc')|human_datetime or 'Not recorded' }}</strong></span>
+        <span>Files observed: <strong>{{ parallel_engine_panel.observation_count }}</strong></span>
+        <span>{% if watcher_activity == 'SCANNING' %}Files checked this cycle{% else %}Files checked last cycle{% endif %}: <strong>{{ checked_count }}</strong></span>
+        {% if watcher_activity == 'PROCESSING' and watcher_runtime.get('processing_file') %}<span>Current file: <strong>{{ watcher_runtime.get('processing_file') }}</strong></span>{% endif %}
+        <span>Scan order: <strong>source order, then file name</strong></span>
+      </div>
+      {% if engine_health.get('consecutive_failures', 0)|int %}<div class="small text-warning mt-2">{{ engine_health.get('consecutive_failures') }} consecutive watcher failure(s)</div>{% endif %}
+      {% if engine_health.get('last_error') %}<div class="alert alert-danger py-2 mt-3 mb-0 small" role="alert"><strong>Latest watcher error:</strong> {{ engine_health.get('last_error') }}</div>{% endif %}
+    </div>
+    {% if not parallel_engine_panel.processing_enabled %}<div class="alert alert-warning py-2 small" role="status">Files can be discovered and reviewed here, but authorization will not import rows or create objects until the import engine is ready.</div>{% endif %}
+
+    {% if parallel_engine_panel.configuration_error %}<div class="alert alert-danger py-2 small" role="alert"><strong>Configuration error:</strong> {{ parallel_engine_panel.configuration_error }}</div>
+    {% elif not parallel_engine_panel.has_configuration %}<div class="alert alert-warning py-2 small" role="status">No approved Object Template is active. The new watcher has no runtime sources to scan.</div>{% endif %}
+
+    <div class="section-heading mb-3">
+      <div><p class="eyebrow mb-1">ENGINE WORKFLOW</p><h3 class="h5 mb-0">Detected source files</h3><p class="small text-secondary mb-0">Sources run in configured order. Files within each source are scanned alphabetically; this list shows the latest 50 observations.</p></div>
+      <span class="small text-secondary">{{ parallel_engine_panel.sources|length }} configured source(s)</span>
+    </div>
+
+    {% if parallel_engine_panel.sources %}
+      <div class="source-import-timeline mt-3">
+        {% for source in parallel_engine_panel.sources %}
+        {% set stage_class = 'is-ready' if source.pending_count else 'is-complete' if source.file_count and not source.error_count else '' %}
+        <article class="source-import-stage {{ stage_class }}">
+          <div class="source-import-marker" aria-hidden="true">{{ loop.index }}</div>
+          <div class="source-import-stage-body">
+            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+              <div><p class="eyebrow mb-1">STAGE {{ loop.index }} · ORDER {{ source.ingestion_order }}</p><h4 class="h6 mb-1">{{ source.display_name }}</h4><div class="small text-secondary">{{ source.file_count }} detected file(s) · Folder {{ source.folder }} · Template v{{ source.version_number }}</div><details class="small mt-1"><summary class="text-secondary">Source key</summary><code class="text-break">{{ source.source_id }}</code></details></div>
+              {% if source.error_count %}<span class="badge text-bg-warning">{{ source.error_count }} needs review</span>{% elif source.pending_count %}<span class="badge text-bg-primary">{{ source.pending_count }} awaiting authorization</span>{% elif source.file_count %}<span class="badge text-bg-success">Observed</span>{% else %}<span class="badge text-bg-secondary">Waiting for files</span>{% endif %}
+            </div>
+            {% if source.observations %}
+              <div class="source-import-files mt-3">
+                {% for item in source.observations %}
+                <article class="source-import-file border rounded p-3">
+                  <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                    <div class="min-w-0"><strong class="text-break">{{ item.filename }}</strong><div class="small text-secondary mt-1">First detected {{ item.first_seen_at_utc|human_datetime }} · Last seen {{ item.last_seen_at_utc|human_datetime }}</div></div>
+                    <span class="badge {% if item.status == 'PENDING_AUTHORIZATION' %}text-bg-warning{% elif item.status == 'PROCESSED' and item.quarantined_rows|int == 0 %}text-bg-success{% elif item.status in ['UNRECOGNIZED', 'AMBIGUOUS', 'ERROR'] or item.quarantined_rows|int %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ item.status|replace('_', ' ')|title }}</span>
+                  </div>
+                  {% if item.batch_id %}<div class="small mt-2"><strong>{{ item.batch_status|replace('_', ' ')|title }}</strong> · {{ item.total_rows }} rows · {{ item.evidence_rows }} staged · {{ item.quarantined_rows }} review · {{ item.objects_created }} created · {{ item.objects_linked }} linked</div>{% endif %}
+                  {% if item.authorized_by %}<div class="small text-secondary mt-1">Authorized by {{ item.authorized_by }}{% if item.authorized_at_utc %} · {{ item.authorized_at_utc|human_datetime }}{% endif %}</div>{% endif %}
+                  {% if item.diagnostic or item.diagnostics %}<div class="alert alert-danger py-2 px-3 mt-3 mb-0 small" role="alert"><strong>Needs review</strong>{% if item.diagnostic %}<div>{{ item.diagnostic }}</div>{% endif %}{% for diagnostic in item.diagnostics %}<div>{{ diagnostic.message }} <span class="text-secondary">({{ diagnostic.row_count }} row(s))</span></div>{% endfor %}</div>{% endif %}
+                  <div class="d-flex justify-content-between align-items-end gap-3 flex-wrap mt-3"><details class="small"><summary class="text-secondary">File signature</summary><code class="text-break">{{ item.signature }}</code></details>
+                    {% if item.status == 'PENDING_AUTHORIZATION' and parallel_engine_panel.can_authorize %}<form method="post" action="{{ url_for('parallel_engine.authorize_file_processing', observation_id=item.observation_id) }}"><input type="hidden" name="return_to" value="{{ url_for('employees.source_updates_overview', view=view) }}"><button class="btn btn-sm btn-primary" type="submit">Authorize and process file</button></form>{% elif item.status == 'PENDING_AUTHORIZATION' %}<span class="small text-secondary">Processing paused until the import engine is ready</span>{% endif %}
+                  </div>
+                </article>
+                {% endfor %}
+              </div>
+            {% else %}<div class="alert alert-light border mt-3 mb-0 small">No files from this source have been observed by runtime v2 yet.</div>{% endif %}
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    {% else %}<div class="alert alert-light border">No approved source templates are configured for runtime v2.</div>{% endif %}
+
+    {% if parallel_engine_panel.other_observations %}<details class="mt-3"><summary class="fw-semibold">Observations from older or unpinned source versions ({{ parallel_engine_panel.other_observations|length }})</summary><div class="list-group mt-3">{% for item in parallel_engine_panel.other_observations %}<div class="list-group-item"><strong>{{ item.filename }}</strong><span class="badge text-bg-secondary ms-2">{{ item.status|replace('_', ' ')|title }}</span><div class="small text-secondary">{{ item.source_id }} · {{ item.last_seen_at_utc|human_datetime }}</div>{% if item.diagnostic %}<div class="small text-danger">{{ item.diagnostic }}</div>{% endif %}</div>{% endfor %}</div></details>{% endif %}
+
+    <details class="mt-4"><summary class="fw-semibold">Recent engine runs and row diagnostics</summary>
+      {% if parallel_engine_panel.batches %}<div class="source-import-files mt-3">
+        {% for batch in parallel_engine_panel.batches %}<article class="source-import-file border rounded p-3"><div class="d-flex justify-content-between align-items-start gap-3 flex-wrap"><div><strong class="text-break">{{ batch.filename }}</strong><div class="small text-secondary">{{ batch.source_id }} · {{ batch.started_at_utc|human_datetime }}</div></div><span class="badge {% if batch.status == 'COMPLETED' and batch.quarantined_rows|int == 0 %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ batch.status|replace('_', ' ')|title }}</span></div><div class="small mt-2">{{ batch.total_rows }} total · {{ batch.evidence_rows }} staged · {{ batch.quarantined_rows }} quarantined · {{ batch.objects_created }} created · {{ batch.objects_linked }} linked</div>{% if batch.diagnostics %}<div class="small text-danger mt-2">{% for diagnostic in batch.diagnostics %}<div>{{ diagnostic.message }} <span class="text-secondary">({{ diagnostic.row_count }} row(s))</span></div>{% endfor %}</div>{% elif batch.message %}<div class="small text-danger mt-2">{{ batch.message }}</div>{% endif %}</article>{% endfor %}
+      </div>{% else %}<p class="small text-secondary mt-3 mb-0">No files have been authorized and processed by runtime v2 yet.</p>{% endif %}
+    </details>
+  {% endif %}
+</section>
+{% endif %}

@@ -24,6 +24,8 @@ from typing import Any
 from . import config
 from .application.audit_service import record_audit
 from .database import initialize_runtime_database
+from .application.publication_state import mark_publication_pending
+from .application.user_service import UserService
 from .application.workspace_refresh_service import record_published_source_checksum
 from .identity import CurrentUser
 from .identity import computer_name, windows_username
@@ -143,16 +145,31 @@ class StartupController:
         saved = load_user_settings(self.settings_path).get("paths", {})
         saved = saved if isinstance(saved, dict) else {}
         explicit = os.environ.get("IAM_SHAREPOINT_ROOT_PATH", "").strip()
-        preferred = explicit or str(saved.get("sharepoint_root_path", "") or configured).strip()
+        saved_root = str(saved.get("sharepoint_root_path", "") or "").strip()
+        preferred = explicit or saved_root or str(configured or "").strip()
         if preferred and not config._is_web_path(preferred):
             root = Path(preferred).expanduser()
+            recreated = False
+            if (
+                not root.is_dir()
+                and (explicit or saved_root)
+                and root.parent.is_dir()
+                and config.looks_like_onedrive_path(str(root))
+            ):
+                try:
+                    root.mkdir(parents=True, exist_ok=True)
+                    recreated = True
+                except OSError as exc:
+                    self.state = StartupState.INVALID_PATH
+                    return self._result(False, f"The configured OneDrive folder could not be recreated: {exc}")
             if root.is_dir():
                 settings = settings_for_root(root, config_path=self.config_path, settings_path=self.settings_path)
                 if settings:
-                    self.candidates = (DiscoveryCandidate(root, 1000, tuple(), tuple(item for item in ("database", "requests", "audit", "backups") if (root / item).is_dir()), (settings.published_runtime_db_path,)),)
+                    self.candidates = (DiscoveryCandidate(root, 1000, tuple(), tuple(item for item in ("database", "requests", "audit", "backups", "reports") if (root / item).is_dir()), (settings.published_runtime_db_path,)),)
                     self.state = StartupState.CANDIDATE_FOUND
                     self.settings = settings
-                    return self._result(True, "SharePoint path found from configuration.")
+                    message = "SharePoint folder was recreated from saved settings." if recreated else "SharePoint path found from configuration."
+                    return self._result(True, message)
         self.candidates = discover_candidates()
         if not self.candidates:
             self.state = StartupState.NOT_FOUND
@@ -177,10 +194,42 @@ class StartupController:
         self.state = StartupState.VALIDATING
         if not config.looks_like_onedrive_path(str(self.settings.workspace_path)):
             self.settings.workspace_path.mkdir(parents=True, exist_ok=True)
-        ensure_sharepoint_structure(self.settings.sharepoint_root_path)
+        created_folders = ensure_sharepoint_structure(self.settings.sharepoint_root_path)
+        published_runtime_created = False
+        runtime_initialization_error = ""
+        if not self.settings.published_runtime_db_path.exists():
+            try:
+                initialize_runtime_database(self.settings.published_runtime_db_path)
+                published_runtime_created = True
+            except Exception as exc:
+                LOGGER.exception("Could not initialize an empty published runtime database")
+                runtime_initialization_error = f"Empty published SQLite could not be initialized ({type(exc).__name__}): {exc}"
         payload = config.validation_payload(self.settings.as_overrides(), config_path=self.config_path)
         resources = list(payload["resources"])
-        ok = bool(payload["ok"]) and all(item["status"] == "ok" for item in resources if item.get("required"))
+        resources.insert(0, {
+            "key": "workspace_layout",
+            "label": "Workspace folders",
+            "path": str(self.settings.sharepoint_root_path),
+            "required": True,
+            "status": "created" if created_folders else "ok",
+            "message": (
+                "Created missing folders: " + ", ".join(path.relative_to(self.settings.sharepoint_root_path).as_posix() for path in created_folders)
+                if created_folders else "Required workspace folders are ready."
+            ),
+        })
+        if published_runtime_created or runtime_initialization_error:
+            resources.insert(1, {
+                "key": "runtime_initialization",
+                "label": "Published runtime SQLite initialization",
+                "path": str(self.settings.published_runtime_db_path),
+                "required": True,
+                "status": "created" if published_runtime_created else "invalid",
+                "message": (
+                    "Created an empty schema without employee or history records."
+                    if published_runtime_created else runtime_initialization_error
+                ),
+            })
+        ok = bool(payload["ok"]) and not runtime_initialization_error and all(item["status"] == "ok" for item in resources if item.get("required") and item["key"] not in {"workspace_layout", "runtime_initialization"})
         if ok:
             try:
                 snapshot = sync_runtime_snapshot(self.settings.published_runtime_db_path, self.settings.local_runtime_db_path)
@@ -226,7 +275,33 @@ class StartupController:
                 new_values={"computer": computer_name(), "authorization": "application_login_only"},
             )
             if sys.platform == "win32":
-                record_windows_traceability(traceability_path(self.settings.sharepoint_root_path), current_identity, computer_name())
+                try:
+                    record_windows_traceability(traceability_path(self.settings.sharepoint_root_path), current_identity, computer_name())
+                except OSError:
+                    # SharePoint/OneDrive may temporarily remove or lock a
+                    # synchronized directory while reconciling it. The local
+                    # audit record above is already durable; this secondary
+                    # shared observation must not block application login or
+                    # first-admin setup.
+                    LOGGER.warning(
+                        "Windows traceability could not be written to the shared workspace; continuing startup.",
+                        exc_info=True,
+                    )
+            if UserService(self.settings.local_runtime_db_path).ensure_initial_master_admin(current_identity):
+                mark_publication_pending(
+                    self.settings.local_runtime_db_path,
+                    actor=current_identity,
+                    reason="Initial MASTER_ADMIN password setup is required",
+                )
+                record_audit(
+                    self.settings.audit_folder_path,
+                    current_identity,
+                    "INITIAL_MASTER_ADMIN_CREATED",
+                    "app_user",
+                    current_identity,
+                    computer=computer_name(),
+                    new_values={"roles": ["MASTER_ADMIN"], "status": "PASSWORD_RESET_REQUIRED"},
+                )
         self.result = PreflightResult(self.state, True, "Environment and Windows identity are ready.", self.settings, self.result.resources, self.candidates, user)
         return user
 

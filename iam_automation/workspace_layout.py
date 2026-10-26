@@ -19,6 +19,8 @@ from pathlib import Path
 SHAREPOINT_FOLDERS = (
     "database",
     "database/snapshots",
+    "database/snapshots/identity_discoveries",
+    "database/snapshots/windows_traceability",
     "requests/pending",
     "requests/imported",
     "requests/approved",
@@ -28,6 +30,7 @@ SHAREPOINT_FOLDERS = (
     "requests/quarantine",
     "audit",
     "backups",
+    "reports",
     "templates",
     "generated_templates",
     "master_roster",

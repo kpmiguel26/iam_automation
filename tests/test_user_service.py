@@ -26,6 +26,40 @@ from iam_automation.domain.users import ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED, 
 
 
 class UserServiceTests(unittest.TestCase):
+    def test_bootstraps_first_master_admin_and_requires_password_setup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            service = UserService(database)
+
+            self.assertTrue(service.ensure_initial_master_admin("DOMAIN\\miguel"))
+            pending = service.list_users()[0]
+            self.assertEqual(pending.username, "DOMAIN\\miguel")
+            self.assertEqual(pending.roles, ("MASTER_ADMIN",))
+            self.assertEqual(pending.status, ACCOUNT_STATUS_PASSWORD_RESET_REQUIRED)
+            self.assertFalse(pending.active)
+            self.assertTrue(service.initial_master_admin_setup_pending("domain\\MIGUEL"))
+            self.assertTrue(service.initial_master_admin_setup_available("DOMAIN\\miguel"))
+
+            with self.assertRaisesRegex(ValueError, "12 characters"):
+                service.complete_initial_master_admin_setup("DOMAIN\\miguel", "migue", "Miguel Fernandez", "short")
+            service.complete_initial_master_admin_setup("DOMAIN\\miguel", "migue", "Miguel Fernandez", "a-long-first-password")
+
+            active = service.list_users()[0]
+            self.assertEqual(active.username, "migue")
+            self.assertTrue(active.active)
+            self.assertEqual(active.display_name, "Miguel Fernandez")
+            self.assertEqual(active.roles, ("MASTER_ADMIN",))
+            self.assertEqual(active.status, "ACTIVE")
+            self.assertFalse(service.initial_master_admin_setup_pending("DOMAIN\\miguel"))
+            self.assertFalse(service.initial_master_admin_setup_available("DOMAIN\\miguel"))
+            self.assertFalse(service.ensure_initial_master_admin("DOMAIN\\other"))
+            connection = sqlite3.connect(database)
+            try:
+                password_hash = connection.execute("SELECT password_hash FROM app_users WHERE username = ?", ("migue",)).fetchone()[0]
+            finally:
+                connection.close()
+            self.assertTrue(check_password_hash(password_hash, "a-long-first-password"))
+
     def test_create_and_update_application_user(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")

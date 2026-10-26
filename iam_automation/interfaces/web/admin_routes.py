@@ -41,7 +41,7 @@ from ...application.shared_request_service import SharedRequestService
 from ...application.governance_service import GovernanceService
 from ...application.publication_state import publication_pending
 from ...application.publication_state import mark_publication_pending
-from ...database.migration_runner import current_database_revision
+from ...database.migration_runner import current_database_revision, current_migration_head
 from ...application.session_service import SessionService
 from ...application.user_service import UserService
 from ...identity import CurrentUser, ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
@@ -74,7 +74,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
 
     def migration_health() -> dict[str, object]:
         """Return read-only checks for the current schema and compact pilot."""
-        expected = "0014_worker_field_history"
+        expected = current_migration_head()
         result: dict[str, object] = {
             "expected_revision": expected,
             "revision": current_database_revision(local_runtime_path or database_path),
@@ -105,7 +105,7 @@ def create_admin_blueprint(database_path: Path, *, discovery_file: Path | None =
                 result["field_count"] = connection.execute("SELECT COUNT(*) FROM dim_field WHERE active = 1").fetchone()[0]
             if "fact_worker_field" in table_names:
                 result["value_count"] = connection.execute("SELECT COUNT(*) FROM fact_worker_field").fetchone()[0]
-            result["revision_ok"] = result["revision"] == expected and all(item["present"] for item in result["tables"])
+            result["revision_ok"] = bool(expected and result["revision"] == expected and all(item["present"] for item in result["tables"]))
         except sqlite3.Error as exc:
             result["error"] = str(exc)
         finally:

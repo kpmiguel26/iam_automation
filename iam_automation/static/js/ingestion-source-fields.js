@@ -32,12 +32,39 @@
   document.addEventListener('input', updateFieldPreview);
   document.addEventListener('change', updateFieldPreview);
 
+  function invalidateTemplateValidation(event) {
+    var form = event.target && event.target.closest && event.target.closest('#source-schema-form');
+    if (!form || form.dataset.validationPassed !== 'true') return;
+    var saveButton = form.querySelector('[data-save-template]');
+    if (saveButton) saveButton.remove();
+    form.dataset.validationPassed = 'false';
+    var notice = document.getElementById('template-revalidation-needed');
+    if (notice) notice.hidden = false;
+  }
+
+  document.addEventListener('input', invalidateTemplateValidation);
+  document.addEventListener('change', invalidateTemplateValidation);
+
+  document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if (!form.matches || !form.matches('#source-schema-form')) return;
+    var label = form.querySelector('[data-draft-action-label]');
+    var submitter = event.submitter;
+    if (label) label.textContent = submitter && submitter.value === 'save' ? 'Saving template…' : 'Validating template…';
+  });
+
   document.addEventListener('change', function (event) {
     var toggle = event.target;
     if (!toggle.matches || !toggle.matches('.source-field-toggle')) return;
     var label = toggle.closest('.source-field-toggle-label');
     var stateLabel = label && label.querySelector('[data-field-inclusion-label]');
     if (stateLabel) stateLabel.textContent = toggle.checked ? 'Included' : 'Not included';
+    var card = toggle.closest('.source-schema-card');
+    var recognitionToggle = card && card.querySelector('[name^="recognition_header_"]');
+    if (recognitionToggle) {
+      recognitionToggle.disabled = !toggle.checked;
+      if (!toggle.checked) recognitionToggle.checked = false;
+    }
     updateIncludedCount(toggle.closest('#source-schema-form'));
   });
 

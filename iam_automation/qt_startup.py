@@ -385,8 +385,9 @@ class StartupWindow:
         try:
             user = self.controller.continue_to_login()
             self._log(f"[IDENTITY] Windows identity recorded: {user.username} on {user.computer} | application login required")
-        except PermissionError as exc:
-            self._set_status(f"{StartupState.UNAUTHORIZED_USER.value}: {exc}", error=True)
+        except (OSError, RuntimeError, ValueError) as exc:
+            self._set_status(f"IDENTITY_RECORD_ERROR: {exc}", error=True)
+            self._log(f"[IDENTITY] Startup identity/audit recording failed ({type(exc).__name__}): {exc}")
             self.start_button.setEnabled(False)
             self.open_button.setEnabled(False)
             return

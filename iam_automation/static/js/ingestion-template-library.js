@@ -3,30 +3,18 @@
 
   function openLibraryModal(target) {
     if (!target) return;
-    var modalElement = target.querySelector('#templateIdentityModal, #templateBehaviorModal, #objectTemplateModal, #deleteReportTemplateModal');
+    var modalElement = target.querySelector('#deleteReportTemplateModal');
     if (!modalElement || modalElement.dataset.libraryModalOpened === 'true') return;
     modalElement.dataset.libraryModalOpened = 'true';
     if (window.bootstrap && window.bootstrap.Modal) {
       window.bootstrap.Modal.getOrCreateInstance(modalElement).show();
     }
-    syncTimezoneMode(modalElement);
-    syncSkipRule(modalElement);
-    syncIdentityLimit(modalElement);
-    syncObjectTemplate(modalElement);
   }
 
   document.addEventListener('htmx:afterSwap', function (event) {
     var target = event.detail && event.detail.target ? event.detail.target : event.target;
     if (!target || target.id !== 'template-modal-region') return;
     openLibraryModal(target);
-  });
-
-  document.body.addEventListener('htmx:afterRequest', function (event) {
-    var requestElement = event.detail && event.detail.elt;
-    if (!requestElement || !requestElement.matches('[hx-get*="template-object/settings"]') || !event.detail.successful) return;
-    window.requestAnimationFrame(function () {
-      openLibraryModal(document.getElementById('template-modal-region'));
-    });
   });
 
   var modalRegion = document.getElementById('template-modal-region');
@@ -46,7 +34,7 @@
   }
 
   function syncObjectTemplate(root) {
-    if (!root || !root.matches('#objectTemplateModal')) return;
+    if (!root || !root.matches('#objectTemplateSettingsForm')) return;
     var sources = Array.from(root.querySelectorAll('[data-object-source]'));
     var selectedSources = new Set(sources.filter(function (input) { return input.checked; }).map(function (input) { return input.value; }));
     var selectedSourceInputs = sources.filter(function (input) { return input.checked; });
@@ -164,7 +152,7 @@
   }
 
   function targetSourceName(sourceId) {
-    var source = Array.from(document.querySelectorAll('#objectTemplateModal [data-object-source]')).find(function (item) { return item.value === sourceId; });
+    var source = Array.from(document.querySelectorAll('#objectTemplateSettingsForm [data-object-source]')).find(function (item) { return item.value === sourceId; });
     return source ? (source.dataset.sourceLabel || sourceId) : sourceId;
   }
 
@@ -183,7 +171,7 @@
   }
 
   function syncIdentityLimit(root) {
-    if (!root || !root.matches('#templateIdentityModal')) return;
+    if (!root || !root.matches('#templateSettingsForm')) return;
     var limitInput = root.querySelector('[name="identity_matching_limit"]');
     var feedback = root.querySelector('[data-identity-limit-count]');
     var saveButton = root.querySelector('button[type="submit"]');
@@ -209,16 +197,16 @@
 
   document.body.addEventListener('change', function (event) {
     if (event.target && event.target.matches('[data-timezone-mode]')) {
-      syncTimezoneMode(event.target.closest('.modal'));
+      syncTimezoneMode(event.target.closest('#templateSettingsForm'));
     }
     if (event.target && event.target.matches('[data-skip-field]')) {
-      syncSkipRule(event.target.closest('.modal'));
+      syncSkipRule(event.target.closest('#templateSettingsForm'));
     }
     if (event.target && (event.target.matches('[name="identity_matching_limit"]') || event.target.matches('#identity-fields-list select[name$="_key"]'))) {
-      syncIdentityLimit(event.target.closest('.modal'));
+      syncIdentityLimit(event.target.closest('#templateSettingsForm'));
     }
     if (event.target && event.target.matches('[data-object-source], [data-object-identity], [data-object-match-source], [data-object-match-anchor], [data-object-match-target]')) {
-      syncObjectTemplate(event.target.closest('#objectTemplateModal'));
+      syncObjectTemplate(event.target.closest('#objectTemplateSettingsForm'));
     }
   });
 
@@ -226,19 +214,19 @@
     var removeButton = event.target.closest('[data-remove-object-match]');
     if (removeButton) {
       var row = removeButton.closest('[data-object-match-group]');
-      var modal = removeButton.closest('#objectTemplateModal');
+      var settingsForm = removeButton.closest('#objectTemplateSettingsForm');
       if (row) row.remove();
-      syncObjectTemplate(modal);
+      syncObjectTemplate(settingsForm);
     }
   });
 
   document.body.addEventListener('htmx:afterSwap', function (event) {
     var target = event.detail && event.detail.target;
     if (target && target.id === 'object-match-list') {
-      syncObjectTemplate(target.closest('#objectTemplateModal'));
+      syncObjectTemplate(target.closest('#objectTemplateSettingsForm'));
     }
-    if (target && (target.id === 'identity-fields-list' || target.id === 'template-modal-region')) {
-      syncIdentityLimit(document.querySelector('#templateIdentityModal'));
+    if (target && target.id === 'identity-fields-list') {
+      syncIdentityLimit(document.querySelector('#templateSettingsForm'));
     }
   });
 
@@ -257,17 +245,12 @@
     if (!trigger || !event.detail.successful) return;
     if (trigger.matches('[data-add-identity-field], [data-add-object-match]')) {
       trigger.dataset.nextIndex = String(Number(trigger.dataset.nextIndex || '0') + 1);
-      syncObjectTemplate(trigger.closest('#objectTemplateModal'));
+      syncObjectTemplate(trigger.closest('#objectTemplateSettingsForm'));
     }
   });
 
-  document.body.addEventListener('htmx:afterRequest', function (event) {
-    var form = event.detail && event.detail.elt;
-    if (!form || !form.matches('form[action*="identity-settings"], form[data-template-config-save]') || !event.detail.successful) return;
-    if (document.querySelector('#template-modal-region .alert-danger[role="alert"]')) return;
-    var modalElement = form.closest('.modal');
-    if (modalElement && window.bootstrap && window.bootstrap.Modal) {
-      window.bootstrap.Modal.getOrCreateInstance(modalElement).hide();
-    }
-  });
+  syncTimezoneMode(document.getElementById('templateSettingsForm'));
+  syncSkipRule(document.getElementById('templateSettingsForm'));
+  syncIdentityLimit(document.getElementById('templateSettingsForm'));
+  syncObjectTemplate(document.getElementById('objectTemplateSettingsForm'));
 }());

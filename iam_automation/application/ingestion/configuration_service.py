@@ -17,6 +17,7 @@ from typing import Any, Iterable
 
 from sqlalchemy import select
 
+from .date_values import parse_date_value
 from ...infrastructure.sqlite.orm import DimFieldModel, orm_session
 from .configuration_contracts import (
     DRAFT_DRIFT_POLICIES,
@@ -212,11 +213,13 @@ class DraftConfigurationService:
         mappings = {mapping.source_field.casefold(): mapping for mapping in draft.mappings if mapping.source_field.strip()}
         field_by_source = {field.source_name.casefold(): field for field in fields}
         declared_sources = {field.source_name.casefold() for field in declared_fields}
+        normalized_headers = {header.casefold() for header in headers}
         unknown_fields = tuple(header for header in headers if header.casefold() not in declared_sources)
         excluded_fields = tuple(field.source_name for field in declared_fields if not field.include)
-        missing_fields = tuple(field.source_name for field in fields if field.source_name.casefold() not in {header.casefold() for header in headers})
+        missing_fields = tuple(field.source_name for field in fields if field.source_name.casefold() not in normalized_headers)
         normalized_rows: list[dict[str, Any]] = []
         invalid_rows: list[dict[str, Any]] = []
+        date_time_to_date_fields: set[str] = set()
         for row_number, source_row in enumerate(sample_rows, start=1):
             normalized: dict[str, Any] = {}
             errors: list[str] = []
@@ -225,6 +228,15 @@ class DraftConfigurationService:
                 value = _stringify_value(raw_value)
                 mapping = mappings.get(field.source_name.casefold())
                 value = _apply_transform(value, mapping.transform_name if mapping else field.transform_name)
+                if value and field.data_type.casefold() == "date":
+                    try:
+                        normalized_date = parse_date_value(value).isoformat()
+                    except ValueError:
+                        pass
+                    else:
+                        if normalized_date != value:
+                            date_time_to_date_fields.add(field.source_name)
+                        value = normalized_date
                 target_key = mapping.target_field.strip() if mapping and mapping.target_field.strip() else field.field_key.strip()
                 normalized[target_key] = value
                 errors.extend(_validate_value(field, value))
@@ -233,13 +245,40 @@ class DraftConfigurationService:
             if errors:
                 invalid_rows.append({"row_number": row_number, "errors": tuple(errors), "values": display_row})
             normalized_rows.append(display_row)
-        required_missing = tuple(field.source_name for field in fields if field.required and field.source_name.casefold() not in {header.casefold() for header in headers})
+        required_missing = tuple(field.source_name for field in fields if field.required and field.source_name.casefold() not in normalized_headers)
+        required_recognition_headers = tuple(
+            header.strip() for header in draft.recognition_settings.required_headers if header.strip()
+        )
+        missing_recognition_headers = tuple(
+            header for header in required_recognition_headers if header.casefold() not in normalized_headers
+        )
+        recognition_fields = {
+            field.source_name.casefold(): field for field in fields
+        }
+        optional_recognition_headers = tuple(
+            header for header in required_recognition_headers
+            if (field := recognition_fields.get(header.casefold())) is not None and not field.required
+        )
         diagnostics = []
         diagnostics.extend({"severity": draft.schema_drift_policy, "message": f"Unknown field: {field}"} for field in unknown_fields)
         diagnostics.extend({"severity": "BLOCKING", "message": f"Missing required field: {field}"} for field in required_missing)
+        diagnostics.extend({"severity": "BLOCKING", "message": f"Sample is missing a header required to recognize this report: {header}"} for header in missing_recognition_headers)
         diagnostics.extend({"severity": "WARNING", "message": f"Missing optional field: {field}"} for field in missing_fields if field not in required_missing)
-        diagnostics.extend({"severity": "WARNING", "message": f"Row {item['row_number']}: {error}"} for item in invalid_rows for error in item["errors"])
-        included_fields = tuple(field.source_name for field in fields if field.source_name.casefold() in {header.casefold() for header in headers})
+        if optional_recognition_headers:
+            diagnostics.append({
+                "severity": "WARNING",
+                "message": "These optional fields are also required for file recognition: "
+                           + ", ".join(optional_recognition_headers)
+                           + ". A file missing one will remain unrecognized even though its values are optional.",
+            })
+        elif not required_recognition_headers:
+            diagnostics.append({
+                "severity": "WARNING",
+                "message": "No recognition headers are configured. Runtime matching will rely on folder, extension, worksheet, and filename settings.",
+            })
+        diagnostics.extend({"severity": "INFO", "message": f"Date-time values in {field} will be normalized to calendar dates."} for field in sorted(date_time_to_date_fields))
+        diagnostics.extend({"severity": "BLOCKING", "message": f"Sample row {item['row_number']} fails runtime validation: {error}."} for item in invalid_rows for error in item["errors"])
+        included_fields = tuple(field.source_name for field in fields if field.source_name.casefold() in normalized_headers)
         return {
             "sample": inspection,
             "rows_detected": inspection.get("rows_detected", 0),
@@ -251,6 +290,7 @@ class DraftConfigurationService:
             "mapped_fields": (),
             "unmapped_fields": unknown_fields,
             "missing_required_fields": required_missing,
+            "missing_recognition_headers": missing_recognition_headers,
             "missing_optional_fields": tuple(field for field in missing_fields if field not in required_missing),
             "invalid_rows": tuple(invalid_rows),
             "diagnostics": tuple(diagnostics),
@@ -433,13 +473,11 @@ def suggest_source_transform(field_name: str) -> str:
 
 
 def _looks_like_date(value: str) -> bool:
-    for parser in (date.fromisoformat, lambda item: datetime.strptime(item, "%m/%d/%Y").date()):
-        try:
-            parser(value[:10])
-            return True
-        except (TypeError, ValueError):
-            continue
-    return False
+    try:
+        parse_date_value(value)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def _apply_transform(value: str, transform_name: str) -> str:

@@ -8,9 +8,11 @@
     <span class="badge text-bg-light border">{{ inspection.selected_sheet or 'CSV file' }} · headers selected</span>
   </div>
   <div class="table-responsive border rounded mb-4"><table class="table table-sm align-middle mb-0"><caption class="visually-hidden">Sample rows from uploaded report</caption><thead><tr>{% for header in inspection.headers %}<th scope="col">{{ header }}</th>{% endfor %}</tr></thead><tbody>{% for row in inspection.rows[:8] %}<tr>{% for header in inspection.headers %}<td>{{ row.get(header, '') }}</td>{% endfor %}</tr>{% else %}<tr><td class="text-secondary">No non-empty data rows were found below the selected header.</td></tr>{% endfor %}</tbody></table></div>
-  <form id="source-schema-form" method="post" action="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-target="#sample-workspace" hx-swap="innerHTML focus-scroll:false">
+  <form id="source-schema-form" method="post" action="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-post="{{ url_for('ingestion_configuration.save_draft_mapping') }}" hx-target="#sample-workspace" hx-swap="innerHTML focus-scroll:false" hx-indicator="#draft-action-indicator" data-validation-passed="{{ 'true' if validation_passed else 'false' }}">
     {% set included_field_count = namespace(value=0) %}{% for field in draft.fields if field.include %}{% set included_field_count.value = included_field_count.value + 1 %}{% endfor %}
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3"><div><p class="eyebrow mb-1">Step 3 · Define this report's columns</p><h2 class="h4 mb-1">Which source fields should be included?</h2><p class="small text-secondary mb-0">Choose the columns and types here. Identity and matching settings live in the Template Library.</p></div><span class="badge text-bg-light border" data-included-field-count data-total-fields="{{ draft.fields|length }}" aria-live="polite">{{ included_field_count.value }} of {{ draft.fields|length }} included</span></div>
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3"><div><p class="eyebrow mb-1">Step 3 · Define this report's columns</p><h2 class="h4 mb-1">Which source fields should be included?</h2><p class="small text-secondary mb-0">Choose the columns and types here. Identity and matching settings live in the Template Library. Saving runs a sample check for data types and report recognition.</p></div><span class="badge text-bg-light border" data-included-field-count data-total-fields="{{ draft.fields|length }}" aria-live="polite">{{ included_field_count.value }} of {{ draft.fields|length }} included</span></div>
+    <div class="source-recognition-guidance mb-3"><strong>Choose 2–3 distinctive headers for file recognition.</strong> Select headers present in every version of this report. Every selected header must be present in a file for the engine to recognize it.</div>
+    <input type="hidden" name="recognition_headers_present" value="1">
     <div class="row g-3 mb-3">
       <div class="col-md-5"><label class="form-label" for="draft-display-name">Report name</label><input class="form-control" id="draft-display-name" name="display_name" value="{{ draft.display_name }}" required></div>
       <div class="col-md-3"><label class="form-label" for="draft-source-id">Internal key</label><input class="form-control" id="draft-source-id" name="source_id" value="{{ draft.source_id }}" aria-describedby="draft-key-help" {% if session.get('ingestion_definition_version_id') %}readonly{% endif %}><div id="draft-key-help" class="form-text">Stable across saved versions of this report.</div></div>
@@ -27,6 +29,10 @@
             </button>
             <button class="btn btn-sm btn-outline-secondary source-field-accordion-toggle collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#field-settings-{{ loop.index0 }}" aria-expanded="false" aria-controls="field-settings-{{ loop.index0 }}"><span>Field settings</span><span class="source-field-chevron" aria-hidden="true"></span></button>
           </div>
+          <div class="source-field-recognition">
+            <label class="form-check-label fw-semibold" for="recognition-header-{{ loop.index0 }}"><input class="form-check-input" id="recognition-header-{{ loop.index0 }}" name="recognition_header_{{ loop.index0 }}" type="checkbox" {% if field.include and field.source_name in draft.recognition_settings.required_headers %}checked{% endif %} {% if not field.include %}disabled{% endif %}> Required to recognize this report</label>
+            <div class="form-text">A file missing this column will stay unrecognized. Keep selected only if this header is present in every version.</div>
+          </div>
           <div id="field-settings-{{ loop.index0 }}" class="collapse source-field-accordion-collapse" data-bs-parent="#source-schema-accordion">
             <div class="source-field-controls">
               <div><label class="form-label" for="field-key-{{ loop.index0 }}">Name in this template</label><input class="form-control" id="field-key-{{ loop.index0 }}" name="field_key_{{ loop.index0 }}" value="{{ field.field_key }}" data-field-key-preview="field-key-preview-{{ loop.index0 }}" required></div>
@@ -38,7 +44,12 @@
         </article>
       {% endfor %}
     </div>
-    <div class="d-flex justify-content-end mt-3"><button class="btn btn-primary" type="submit">Save source fields to the library <span aria-hidden="true">→</span></button></div>
+    <div class="d-flex flex-wrap align-items-center justify-content-end gap-2 mt-3">
+      <span id="draft-action-indicator" class="draft-action-indicator" role="status" aria-live="polite"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span data-draft-action-label>Validating template…</span></span>
+      <span id="template-revalidation-needed" class="small text-warning-emphasis" {% if not validation_passed %}hidden{% endif %}>Changes need validation before saving.</span>
+      <button class="btn btn-outline-primary" type="submit" name="action" value="validate">Validate template</button>
+      {% if validation_passed %}<button class="btn btn-primary" type="submit" name="action" value="save" data-save-template>Save template <span aria-hidden="true">→</span></button>{% endif %}
+    </div>
   </form>
 </section>
 {% if not inspection.saved_template %}<section class="surface p-4 mt-4" aria-labelledby="preview-title"><div class="d-flex flex-wrap justify-content-between align-items-start gap-3"><div><p class="eyebrow mb-1">Step 4 · Check your work</p><h2 id="preview-title" class="h5 mb-1">Preview this draft</h2><p class="small text-secondary mb-0">This checks the selected columns and types in memory. It does not run an import or match employees.</p></div><form method="post" action="{{ url_for('ingestion_configuration.preview_sample') }}" hx-post="{{ url_for('ingestion_configuration.preview_sample') }}" hx-target="#sample-workspace" hx-swap="innerHTML"><button class="btn btn-outline-primary" type="submit">Preview selected data</button></form></div>{% if preview %}<div class="preview-result mt-4">{% include "admin/_ingestion_preview_result.html" %}</div>{% endif %}</section>{% endif %}

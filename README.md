@@ -2,8 +2,6 @@
 
 This repository is the feasibility proof of concept for an internal IAM and employee-data automation application.
 
-Canonical GitHub repository: https://github.com/kpmiguel26/iam_automation
-
 The current milestone is not the full application. The current phase is **Read-only Employee & Evidence Review**. The published runtime SQLite is the only database required by the application; it is treated as a versioned snapshot, not as a live multi-user database edited directly through OneDrive. Legacy Access tooling is outside the active runtime path.
 
 ## Current scope — Read-only review phase
