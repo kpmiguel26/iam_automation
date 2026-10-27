@@ -1,7 +1,14 @@
 # Object identity and template lifecycle contract
 
-**Status:** Requirements captured; physical schema and migrations not implemented.
-**Updated:** September 30, 2026
+**Status:** Requirements captured; stable object-type identity, Strong Identifier claims, source facts, source-property values, and configurable canonical property keys are implemented as first physical slices; authority/conflict policy and full lifecycle remain incomplete.
+
+The current v2 Rules Engine adapter records advisory `RECORD_CONDITION`
+matches in `engine_v2_rule_findings` with batch, source, evidence, and optional
+object UUID lineage. It reads configured active rules without invoking the
+legacy batch executor. The engine dashboard shows recent v2 findings;
+cross-source rule conditions, finding disposition, and quarantine/replay
+remain unimplemented. Findings never block ingestion.
+**Updated:** October 27, 2026
 
 This document records the object identity and deletion requirements for the
 Parallel Ingestion Engine. It is a design input for the physical model and
@@ -97,24 +104,39 @@ Prove the generic model with a bounded Employee/Vendor example:
 6. Verify that many Employee UUIDs can link to one Vendor UUID and that the
    relationship is stored independently from either object's properties.
 
-Field authority/conflict policy and relationship cardinality must be saved in
-the Object Template before this slice can safely write canonical rows.
+Canonical property keys are now saved in the Object Template and used as the
+shared key for per-source property-value rows. Field authority/conflict policy
+and relationship cardinality must still be defined before the engine can
+select a canonical value or safely write resolved relationships. Until then,
+different source values remain separate and no winner is inferred.
 
 ### Engine-owned physical model
 
-Runtime v2 already generates a UUID in `engine_v2_objects.object_id` for each
-prototype instance, but that table currently stores only object metadata.
-Retain this engine-owned UUID as the instance key and add physical property,
-identifier and source-fact tables that reference it. The legacy `worker_id` /
+Runtime v2 generates a UUID in `engine_v2_objects.object_id` for each instance.
+Schema version 6 adds a stable engine object-type UUID for the existing
+`EMPLOYEE_PROFILE` key, and `engine_v2_strong_identifiers`,
+`engine_v2_source_facts`, and `engine_v2_object_property_values`, with lineage
+back to the instance, evidence, batch, source and pinned versions. Identifier
+claims use exact string equality and are unique per object type, source field
+and value. The existing versioned configuration still supports only the legacy
+Employee Profile object type. Object Template source fields can map to a shared
+canonical property key, but property rows retain source-specific values and do
+not implement precedence, conflict diagnostics, transforms, or snapshot
+retention. Continue
+using this engine-owned UUID as the instance key and complete the generic object
+type, protected identifier, and relationship model. The legacy `worker_id` /
 `dim_employee.employee_key` chain remains independent. Cross-linking the two
 systems would require a separate, explicit migration contract and is outside
 this import slice.
 
-The physical schema strategy still needs a decision: additive migrations for
-each object type's defined shape, or shared typed property tables with a
-governed field catalog. In either case, schema creation/evolution happens per
-object type and template version, never per UUID or uploaded file. Common
-identity, identifier and source-fact tables should serve all user-defined types.
+The source-property slice uses shared rows and JSON-encoded values with a
+declared data type. The prior evidence-JSON identity matcher remains active
+alongside indexed identifier lookup to preserve prototype matching and expose
+conflicts. Canonical property composition and per-object-type schema evolution
+still need a governed field catalog and a product decision. Schema
+creation/evolution must happen per object type and template version, never per
+UUID or uploaded file. Common identity, identifier and source-fact tables
+should serve all user-defined types.
 
 ## Template removal and cascade behavior
 

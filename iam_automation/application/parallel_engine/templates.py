@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -30,10 +31,13 @@ class RuntimeTemplateCatalog:
         try:
             approved_objects = connection.execute(
                 """SELECT v.employee_template_version_id, v.version_number,
-                          v.definition_json, a.approved_by, a.approved_at_utc
+                          v.definition_json, a.approved_by, a.approved_at_utc,
+                          t.object_type_id
                    FROM employee_template_versions v
                    JOIN engine_v2_object_template_approvals a
                      ON a.object_template_version_id = v.employee_template_version_id
+                   JOIN engine_v2_object_template_types t
+                     ON t.object_template_version_id = v.employee_template_version_id
                    WHERE v.template_key = 'EMPLOYEE_PROFILE' AND v.status = 'DRAFT'
                    ORDER BY v.version_number DESC"""
             ).fetchall()
@@ -111,6 +115,7 @@ class RuntimeTemplateCatalog:
                     approved_by=str(latest_object["approved_by"]),
                     approved_at_utc=str(latest_object["approved_at_utc"]),
                     sources=tuple(sources),
+                    object_type_id=str(latest_object["object_type_id"]),
                 ),
                 sources=tuple(sources),
             )
@@ -130,6 +135,16 @@ class RuntimeTemplateCatalog:
                 ).fetchone()
                 if row is None:
                     raise TemplateConfigurationError("Only a saved Object Template draft can be approved.")
+                object_type = connection.execute(
+                    "SELECT object_type_id FROM engine_v2_object_types WHERE object_type_key = 'EMPLOYEE_PROFILE'"
+                ).fetchone()
+                if object_type is None:
+                    raise TemplateConfigurationError("The stable Employee object type has not been initialized.")
+                connection.execute(
+                    """INSERT OR IGNORE INTO engine_v2_object_template_types
+                       (object_template_version_id, object_type_id) VALUES (?, ?)""",
+                    (version_id, str(object_type[0])),
+                )
                 definition = json.loads(row["definition_json"])
                 refs = definition.get("source_templates") or ()
                 source_ids = {str(ref.get("source_id", "")) for ref in refs}
@@ -202,6 +217,29 @@ class RuntimeTemplateCatalog:
     @staticmethod
     def _validate_object(definition: dict[str, Any], sources: list[SourceTemplate]) -> None:
         source_map = {source.source_id: source for source in sources}
+        property_keys_by_source: set[tuple[str, str]] = set()
+        for prop in definition.get("properties", ()):
+            source_id = str(prop.get("source_id", ""))
+            field_key = str(prop.get("field_key", ""))
+            canonical_key = str(prop.get("canonical_property_key") or field_key).strip()
+            source = source_map.get(source_id)
+            if source is None:
+                raise TemplateConfigurationError("Object Template property references an unselected report source.")
+            included_fields = {
+                str(field.get("field_key", ""))
+                for field in source.definition.get("fields", ())
+                if field.get("include")
+            }
+            if not field_key or field_key not in included_fields:
+                raise TemplateConfigurationError(f"Object Template property {field_key!r} is not an included field in source {source_id!r}.")
+            if not canonical_key or len(canonical_key) > 120:
+                raise TemplateConfigurationError("Canonical property keys must contain between 1 and 120 characters.")
+            if canonical_key != field_key and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,119}", canonical_key):
+                raise TemplateConfigurationError(f"Canonical property key {canonical_key!r} is invalid.")
+            property_ref = (source_id, canonical_key)
+            if property_ref in property_keys_by_source:
+                raise TemplateConfigurationError(f"Source {source_id!r} maps more than one field to property {canonical_key!r}.")
+            property_keys_by_source.add(property_ref)
         refs = {(str(item.get("source_id", "")), str(item.get("field_key", ""))): item for item in definition.get("identifiers", ())}
         if len(sources) > 1:
             adjacency: dict[str, set[str]] = {source.source_id: set() for source in sources}

@@ -26,6 +26,7 @@ class ObjectTemplate:
     approved_by: str
     approved_at_utc: str
     sources: tuple[SourceTemplate, ...]
+    object_type_id: str = ""
 
 
 @dataclass(frozen=True)

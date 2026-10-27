@@ -4,14 +4,41 @@
 **Readiness:** Not ready for production ingestion
 **Reviewed runtime:** Parallel Ingestion Engine v2 on the local `runtime.sqlite`
 
+## Progress recorded October 27, 2026
+
+The code defines additive schema version 7, including stable object-type
+identity, per-source Strong Identifier values, source facts/property values,
+and v2 advisory rule findings. The v2 ingest path records identifier claims
+and facts with accepted evidence/object links. It now reads active current
+Business Rule versions and evaluates BEFORE/AFTER record conditions against
+v2 parsed rows, saving matches with v2 batch, source, evidence and object
+lineage. Rule evaluation and finding persistence failures are diagnostics and
+do not reject rows or undo a completed batch. The legacy rule execution
+service is not called because it assumes legacy batches/records. Object
+Templates now let an administrator map each included source field to a shared
+canonical property key; v2 writes that key while retaining the original source
+field and source lineage. Values from different sources remain separate. No
+authority/priority, transform, winner selection, or conflicting-value finding
+is implemented yet. Source-binding history, template-safe physical-data
+lifecycle, quarantine/replay, finding disposition workflow, and end-to-end
+parity remain open. A read-only dashboard now displays recent v2 findings.
+The dashboard also exposes the latest 50 quarantined rows with their source,
+row number, validation diagnostics, raw values, and normalized values. This is
+read-only triage; correction, rejection, and idempotent replay remain open.
+Existing evidence JSON matching remains as a compatibility
+fallback for prior rows. The authorization gate remains disabled, and no
+migration was applied to the local runtime in this code change.
+
 ## Readiness decision
 
 The current v2 code can parse, validate, quarantine, match, and persist prototype
 records. It is not the import flow described by the product requirements. It
-does not populate the application's physical star schema, materialize Strong
-identifiers in a constrained identifier table, coordinate with the Rules
-Engine, or perform dependency-safe template changes. The authorization route
-was therefore gated off. Folder discovery and file recognition remain active.
+does not populate the application's physical star schema or perform
+dependency-safe template changes, and it lacks complete quarantine/replay and
+finding review workflows. Its advisory rule adapter reads current configured
+record rules and stores matches in the v2 evidence model; it does not invoke
+legacy batch execution. The authorization route remains gated off. Folder
+discovery and file recognition remain active.
 
 ## Implemented first step: persist file discovery and analysis
 
@@ -67,12 +94,16 @@ physical object model and Rules Engine coordinator are unfinished.
 - Keep the engine's physical model independent from legacy `worker_id` and
   `dim_employee.employee_key`. Importing an engine object must not write legacy
   Employee tables as a side effect.
-- `engine_v2_objects` stores object ID, template version, creation time, and
-  status. It does not store object properties as physical columns.
-- `engine_v2_objects.object_id` is already an engine-generated instance UUID,
-  but the table currently stores only metadata. Retain it as the instance key
-  and add engine-owned physical property, identifier and source fact tables
-  that reference it.
+- `engine_v2_objects` stores object ID, stable object-type ID, template
+  version, creation time, and status. Schema version 5 adds source facts and per-source property-value
+  rows, linked to object UUIDs and row evidence. Values are stored as JSON with
+  declared source data type and source-field lineage; they are not yet composed
+  into canonical object properties.
+- `engine_v2_objects.object_id` is an engine-generated instance UUID and the
+  table remains metadata-only. Schema version 5 adds shared source-fact and
+  source-property value tables; schema version 6 adds stable type identity and
+  physical Strong Identifier claims. Canonical property composition is still
+  missing.
 - Create or evolve physical schema once per object type, not once per Employee
   or file. Choose additive migrations for template-defined
   schemas or shared typed property tables before enabling physical writes.
@@ -82,20 +113,27 @@ physical object model and Rules Engine coordinator are unfinished.
   already has tables such as `dim_employee`, `bridge_employee_identifier`,
   `source_field_mapping`, and source fact tables in its v0013/v0015 schema
   migrations. Runtime v2 currently bypasses them.
-- Object and source definitions are versioned JSON snapshots. There is no
-  runtime v2 migration that creates or updates a physical model from an
-  approved Object Template.
+- Object and source definitions are versioned JSON snapshots. There is not yet
+  a runtime v2 migration that creates/evolves a canonical physical model from
+  an approved Object Template. The shared source-fact/property-value tables are
+  additive and do not create per-object tables.
 
 ### Strong identifiers and template lifecycle — blocking
 
 - Strong Identifier definitions from source templates must be attachable,
   detachable and deletable independently of the object instance UUID.
-- Strong identifiers and match links are stored in the Object Template JSON.
-  There is no v2 identifier table with unique normalized values, ownership,
-  source provenance, or lifecycle dates.
-- Matching scans `STAGED` evidence JSON for configured exact values. It can
-  quarantine ambiguous matches, but it does not enforce identifier uniqueness
-  through a physical constraint.
+- Strong identifier definitions and match links remain in the versioned Object
+  Template JSON. Schema version 6 adds `engine_v2_strong_identifiers`, with
+  source field, exact stored value, object type/object UUID and evidence/batch
+  provenance. Exact equality preserves the prior matcher behavior; identifier
+  normalization, protected-value storage and attach/detach lifecycle remain
+  undecided.
+- The physical identifier claim is unique per object type, source and field
+  value. Configured cross-source links query those claims and quarantine rows
+  whose configured identifiers resolve to multiple objects. The prior
+  `STAGED` evidence JSON matcher remains active alongside the indexed lookup
+  to preserve prototype matching and expose conflicts; it is not yet removed
+  or fully backfilled.
 - Deleting a report template is currently a soft removal recorded in
   `source_template_lifecycle_events`; it does not cascade through v2 objects,
   identifiers, or evidence. Object Templates are append-only drafts and do not
@@ -109,11 +147,28 @@ physical object model and Rules Engine coordinator are unfinished.
   that its deletion removes all data owned by the object and require explicit
   confirmation. Validate and cascade in one transaction.
 
-### Rules and validation — blocking
+### Rules and validation — partially implemented
 
 - The existing Rules Engine is integrated with the legacy ingestion pipeline.
-  Its current evidence repository reads legacy `import_batches` and
-  `ingestion_records`; Parallel Engine v2 does not call it.
+  Its legacy execution service reads legacy `import_batches` and
+  `ingestion_records`; v2 has a separate adapter that reads active current
+  rule versions and evaluates record conditions against parsed v2 row payloads.
+- Matched advisory results are persisted to `engine_v2_rule_findings`, linked
+  to v2 batches, evidence, source version and an object UUID when one exists.
+  V2 does not write legacy `rule_findings` or legacy quarantine rows.
+- The v2 adapter currently supports `RECORD_CONDITION` rules whose fields are
+  available in the current source row. Cross-source relationship conditions,
+  finding disposition, pagination/filtering and rule parity characterization
+  remain outstanding. A read-only dashboard lists the latest 50 findings and
+  reports total/open counts. Evaluation/persistence failures are recorded as batch
+  warnings when possible and never block ingestion.
+- Source-scoped rules now use an explicit Business Rules source key stored in
+  each report template, with the internal template key as the default fallback.
+  Set an explicit key when those identifiers differ. Existing approved source
+  templates must be edited, validated and approved; then the approved source
+  version must be re-pinned and re-approved in the Object Template before the
+  new mapping takes effect at runtime.
+  Composite and cross-source conditions remain unsupported by the v2 adapter.
 - Existing BEFORE/AFTER checks are advisory pipeline findings. They are not a
   v2 import gate and do not decide whether an invalid v2 row should be blocked,
   quarantined, or accepted with a warning.
@@ -177,10 +232,10 @@ tables were not changed by the five v2 batches.
   identifier bridges and source facts. Add additive versioned migrations for
   missing structures; do not create tables per object instance or derive table
   names from raw uploaded headers or file names.
-- Support canonical property mappings from multiple report fields, including
-  explicit source priority/authority, transforms and conflict diagnostics.
-  Preserve per-source values and lineage rather than silently overwriting
-  conflicting values.
+- Canonical property keys can now group included fields across source reports,
+  while preserving source-specific values and lineage. Source priority/
+  authority, transforms, winner selection and conflict diagnostics remain
+  unimplemented; the engine does not silently overwrite a source value.
 - Materialize each object and its properties into engine-owned physical tables
   joined by its UUID. Store each source observation in a physical source fact
   with batch, source version,

@@ -683,8 +683,11 @@ def _serve_webapp_process(preflight_result: PreflightResult, ready_queue, log_qu
             server.stop()
 
     app = create_app(preflight_result, shutdown_callback=shutdown_server, shutdown_token=shutdown_token)
-    watcher = start_file_watcher(preflight_result)
-    app.extensions["iam_file_watcher"] = watcher
+    # DEPRECATED: keep the legacy watcher implementation for compatibility,
+    # but leave it stopped while the parallel engine watcher owns discovery.
+    # watcher = start_file_watcher(preflight_result)
+    # app.extensions["iam_file_watcher"] = watcher
+    watcher = None
     parallel_watcher = app.extensions.get("parallel_engine_watcher")
     server = LocalWebAppServer(app)
     server_holder["server"] = server

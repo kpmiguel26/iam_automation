@@ -13,26 +13,42 @@
   {% endfor %}{% endwith %}
 
   <section class="alert alert-warning" role="status">
-    Discovery is active. File processing is paused until the physical object model, template lifecycle handling, and Rules Engine integration are complete.
+    Discovery is active. Processing remains paused while object lifecycle, mappings for existing templates, composite/cross-source rules, finding disposition, and import review are completed.
   </section>
 
   {% if configuration_error %}<section class="alert alert-warning" role="alert"><h2 class="h5">Configuration needs attention</h2><p class="mb-0">{{ configuration_error }}</p></section>{% endif %}
   <div class="row g-3 mb-4" aria-label="Engine status">
-    <div class="col-sm-6 col-xl-4"><section class="surface p-4 h-100"><span class="section-label">Watcher status</span>
+    <div class="col-sm-6 col-xl-3"><section class="surface p-4 h-100"><span class="section-label">Watcher status</span>
       <strong class="fs-4 d-block mt-2 {% if health and health.status == 'HEALTHY' %}text-success{% elif health and health.status == 'DEGRADED' %}text-danger{% endif %}">{{ health.status|title if health else 'Waiting' }}</strong>
       <span class="small text-secondary">{% if health and health.last_cycle_at_utc %}Last cycle {{ health.last_cycle_at_utc|human_datetime }}{% else %}No watcher cycle recorded yet{% endif %}</span>
       {% if health and health.last_error %}<p class="small text-danger mt-2 mb-0">{{ health.last_error }}</p>{% endif %}</section></div>
-    <div class="col-sm-6 col-xl-4"><section class="surface p-4 h-100"><span class="section-label">Active Object Template</span>
+    <div class="col-sm-6 col-xl-3"><section class="surface p-4 h-100"><span class="section-label">Active Object Template</span>
       <strong class="fs-5 d-block mt-2">{{ object_name or 'None approved' }}</strong><span class="small text-secondary">{{ approved_object_templates }} approved version(s)</span></section></div>
-    <div class="col-sm-6 col-xl-4"><section class="surface p-4 h-100"><span class="section-label">Configured sources</span>
+    <div class="col-sm-6 col-xl-3"><section class="surface p-4 h-100"><span class="section-label">Configured sources</span>
       <strong class="fs-4 d-block mt-2">{{ sources|length }}</strong><span class="small text-secondary">Pinned report-template snapshots</span></section></div>
+    <div class="col-sm-6 col-xl-3"><section class="surface p-4 h-100"><span class="section-label">Open v2 rule findings</span>
+      <strong class="fs-4 d-block mt-2">{{ open_rule_findings }}</strong><span class="small text-secondary">{{ total_rule_findings }} advisory finding(s) recorded</span></section></div>
   </div>
 
   <section class="surface p-4 mb-4">
     <div class="section-heading mb-3"><div><p class="eyebrow mb-1">CURRENT CONFIGURATION</p><h2 class="h5 mb-0">Runtime sources</h2></div></div>
     {% if sources %}<div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th scope="col">Source</th><th scope="col">Version</th><th scope="col">Watched folder</th><th scope="col">Order</th></tr></thead><tbody>
-      {% for source in sources %}<tr><th scope="row">{{ source.display_name }}<span class="d-block small text-secondary">{{ source.source_id }}</span></th><td>{{ source.version_number }}</td><td class="text-break">{{ source.watched_path }}</td><td>{{ source.ingestion_order }}</td></tr>{% endfor %}
+      {% for source in sources %}<tr><th scope="row">{{ source.display_name }}<span class="d-block small text-secondary">{{ source.source_id }}</span><span class="d-block small text-secondary">Business Rules: {{ source.definition.get('business_rule_source_system') or 'internal-key fallback' }}</span></th><td>{{ source.version_number }}</td><td class="text-break">{{ source.watched_path }}</td><td>{{ source.ingestion_order }}</td></tr>{% endfor %}
     </tbody></table></div>{% else %}<p class="text-secondary mb-0">No executable source configuration is available.</p>{% endif %}
+  </section>
+
+  <section class="surface p-4 mb-4" aria-labelledby="v2-rule-findings-title">
+    <div class="section-heading mb-3"><div><p class="eyebrow mb-1">ADVISORY REVIEW</p><h2 class="h5 mb-0" id="v2-rule-findings-title">Recent v2 rule findings</h2><p class="small text-secondary mb-0">These findings are linked to v2 evidence and never block imports.</p></div></div>
+    {% if rule_findings %}<div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th scope="col">Detected</th><th scope="col">Rule</th><th scope="col">Phase</th><th scope="col">Source / field</th><th scope="col">Row</th><th scope="col">Severity</th><th scope="col">Batch</th></tr></thead><tbody>
+      {% for finding in rule_findings %}<tr><td>{{ finding.created_at_utc|human_datetime }}</td><th scope="row">{{ finding.title }}<span class="d-block small text-secondary">{{ finding.message }}</span></th><td>{{ finding.phase|title }}</td><td>{{ finding.source_id }}{% if finding.field_key %}<span class="d-block small text-secondary">{{ finding.field_key }}</span>{% endif %}</td><td>{{ finding.row_number }}</td><td><span class="badge text-bg-{{ 'danger' if finding.severity in ('ERROR', 'CRITICAL') else ('info' if finding.severity == 'INFO' else 'warning') }}">{{ finding.severity }}</span><span class="d-block small text-secondary">{{ finding.status|title }}</span></td><td><code>{{ finding.batch_short_id }}</code></td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<p class="text-secondary mb-0">No v2 rule findings have been recorded. Findings will appear here after an authorized v2 import matches an active rule.</p>{% endif %}
+  </section>
+
+  <section class="surface p-4 mb-4" aria-labelledby="v2-quarantine-title">
+    <div class="section-heading mb-3"><div><p class="eyebrow mb-1">ROW REVIEW</p><h2 class="h5 mb-0" id="v2-quarantine-title">Quarantined rows</h2><p class="small text-secondary mb-0">Read-only evidence and validation diagnostics. Correction and replay are not available yet.</p></div></div>
+    {% if quarantined_rows %}<div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th scope="col">Detected</th><th scope="col">Source / file</th><th scope="col">Row</th><th scope="col">Reason and evidence</th><th scope="col">Batch</th></tr></thead><tbody>
+      {% for item in quarantined_rows %}<tr><td>{{ item.created_at_utc|human_datetime }}</td><th scope="row">{{ item.source_id }}<span class="d-block small text-secondary text-break">{{ item.source_file }}</span></th><td>{{ item.row_number }}{% if item.sheet_name %}<span class="d-block small text-secondary">{{ item.sheet_name }}</span>{% endif %}</td><td>{% if item.diagnostics %}<ul class="small mb-2">{% for diagnostic in item.diagnostics %}<li>{{ diagnostic }}</li>{% endfor %}</ul>{% else %}<span class="small text-secondary">No diagnostic recorded</span>{% endif %}<details><summary class="small">View row evidence</summary><div class="row g-2 mt-1"><div class="col-12 col-xl-6"><strong class="small">Original values</strong><pre class="small text-break mb-2">{{ item.raw|tojson(indent=2) }}</pre></div><div class="col-12 col-xl-6"><strong class="small">Normalized values</strong><pre class="small text-break mb-2">{{ item.normalized|tojson(indent=2) }}</pre></div></div></details></td><td><code>{{ item.batch_id[:8] }}</code></td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<p class="text-secondary mb-0">No quarantined rows have been recorded.</p>{% endif %}
   </section>
 
   <section class="surface p-4 mb-4"><div class="section-heading mb-3"><div><p class="eyebrow mb-1">PROCESSING HISTORY</p><h2 class="h5 mb-0">Recent batches</h2></div></div>

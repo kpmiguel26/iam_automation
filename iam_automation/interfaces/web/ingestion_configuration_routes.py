@@ -16,6 +16,7 @@ from dataclasses import replace
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from flask import Blueprint, flash, make_response, redirect, render_template, request, session, url_for
+from sqlalchemy import select
 
 from ...application.ingestion.configuration_contracts import (
     DRAFT_DRIFT_POLICIES,
@@ -46,7 +47,7 @@ from ...application.ingestion.template_repository import TemplateRepository
 from ...application.parallel_engine.templates import RuntimeTemplateCatalog
 from ...application.rules.configuration import RuleConfigurationService
 from ...identity import ROLE_APPLICATION_ADMIN, ROLE_MASTER_ADMIN, ROLE_SUPER_OPERATOR, normalize_role
-from ...infrastructure.sqlite.orm import RuleCalendarVersionModel, orm_session
+from ...infrastructure.sqlite.orm import DimSourceModel, RuleCalendarVersionModel, orm_session
 
 
 SESSION_KEY = "ingestion_configuration_draft"
@@ -64,6 +65,14 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
     )
     rule_configuration = RuleConfigurationService(database_path)
     sample_artifacts: dict[str, tuple[float, str, bytes]] = {}
+
+    def rule_source_systems() -> tuple[dict[str, str], ...]:
+        with orm_session(database_path) as db_session:
+            return tuple({"key": str(system), "label": str(label or system)} for system, label in db_session.execute(
+                select(DimSourceModel.source_system, DimSourceModel.label)
+                .where(DimSourceModel.active.is_(True))
+                .order_by(DimSourceModel.label.asc(), DimSourceModel.source_system.asc())
+            ).all())
 
     def admin_required(view: Callable):
         @wraps(view)
@@ -206,6 +215,23 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 break
         return tuple(sorted(found, key=str.casefold))
 
+    def sharepoint_folder_tree(folders: tuple[str, ...]) -> tuple[dict[str, object], ...]:
+        """Build a nested presentation tree from the safe relative folder list."""
+        roots: list[dict[str, object]] = []
+        for folder in folders:
+            parts = folder.split("/")
+            siblings = roots
+            current_path: list[str] = []
+            for part in parts:
+                current_path.append(part)
+                relative_path = "/".join(current_path)
+                node = next((item for item in siblings if item["name"] == part), None)
+                if node is None:
+                    node = {"name": part, "path": relative_path, "children": []}
+                    siblings.append(node)
+                siblings = node["children"]
+        return tuple(roots)
+
     def render_template_settings_page(
         version_id: str, *, error: str | None = None, form_values=None,
         configured: DraftSourceDefinition | None = None,
@@ -221,15 +247,18 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         if not date_settings.target_timezone and calendar["available"]:
             date_settings = replace(date_settings, target_timezone=calendar["timezone"])
         timezone_names = tuple(sorted(available_timezones()))
+        folder_paths = sharepoint_folders()
         return render_template(
             "admin/ingestion_template_settings.html",
             item=saved,
             draft=draft,
+            rule_source_systems=rule_source_systems(),
             identity_rows=_identity_rows(draft),
             available_fields=tuple(field for field in draft.fields if field.include),
             next_identity_row_index=max(1, len(draft.identity_governance.identifiers)),
             rule_calendar=calendar,
-            sharepoint_folders=sharepoint_folders(),
+            sharepoint_folders=folder_paths,
+            sharepoint_folder_tree=sharepoint_folder_tree(folder_paths),
             timezone_names=timezone_names,
             date_settings=date_settings,
             temporal_fields=tuple(field for field in draft.fields if field.include and field.data_type.casefold() in {"date", "datetime", "timestamp"}),
@@ -258,6 +287,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         return render_template(
             "admin/ingestion_source_configuration.html",
             draft=draft,
+            rule_source_systems=rule_source_systems(),
             formats=DRAFT_FORMATS,
             field_types=DRAFT_FIELD_TYPES,
             transforms=DRAFT_TRANSFORMS,
@@ -306,6 +336,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             return render_template(
                 template,
                 draft=draft,
+                rule_source_systems=rule_source_systems(),
                 formats=DRAFT_FORMATS,
                 field_types=DRAFT_FIELD_TYPES,
                 transforms=DRAFT_TRANSFORMS,
@@ -396,6 +427,13 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         if action not in {"validate", "save"}:
             action = "validate"
         draft = _draft_from_mapping_form(DraftSourceDefinition.from_dict(session.get(SESSION_KEY)), request.form)
+        configured_rule_sources = {item["key"] for item in rule_source_systems()}
+        if draft.business_rule_source_system and draft.business_rule_source_system not in configured_rule_sources:
+            return partial_or_page(
+                "admin/_ingestion_sample_mapping.html", draft=draft,
+                error="Choose an active Business Rules source or leave the source mapping blank.",
+                status_code=400,
+            )
         selection = session.get("ingestion_sample_selection") or {}
         artifact = get_sample(str(selection.get("artifact_id", "")))
         if artifact is None and selection.get("artifact_id"):
@@ -633,13 +671,51 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 identity_refs.add(key)
         property_options = list(context["object_property_options"])
         property_refs = {(item["source_id"], item["field_key"]) for item in property_options}
+        prior_properties_by_ref = {
+            (str(item.get("source_id", "")), str(item.get("field_key", ""))): item
+            for item in prior_definition.get("properties", ())
+        }
+        property_options = [
+            {
+                **item,
+                "canonical_property_key": str(
+                    prior_properties_by_ref.get((item["source_id"], item["field_key"]), {}).get(
+                        "canonical_property_key", item["field_key"]
+                    )
+                ),
+            }
+            for item in property_options
+        ]
         for prop in prior_definition.get("properties", ()):
             key = (str(prop.get("source_id", "")), str(prop.get("field_key", "")))
             if key[0] and key[1] and key not in property_refs:
-                property_options.append({**prop, "source_label": prop.get("source_label", key[0]), "stale": True})
+                property_options.append({
+                    **prop,
+                    "canonical_property_key": str(prop.get("canonical_property_key") or key[1]),
+                    "source_label": prop.get("source_label", key[0]),
+                    "stale": True,
+                })
                 property_refs.add(key)
 
         if form_values is not None:
+            posted_source_ids = form_values.getlist("property_source_ids")
+            posted_field_keys = form_values.getlist("property_field_keys")
+            posted_canonical_keys = form_values.getlist("canonical_property_keys")
+            posted_canonical_by_ref = {
+                (str(source_id), str(field_key)): str(canonical_key)
+                for source_id, field_key, canonical_key in zip(
+                    posted_source_ids, posted_field_keys, posted_canonical_keys
+                )
+            }
+            property_options = [
+                {
+                    **item,
+                    "canonical_property_key": posted_canonical_by_ref.get(
+                        (item["source_id"], item["field_key"]), item["canonical_property_key"]
+                    ),
+                }
+                for item in property_options
+            ]
             selected_sources = set(form_values.getlist("object_sources"))
             selected_identifiers = {ref for value in form_values.getlist("object_identifiers") if (ref := parse_object_ref(value))}
             object_name = str(form_values.get("object_name", ""))
@@ -865,18 +941,65 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         if allow_creation and max(creation_authorized_by_source.values(), default=0) < 2:
             return object_template_error(request.form, "Object creation requires at least two selected Strong identifiers that their report templates explicitly authorize for creation.")
 
-        property_options = {(item["source_id"], item["field_key"]): item for item in context["object_property_options"]}
+        available_property_options = {
+            (item["source_id"], item["field_key"]): item
+            for item in context["object_property_options"]
+        }
         prior_properties = {
             (str(item.get("source_id", "")), str(item.get("field_key", ""))): item
             for item in prior_definition.get("properties", ())
         }
+        posted_property_sources = request.form.getlist("property_source_ids")
+        posted_property_fields = request.form.getlist("property_field_keys")
+        posted_canonical_keys = request.form.getlist("canonical_property_keys")
+        if any((posted_property_sources, posted_property_fields, posted_canonical_keys)):
+            if not (len(posted_property_sources) == len(posted_property_fields) == len(posted_canonical_keys)):
+                return object_template_error(request.form, "Review the canonical property mappings and submit each source field with one property key.")
+            canonical_keys_by_ref: dict[tuple[str, str], str] = {}
+            for source_id, field_key, canonical_key in zip(
+                posted_property_sources, posted_property_fields, posted_canonical_keys
+            ):
+                ref = (str(source_id), str(field_key))
+                canonical_key = str(canonical_key).strip()
+                if ref in canonical_keys_by_ref or (
+                    ref not in available_property_options and ref not in prior_properties
+                ):
+                    return object_template_error(request.form, "A canonical property mapping refers to a duplicate or unknown source field.")
+                if not canonical_key or len(canonical_key) > 120:
+                    return object_template_error(request.form, "Canonical property keys must contain between 1 and 120 characters.")
+                if canonical_key != ref[1] and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,119}", canonical_key):
+                    return object_template_error(request.form, "A new canonical key must start with a letter and contain only letters, numbers, periods, underscores, or hyphens. Existing source field keys can be retained as-is.")
+                canonical_keys_by_ref[ref] = canonical_key
+        else:
+            canonical_keys_by_ref = {
+                ref: str(prop.get("canonical_property_key") or ref[1])
+                for ref, prop in prior_properties.items()
+            }
+        property_options = available_property_options
         properties = []
+        mapped_property_keys: set[tuple[str, str]] = set()
         for source_id in selected_sources:
             for key, option in property_options.items():
                 if key[0] == source_id:
-                    properties.append(option)
+                    canonical_key = canonical_keys_by_ref.get(
+                        key,
+                        str(prior_properties.get(key, {}).get("canonical_property_key") or key[1]),
+                    )
+                    canonical_ref = (source_id, canonical_key)
+                    if canonical_ref in mapped_property_keys:
+                        return object_template_error(
+                            request.form,
+                            f"Source {source_id!r} maps more than one field to property {canonical_key!r}; select one field per property until a combination rule is configured.",
+                        )
+                    mapped_property_keys.add(canonical_ref)
+                    properties.append({**option, "canonical_property_key": canonical_key})
             if source_id not in current_sources:
-                properties.extend(item for key, item in prior_properties.items() if key[0] == source_id)
+                for key, item in prior_properties.items():
+                    if key[0] == source_id:
+                        properties.append({
+                            **item,
+                            "canonical_property_key": str(item.get("canonical_property_key") or key[1]),
+                        })
         # Template Library owns the live ingestion sequence. The Object
         # Template stores membership and source-version references, not a
         # second copy of order that could become stale after Library reorders.
@@ -961,6 +1084,12 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         draft = DraftSourceDefinition.from_dict(saved["definition"])
         configured = _identity_settings_from_form(draft, request.form) if "identity_role" in request.form else draft
         try:
+            business_rule_source_system = str(request.form.get(
+                "business_rule_source_system", configured.business_rule_source_system,
+            )).strip().upper()
+            allowed_rule_sources = {item["key"] for item in rule_source_systems()}
+            if business_rule_source_system and business_rule_source_system not in allowed_rule_sources:
+                raise ValueError("Choose an active Business Rules source or leave the source mapping blank.")
             folder = str(request.form.get("folder_path", draft.watched_subfolder)).strip()
             new_folder = str(request.form.get("create_folder_path", "")).strip()
             if not folder and not new_folder:
@@ -1022,6 +1151,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
 
             configured = replace(
                 configured,
+                business_rule_source_system=business_rule_source_system,
                 watched_subfolder=watched_subfolder,
                 date_time_settings=date_time_settings,
                 skip_rules=skip_rules,
@@ -1211,6 +1341,7 @@ def _draft_from_form(form) -> DraftSourceDefinition:
         source_id=source_id,
         display_name=display_name,
         description=description,
+        business_rule_source_system=str(form.get("business_rule_source_system", "")).strip().upper(),
         reader_settings=DraftReaderSettings(
             format=source_format,
             watched_path=watched_path,
@@ -1341,6 +1472,7 @@ def _draft_from_mapping_form(draft: DraftSourceDefinition, form) -> DraftSourceD
         )
     return replace(
         _draft_with_source_basics(draft, form, draft.reader_settings.filename_pattern or draft.display_name),
+        business_rule_source_system=str(form.get("business_rule_source_system", draft.business_rule_source_system)).strip().upper(),
         fields=fields,
         identity_governance=identity_governance,
         recognition_settings=replace(
@@ -1513,6 +1645,7 @@ def _with_field(draft: DraftSourceDefinition, field: DraftFieldDefinition) -> Dr
         source_id=draft.source_id,
         display_name=draft.display_name,
         description=draft.description,
+        business_rule_source_system=draft.business_rule_source_system,
         reader_settings=draft.reader_settings,
         recognition_settings=draft.recognition_settings,
         fields=draft.fields + (field,),
@@ -1537,6 +1670,7 @@ def _without_field(draft: DraftSourceDefinition, index: int) -> DraftSourceDefin
         source_id=draft.source_id,
         display_name=draft.display_name,
         description=draft.description,
+        business_rule_source_system=draft.business_rule_source_system,
         reader_settings=draft.reader_settings,
         recognition_settings=replace(
             draft.recognition_settings,

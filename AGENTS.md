@@ -82,6 +82,23 @@ alter production behavior or generate operational noise; use documentation,
 tests and the existing observability conventions unless warning behavior is
 explicitly requested.
 
+## 2.1 Disable duplicated legacy runtime code by commenting
+
+During an explicitly requested engine migration, once a new runtime owns a specific
+responsibility, mark the exact overlapping legacy entry point or branch as
+`DEPRECATED / DISABLED`, explain the replacement and migration reason, and comment
+out the duplicate code in place so it cannot execute. Add clear `BEGIN` and `END`
+comment markers around each disabled block. Keep the legacy source text commented;
+do not delete it during this migration.
+
+Before disabling a function, class or branch, inspect all callers and separate
+shared operational behavior from the migrated responsibility. Disable only code
+whose responsibility is fully owned by the replacement. Keep mixed-purpose
+watchers, services, imports, and routes active for their non-duplicated behavior.
+Do not disable manual import, canonical employee matching, rules, request/approval,
+audit or notification flows until the replacement supports their full behavior and
+the user explicitly directs that cutover. Update the deprecated inventory when a
+runtime path is disabled.
 ## 3. Data, database and runtime safety
 
 - Treat Access, published SQLite and source files as versioned evidence/snapshots

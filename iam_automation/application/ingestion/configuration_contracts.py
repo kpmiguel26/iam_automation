@@ -190,6 +190,7 @@ class DraftSourceDefinition:
     validations: tuple[DraftValidationDefinition, ...] = ()
     schema_drift_policy: str = "WARNING"
     status: str = "DRAFT"
+    business_rule_source_system: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON/session-safe representation of this draft."""
@@ -270,6 +271,7 @@ class DraftSourceDefinition:
             source_id=str(payload.get("source_id", "")),
             display_name=str(payload.get("display_name", "")),
             description=str(payload.get("description", "")),
+            business_rule_source_system=str(payload.get("business_rule_source_system", "")).strip().upper(),
             reader_settings=DraftReaderSettings(
                 format=str(reader.get("format", "XLSX")),
                 watched_path=str(reader.get("watched_path", "")),

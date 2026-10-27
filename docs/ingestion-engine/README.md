@@ -7,9 +7,19 @@ The configuration library persists versioned report templates and a
 user-named Template Object definition. The parallel runtime reads approved
 snapshots, and its watcher discovers and recognizes files. The early v2
 processor was exercised and wrote prototype evidence and object IDs into
-`engine_v2_*`; it does not populate the physical star schema or invoke the
-Rules Engine. File processing is now gated off while the physical object model,
-template lifecycle handling, and rule integration are implemented. Runtime v2
+`engine_v2_*`. The current implementation adds stable object-type identity,
+physical Strong Identifier claims, source facts/property values, configurable
+canonical property keys that preserve per-source values, and an advisory Rules
+Engine adapter that records v2 findings with source/evidence lineage. Report
+templates can map their internal source key to the legacy
+Business Rules source catalog. The engine dashboard displays recent v2 findings
+and read-only triage details for up to 50 quarantined rows. It still lacks
+canonical property authority/priority and conflict handling, template-safe
+data lifecycle, composite/cross-source rule parity, finding disposition
+controls, quarantine correction/replay, and acceptance checks. Existing approved templates need an explicit
+source mapping when their internal key differs from the Business Rules source
+key. File processing remains gated off
+until the import path and acceptance checks are complete. Runtime v2
 is registered inside the normal authenticated Flask application at `/engine`;
 the normal app starts and stops its watcher with the existing local webapp
 process. The Source Update Review engine panel reports the live watcher thread
@@ -34,7 +44,7 @@ Two paths currently coexist:
 | Path | Status | Owns today |
 |---|---|---|
 | Legacy runtime ingestion | **Active; selected entry points marked `DEPRECATED` for migration tracking** | Hard-coded source dispatch, source-specific ingestion services, source-specific canonical Employee matching and application workflows. |
-| New Ingestion Engine | **Discovery integrated; production ingestion blocked** | Versioned report templates, isolated watcher, and prototype `engine_v2_*` persistence; processing gate keeps new file writes disabled until production model and Rules Engine work is complete. |
+| New Ingestion Engine | **Discovery integrated; stable identity/source-fact, canonical property-key mapping, and advisory rules slices implemented in code; production ingestion blocked** | Versioned report templates with explicit Business Rules source mapping and canonical property keys, isolated watcher, stable object-type UUID for the current Employee Profile type, Strong Identifier claim table, source facts/property values, v2 advisory findings, and dashboard review visibility. Property authority/conflict policy, template lifecycle, composite/cross-source rule parity, finding disposition, quarantine/replay, and acceptance checks remain incomplete; the processing gate stays off. |
 
 `DEPRECATED` here marks an intended migration target; it does not disable the
 current path. No legacy implementation has been deleted or switched out.

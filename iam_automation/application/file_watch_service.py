@@ -295,23 +295,28 @@ class FileWatchService:
     def _discover_files(self) -> list[FileObservation]:
         """Find pending work across legacy folders and workspace operations.
 
-        DEPRECATED (migration in progress): the four source-report scans below
-        overlap with runtime v2's template-configured discovery and recognition.
-        Keep them active until v2 import and source-by-source cutover are ready;
-        the remaining request, configuration, snapshot and approval scans are
-        outside the parallel engine's scope.
+        DEPRECATED / DISABLED: source-report scans for Roster Lock, Master
+        Roster, RSR and AccessNow are owned by runtime v2's template-configured
+        discovery and recognition. They remain commented until this legacy
+        watcher is retired. Request, configuration, snapshot and approval scans
+        remain active because they are outside the parallel engine's scope.
         """
         roots = (
             (self.sharepoint_root / "requests" / "pending", "PENDING_REQUEST"),
             (self.sharepoint_root / "config", "CONFIGURATION"),
             (self.sharepoint_root / "database" / "snapshots" / "identity_discoveries", "IDENTITY_DISCOVERY"),
             (self.sharepoint_root / "database" / "snapshots", "PUBLISHED_RUNTIME"),
-            (self.sharepoint_root / "rosterlocks", "ROSTER_LOCK"),
-            (self.sharepoint_root / "master_roster", "MASTER_ROSTER"),
-            (self.sharepoint_root / "rsrsuplierworkerdetails", "RSR_SUPPLIER_WORKER_DETAILS"),
-            (self.sharepoint_root / "acessnow", "ACCESSNOW"),
             (self.sharepoint_root / "requests" / "approved", "APPROVED_IMPORT"),
         )
+        # DEPRECATED / DISABLED: runtime v2 discovers these source reports from
+        # approved Object Template watched folders. Retain the legacy roots for
+        # migration traceability while preventing duplicate discovery.
+        # BEGIN legacy source-report discovery disabled
+        # (self.sharepoint_root / "rosterlocks", "ROSTER_LOCK"),
+        # (self.sharepoint_root / "master_roster", "MASTER_ROSTER"),
+        # (self.sharepoint_root / "rsrsuplierworkerdetails", "RSR_SUPPLIER_WORKER_DETAILS"),
+        # (self.sharepoint_root / "acessnow", "ACCESSNOW"),
+        # END legacy source-report discovery disabled
         observations: list[FileObservation] = []
         for root, kind in roots:
             if not root.is_dir():

@@ -35,7 +35,7 @@
       <p class="small text-secondary mb-0" data-object-match-empty {% if matches %}hidden{% endif %}>No match groups yet. If you select multiple reports, connect their Strong identifiers before saving.</p>
     </section>
 
-    {% if property_options %}<details class="template-settings-section"><summary class="fw-semibold">Preview object properties ({{ property_options|selectattr('source_id', 'in', selected_sources)|list|length }})</summary><div class="template-card-summary mt-3">{% for prop in property_options if prop.source_id in selected_sources %}<div><span>{{ prop.source_label }}</span><strong>{{ prop.source_name }}</strong><small>{{ prop.data_type|upper }} · {{ prop.field_key }}</small></div>{% endfor %}</div></details>{% endif %}
+    {% include 'admin/_object_template_property_mapping_fields.html' %}
     <div class="alert alert-info mt-4 mb-0" role="note">Saving creates an auditable configuration version only. This phase does not create or update objects.</div>
     <div class="d-flex flex-wrap justify-content-end gap-2 border-top mt-4 pt-3"><a class="btn btn-light" href="{{ url_for('ingestion_configuration.template_library') }}">Template library</a><button class="btn btn-primary" type="submit" {% if not object_sources %}disabled{% endif %}>Validate and save draft</button></div>
   </form>

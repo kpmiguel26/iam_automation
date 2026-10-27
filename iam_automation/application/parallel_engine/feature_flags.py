@@ -1,9 +1,9 @@
 """Operational gates for the in-progress parallel ingestion runtime."""
 
-# Keep file writes disabled until the physical object model, template lifecycle
-# handling, and Rules Engine integration have passed their acceptance checks.
+# Keep file writes disabled until the object model/lifecycle, rule parity,
+# finding review, and import-path acceptance checks have passed.
 FILE_PROCESSING_ENABLED = False
 PROCESSING_PAUSED_MESSAGE = (
-    "File processing is paused while the physical object model, template lifecycle, "
-    "and import rules integration are being completed. Discovery remains active."
+    "File processing is paused while object lifecycle, rule parity, finding review, "
+    "and import-path acceptance checks are being completed. Discovery remains active."
 )

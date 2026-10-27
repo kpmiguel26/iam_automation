@@ -204,7 +204,7 @@ class ParallelFileWatcher:
                 authorized_by=actor, authorized_at_utc=authorized_at_utc,
             )
             try:
-                result = self.engine.ingest_file(path, content, configuration)
+                result = self.engine.ingest_file(path, content, configuration, authorized_by=actor)
             except Exception as exc:
                 self._record(
                     source, path, checksum, "RETRY", f"{type(exc).__name__}: {exc}",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import secrets
 from pathlib import Path
 from typing import Any
@@ -92,6 +93,35 @@ def create_parallel_engine_blueprint(
             health_row = connection.execute("SELECT * FROM engine_v2_watcher_state WHERE singleton_id = 1").fetchone()
             batches = [dict(row) for row in connection.execute("SELECT * FROM engine_v2_batches ORDER BY started_at_utc DESC LIMIT 20").fetchall()]
             observations = [dict(row) for row in connection.execute("SELECT * FROM engine_v2_file_observations ORDER BY last_seen_at_utc DESC LIMIT 30").fetchall()]
+            quarantined_rows = [dict(row) for row in connection.execute(
+                """SELECT e.evidence_id, e.batch_id, e.row_number, e.sheet_name,
+                          e.raw_json, e.normalized_json, e.diagnostics_json,
+                          e.created_at_utc, b.source_id, b.source_file
+                   FROM engine_v2_evidence e
+                   JOIN engine_v2_batches b ON b.batch_id = e.batch_id
+                   WHERE e.status = 'QUARANTINED'
+                   ORDER BY e.created_at_utc DESC, e.row_number DESC LIMIT 50"""
+            ).fetchall()]
+            for evidence in quarantined_rows:
+                for field, default in (("raw_json", {}), ("normalized_json", {}), ("diagnostics_json", [])):
+                    try:
+                        evidence[field.removesuffix("_json")] = json.loads(evidence[field])
+                    except (TypeError, ValueError):
+                        evidence[field.removesuffix("_json")] = default
+            rule_findings = [dict(row) for row in connection.execute(
+                """SELECT finding_id, rule_name, phase, source_id, source_version_id,
+                          row_number, field_key, severity, status, title, message,
+                          batch_id, created_at_utc
+                   FROM engine_v2_rule_findings
+                   ORDER BY created_at_utc DESC, finding_id DESC LIMIT 50"""
+            ).fetchall()]
+            for finding in rule_findings:
+                finding["batch_short_id"] = str(finding["batch_id"])[:8]
+            rule_finding_counts = connection.execute(
+                """SELECT COUNT(*) AS total,
+                          SUM(CASE WHEN status = 'OPEN' THEN 1 ELSE 0 END) AS open_count
+                   FROM engine_v2_rule_findings"""
+            ).fetchone()
             approved = connection.execute(
                 "SELECT COUNT(*) FROM engine_v2_object_template_approvals a JOIN employee_template_versions v ON v.employee_template_version_id = a.object_template_version_id WHERE v.template_key='EMPLOYEE_PROFILE'"
             ).fetchone()[0]
@@ -109,6 +139,10 @@ def create_parallel_engine_blueprint(
         return render_template(
             dashboard_template, username=session.get("iam_user"), health=dict(health_row) if health_row else None,
             batches=batches, observations=observations, sources=sources, object_name=object_name,
+            quarantined_rows=quarantined_rows,
+            rule_findings=rule_findings,
+            total_rule_findings=int(rule_finding_counts["total"] or 0),
+            open_rule_findings=int(rule_finding_counts["open_count"] or 0),
             approved_object_templates=approved, configuration_error=configuration_error,
             csrf_token=session.get("iam_csrf_token", session.get("parallel_engine_csrf_token", "")),
             can_authorize_processing=FILE_PROCESSING_ENABLED and bool(

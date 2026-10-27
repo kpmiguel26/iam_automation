@@ -11,6 +11,24 @@
     }
   }
 
+  function syncFolderPicker(picker) {
+    if (!picker) return;
+    var parent = picker.querySelector('[name="folder_parent_path"]:checked');
+    var name = picker.querySelector('[data-folder-child-name]');
+    var output = picker.querySelector('[data-folder-create-path]');
+    var preview = picker.querySelector('[data-folder-create-preview]');
+    if (!name || !output) return;
+    var childName = name.value.trim();
+    var parentPath = parent ? parent.value.trim() : '';
+    output.value = childName ? [parentPath, childName].filter(Boolean).join('/') : '';
+    output.disabled = !childName;
+    if (preview) {
+      preview.textContent = childName
+        ? 'New folder path: ' + output.value
+        : 'Choose a parent and enter a name to create a folder.';
+    }
+  }
+
   document.addEventListener('htmx:afterSwap', function (event) {
     var target = event.detail && event.detail.target ? event.detail.target : event.target;
     if (!target || target.id !== 'template-modal-region') return;
@@ -196,6 +214,15 @@
   }
 
   document.body.addEventListener('change', function (event) {
+    if (event.target && event.target.matches('[name="folder_parent_path"]')) {
+      syncFolderPicker(event.target.closest('[data-folder-picker]'));
+    }
+    if (event.target && event.target.matches('[name="folder_path"]')) {
+      var picker = event.target.closest('[data-folder-picker]');
+      var childName = picker && picker.querySelector('[data-folder-child-name]');
+      if (childName) childName.value = '';
+      syncFolderPicker(picker);
+    }
     if (event.target && event.target.matches('[data-timezone-mode]')) {
       syncTimezoneMode(event.target.closest('#templateSettingsForm'));
     }
@@ -207,6 +234,12 @@
     }
     if (event.target && event.target.matches('[data-object-source], [data-object-identity], [data-object-match-source], [data-object-match-anchor], [data-object-match-target]')) {
       syncObjectTemplate(event.target.closest('#objectTemplateSettingsForm'));
+    }
+  });
+
+  document.body.addEventListener('input', function (event) {
+    if (event.target && event.target.matches('[data-folder-child-name]')) {
+      syncFolderPicker(event.target.closest('[data-folder-picker]'));
     }
   });
 
@@ -222,6 +255,7 @@
 
   document.body.addEventListener('htmx:afterSwap', function (event) {
     var target = event.detail && event.detail.target;
+    if (target) target.querySelectorAll('[data-folder-picker]').forEach(syncFolderPicker);
     if (target && target.id === 'object-match-list') {
       syncObjectTemplate(target.closest('#objectTemplateSettingsForm'));
     }
@@ -250,6 +284,7 @@
   });
 
   syncTimezoneMode(document.getElementById('templateSettingsForm'));
+  document.querySelectorAll('[data-folder-picker]').forEach(syncFolderPicker);
   syncSkipRule(document.getElementById('templateSettingsForm'));
   syncIdentityLimit(document.getElementById('templateSettingsForm'));
   syncObjectTemplate(document.getElementById('objectTemplateSettingsForm'));

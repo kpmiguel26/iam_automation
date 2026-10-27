@@ -12,6 +12,7 @@ from typing import Any
 from .contracts import EngineRunResult, FileRecognitionAnalysis, ObjectTemplate, ParsedSourceRow, RuntimeConfiguration, SourceTemplate, TemplateConfigurationError
 from .database import connect
 from .reader import inspect_headers, parse_source_rows
+from .rules import evaluate_configured_rules, persist_v2_findings
 from .templates import RuntimeTemplateCatalog
 
 
@@ -230,7 +231,10 @@ class ParallelIngestionEngine:
             "; ".join(messages),
         )
 
-    def ingest_file(self, path: Path, content: bytes | None = None, configuration: RuntimeConfiguration | None = None) -> EngineRunResult:
+    def ingest_file(
+        self, path: Path, content: bytes | None = None,
+        configuration: RuntimeConfiguration | None = None, *, authorized_by: str = "",
+    ) -> EngineRunResult:
         resolved = path.expanduser().resolve()
         if content is None:
             before = resolved.stat()
@@ -249,6 +253,16 @@ class ParallelIngestionEngine:
         status = "FAILED" if file_errors else "COMPLETED"
         evidence_count = quarantine_count = created_count = linked_count = 0
         messages = list(file_errors)
+        before_findings: list[dict[str, Any]] = []
+        if not file_errors:
+            try:
+                before_findings, rule_diagnostics = evaluate_configured_rules(
+                    self.database_path, phase="BEFORE", source_id=source.source_id,
+                    source_system_key=str(source.definition.get("business_rule_source_system", "")), rows=rows,
+                )
+            except Exception as exc:
+                rule_diagnostics = [f"BEFORE rule evaluation unavailable ({type(exc).__name__})."]
+            messages.extend(f"Advisory rule: {message}" for message in rule_diagnostics)
         if unknown_headers and str(source.definition.get("schema_drift_policy", "WARNING")).upper() == "WARNING":
             messages.append("Unconfigured source columns: " + ", ".join(unknown_headers))
             status = "COMPLETED_WITH_WARNINGS"
@@ -276,10 +290,11 @@ class ParallelIngestionEngine:
                 connection.execute(
                     """INSERT INTO engine_v2_batches
                        (batch_id, source_id, source_version_id, object_template_version_id,
-                        source_file, source_checksum, status, total_rows, started_at_utc, message)
-                       VALUES (?, ?, ?, ?, ?, ?, 'PROCESSING', ?, ?, ?)""",
+                        source_file, source_checksum, status, total_rows, started_at_utc, message,
+                        authorized_by, authorized_at_utc)
+                       VALUES (?, ?, ?, ?, ?, ?, 'PROCESSING', ?, ?, ?, ?, ?)""",
                     (batch_id, source.source_id, source.version_id, config.object_template.version_id,
-                     str(resolved), checksum, len(rows), now, ""),
+                     str(resolved), checksum, len(rows), now, "", str(authorized_by or ""), now if authorized_by else None),
                 )
                 for row in rows:
                     evidence_id = str(uuid.uuid4())
@@ -313,8 +328,11 @@ class ParallelIngestionEngine:
                     if object_id is None and _source_can_create_object(source, config.object_template):
                         object_id = str(uuid.uuid4())
                         connection.execute(
-                            "INSERT INTO engine_v2_objects(object_id, object_template_version_id, created_at_utc) VALUES (?, ?, ?)",
-                            (object_id, config.object_template.version_id, now),
+                            """INSERT INTO engine_v2_objects
+                               (object_id, object_type_id, object_template_version_id, created_at_utc)
+                               VALUES (?, ?, ?, ?)""",
+                            (object_id, config.object_template.object_type_id,
+                             config.object_template.version_id, now),
                         )
                         created_count += 1
                         reason = {"kind": "created", "source_id": source.source_id}
@@ -332,7 +350,45 @@ class ParallelIngestionEngine:
                            VALUES (?, ?, ?, ?)""",
                         (object_id, evidence_id, json.dumps(reason, ensure_ascii=False, sort_keys=True), now),
                     )
+                    self._register_strong_identifiers(
+                        connection, row, source, config.object_template, object_id, evidence_id, batch_id, now,
+                    )
+                    fact_id = str(uuid.uuid4())
+                    connection.execute(
+                        """INSERT INTO engine_v2_source_facts
+                           (fact_id, object_id, evidence_id, batch_id, object_template_version_id,
+                            source_id, source_version_id, source_file, source_checksum, row_number,
+                            sheet_name, recorded_at_utc)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (fact_id, object_id, evidence_id, batch_id, config.object_template.version_id,
+                         source.source_id, source.version_id, str(resolved), checksum, row.row_number,
+                         row.sheet_name, now),
+                    )
+                    for property_definition in config.object_template.definition.get("properties", ()):
+                        if str(property_definition.get("source_id", "")) != source.source_id:
+                            continue
+                        source_field_key = str(property_definition.get("field_key", "")).strip()
+                        if not source_field_key or source_field_key not in row.normalized_values:
+                            continue
+                        property_key = str(
+                            property_definition.get("canonical_property_key") or source_field_key
+                        ).strip()
+                        connection.execute(
+                            """INSERT INTO engine_v2_object_property_values
+                               (property_value_id, fact_id, object_id, evidence_id,
+                                object_template_version_id, source_id, source_version_id,
+                                property_key, source_field_key, data_type, value_json, recorded_at_utc)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            (str(uuid.uuid4()), fact_id, object_id, evidence_id,
+                             config.object_template.version_id, source.source_id, source.version_id,
+                             property_key, source_field_key,
+                             str(property_definition.get("data_type", "string")),
+                             json.dumps(row.normalized_values[source_field_key], ensure_ascii=False, sort_keys=True, default=str),
+                             now),
+                        )
                 if quarantine_count and status == "COMPLETED":
+                    status = "COMPLETED_WITH_WARNINGS"
+                if messages and status == "COMPLETED":
                     status = "COMPLETED_WITH_WARNINGS"
                 connection.execute(
                     """UPDATE engine_v2_batches SET status = ?, total_rows = ?, evidence_rows = ?,
@@ -347,6 +403,60 @@ class ParallelIngestionEngine:
             raise
         finally:
             connection.close()
+        if not file_errors:
+            rule_diagnostics = []
+            try:
+                after_findings, rule_diagnostics = evaluate_configured_rules(
+                    self.database_path, phase="AFTER", source_id=source.source_id,
+                    source_system_key=str(source.definition.get("business_rule_source_system", "")), rows=rows,
+                )
+            except Exception as exc:
+                after_findings = []
+                rule_diagnostics = [f"AFTER rule evaluation unavailable ({type(exc).__name__})."]
+            try:
+                connection = connect(self.database_path)
+                try:
+                    with connection:
+                        persist_v2_findings(
+                            connection, findings=before_findings + after_findings, batch_id=batch_id,
+                            source_id=source.source_id, source_version_id=source.version_id,
+                            object_type_id=config.object_template.object_type_id,
+                        )
+                        if rule_diagnostics:
+                            existing_batch = connection.execute(
+                                "SELECT status, message FROM engine_v2_batches WHERE batch_id = ?",
+                                (batch_id,),
+                            ).fetchone()
+                            if existing_batch is not None:
+                                updated_message = "; ".join(filter(None, [
+                                    str(existing_batch["message"]),
+                                    *(f"Advisory rule: {message}" for message in rule_diagnostics),
+                                ]))
+                                updated_status = "COMPLETED_WITH_WARNINGS" if existing_batch["status"] == "COMPLETED" else existing_batch["status"]
+                                connection.execute(
+                                    "UPDATE engine_v2_batches SET status = ?, message = ? WHERE batch_id = ?",
+                                    (updated_status, updated_message, batch_id),
+                                )
+                                status = updated_status
+                                messages.extend(f"Advisory rule: {message}" for message in rule_diagnostics)
+                finally:
+                    connection.close()
+            except Exception as exc:  # findings are advisory and cannot undo an imported batch
+                diagnostic = f"Advisory rule findings could not be saved ({type(exc).__name__})."
+                messages.append(diagnostic)
+                status = "COMPLETED_WITH_WARNINGS" if status == "COMPLETED" else status
+                try:
+                    connection = connect(self.database_path)
+                    try:
+                        with connection:
+                            connection.execute(
+                                "UPDATE engine_v2_batches SET status = ?, message = CASE WHEN message = '' THEN ? ELSE message || '; ' || ? END WHERE batch_id = ?",
+                                (status, diagnostic, diagnostic, batch_id),
+                            )
+                    finally:
+                        connection.close()
+                except Exception:
+                    pass
         return EngineRunResult(batch_id, source.source_id, source.version_id, config.object_template.version_id,
                                str(resolved), checksum, status, len(rows), evidence_count,
                                quarantine_count, created_count, linked_count, "; ".join(messages))
@@ -413,9 +523,15 @@ class ParallelIngestionEngine:
             value = str(current_values.get(field_key, ""))
             if not value:
                 continue
-            for evidence in _existing_evidence(connection, object_template.version_id, source_id, field_key):
-                if str(evidence["value"]) == value:
-                    candidates[str(evidence["object_id"])] = {"kind": "same_source_strong", "field_key": field_key}
+            matches = _existing_identifier_values(
+                connection, object_template.object_type_id, source_id, field_key, value,
+            )
+            matches.extend(str(evidence["object_id"]) for evidence in _existing_evidence(
+                connection, object_template.object_type_id, object_template.version_id,
+                source_id, field_key,
+            ) if str(evidence["value"]) == value)
+            for matched_object_id in matches:
+                candidates[matched_object_id] = {"kind": "same_source_strong", "field_key": field_key}
 
         for match in definition.get("matches", ()):
             left = match.get("left", {})
@@ -431,12 +547,18 @@ class ParallelIngestionEngine:
             value = str(current_values.get(current_ref[1], ""))
             if not value:
                 continue
-            for evidence in _existing_evidence(connection, object_template.version_id, other_ref[0], other_ref[1]):
-                if str(evidence["value"]) == value:
-                    candidates[str(evidence["object_id"])] = {
-                        "kind": "configured_cross_source_strong",
-                        "from": list(current_ref), "to": list(other_ref),
-                    }
+            matches = _existing_identifier_values(
+                connection, object_template.object_type_id, other_ref[0], other_ref[1], value,
+            )
+            matches.extend(str(evidence["object_id"]) for evidence in _existing_evidence(
+                connection, object_template.object_type_id, object_template.version_id,
+                other_ref[0], other_ref[1],
+            ) if str(evidence["value"]) == value)
+            for matched_object_id in matches:
+                candidates[matched_object_id] = {
+                    "kind": "configured_cross_source_strong",
+                    "from": list(current_ref), "to": list(other_ref),
+                }
         if len(candidates) > 1:
             return None, {}, True
         if not candidates:
@@ -444,15 +566,49 @@ class ParallelIngestionEngine:
         object_id, reason = next(iter(candidates.items()))
         return object_id, reason, False
 
+    @staticmethod
+    def _register_strong_identifiers(
+        connection, row: ParsedSourceRow, source: SourceTemplate, object_template: ObjectTemplate,
+        object_id: str, evidence_id: str, batch_id: str, recorded_at_utc: str,
+    ) -> None:
+        if not object_template.object_type_id:
+            # Preserve the engine API contract for callers that construct an
+            # isolated configuration directly. Runtime catalog loads always
+            # require a registered stable object type.
+            return
+        for identifier in object_template.definition.get("identifiers", ()):
+            if (str(identifier.get("source_id", "")) != source.source_id
+                    or str(identifier.get("strength", "")).upper() != "STRONG"):
+                continue
+            field_key = str(identifier.get("field_key", "")).strip()
+            raw_value = row.normalized_values.get(field_key)
+            if not field_key or raw_value in (None, ""):
+                continue
+            connection.execute(
+                """INSERT INTO engine_v2_strong_identifiers
+                   (identifier_value_id, object_type_id, object_id, source_id, source_version_id,
+                    field_key, identifier_value, object_template_version_id, evidence_id, batch_id,
+                    recorded_at_utc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(object_type_id, source_id, field_key, identifier_value) DO NOTHING""",
+                (str(uuid.uuid4()), object_template.object_type_id, object_id, source.source_id,
+                 source.version_id, field_key, str(raw_value), object_template.version_id,
+                 evidence_id, batch_id, recorded_at_utc),
+            )
 
-def _existing_evidence(connection, object_template_version_id: str, source_id: str, field_key: str):
+
+def _existing_evidence(
+    connection, object_type_id: str, object_template_version_id: str, source_id: str, field_key: str,
+):
     rows = connection.execute(
         """SELECT oe.object_id, e.normalized_json FROM engine_v2_object_evidence oe
            JOIN engine_v2_evidence e ON e.evidence_id = oe.evidence_id
            JOIN engine_v2_batches b ON b.batch_id = e.batch_id
            JOIN engine_v2_objects o ON o.object_id = oe.object_id
-           WHERE o.object_template_version_id = ? AND b.source_id = ? AND e.status = 'STAGED'""",
-        (object_template_version_id, source_id),
+           WHERE ((? <> '' AND o.object_type_id = ?)
+               OR (? = '' AND o.object_template_version_id = ?))
+             AND b.source_id = ? AND e.status = 'STAGED'""",
+        (object_type_id, object_type_id, object_type_id, object_template_version_id, source_id),
     ).fetchall()
     found = []
     for row in rows:
@@ -463,6 +619,18 @@ def _existing_evidence(connection, object_template_version_id: str, source_id: s
         if field_key in normalized:
             found.append({"object_id": row["object_id"], "value": normalized[field_key]})
     return found
+
+
+def _existing_identifier_values(
+    connection, object_type_id: str, source_id: str, field_key: str, identifier_value: str,
+) -> list[str]:
+    if not object_type_id:
+        return []
+    return [str(row[0]) for row in connection.execute(
+        """SELECT object_id FROM engine_v2_strong_identifiers
+           WHERE object_type_id = ? AND source_id = ? AND field_key = ? AND identifier_value = ?""",
+        (object_type_id, source_id, field_key, identifier_value),
+    ).fetchall()]
 
 
 def _source_can_create_object(source: SourceTemplate, object_template: ObjectTemplate) -> bool:

@@ -29,7 +29,7 @@
           </div>
           <p class="small text-secondary mb-0" data-object-match-empty {% if matches %}hidden{% endif %}>No match groups yet. For multiple source reports, connect their Strong identifiers before saving.</p>
         </section>
-        {% if property_options %}<details class="mt-4"><summary class="fw-semibold">Preview object properties ({{ property_options|selectattr('source_id', 'in', selected_sources)|list|length }})</summary><div class="template-card-summary mt-2">{% for prop in property_options if prop.source_id in selected_sources %}<div><span>{{ prop.source_label }}</span><strong>{{ prop.source_name }}</strong><small>{{ prop.data_type|upper }} · {{ prop.field_key }}</small></div>{% endfor %}</div></details>{% endif %}
+        {% include 'admin/_object_template_property_mapping_fields.html' %}
         <div class="alert alert-info mt-4 mb-0" role="note">Saving creates an auditable configuration version only. This phase does not create or update objects.</div>
       </div>
       <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" type="submit" {% if not object_sources %}disabled{% endif %}>Save object template</button></div>

@@ -1,0 +1,43 @@
+{% set selected_folder = form_values.get('folder_path', draft.watched_subfolder) if form_values else draft.watched_subfolder %}
+{% set submitted_create_path = form_values.get('create_folder_path', '') if form_values else '' %}
+{% set default_parent = submitted_create_path.rpartition('/')[0] if submitted_create_path else '' %}
+{% set selected_parent = form_values.get('folder_parent_path', default_parent) if form_values else default_parent %}
+{% set selected_child = submitted_create_path.rpartition('/')[2] if submitted_create_path else '' %}
+{% macro render_folder_nodes(nodes) %}
+  <ul class="treeview-children list-unstyled mb-0">
+    {% for node in nodes %}
+      <li class="treeview-item">
+        <details {% if selected_folder == node.path or selected_parent == node.path %}open{% endif %}>
+          <summary class="treeview-node"><span aria-hidden="true">📁</span><strong>{{ node.name }}</strong></summary>
+          <div class="treeview-node-actions">
+            <label class="form-check"><input class="form-check-input" type="radio" name="folder_path" value="{{ node.path }}" {% if selected_folder == node.path %}checked{% endif %}><span class="form-check-label">Use this folder</span></label>
+            <label class="form-check"><input class="form-check-input" type="radio" name="folder_parent_path" value="{{ node.path }}" data-folder-parent {% if selected_parent == node.path %}checked{% endif %}><span class="form-check-label">Create a subfolder here</span></label>
+          </div>
+          {% if node.children %}{{ render_folder_nodes(node.children) }}{% endif %}
+        </details>
+      </li>
+    {% endfor %}
+  </ul>
+{% endmacro %}
+<section class="template-settings-section" aria-labelledby="watch-folder-title" data-folder-picker>
+  <p class="eyebrow mb-1">Watcher location</p>
+  <h2 class="h5" id="watch-folder-title">Choose or create a folder under the SharePoint root <span class="text-danger">(required)</span></h2>
+  <p class="small text-secondary">Select a folder to use, or choose where to create a new subfolder. The tree only shows folders under the configured root.</p>
+  {% if not sharepoint_folder_tree and not draft.watched_subfolder %}<div class="alert alert-info py-2 small" role="status">The SharePoint root has no subfolders yet. Create the first one directly under the root below.</div>{% endif %}
+  <div class="treeview border rounded p-3 mb-3" aria-label="SharePoint folders">
+    <details open>
+      <summary class="treeview-node treeview-root"><span aria-hidden="true">📂</span><strong>SharePoint root</strong></summary>
+      <div class="treeview-node-actions ms-3">
+        <label class="form-check"><input class="form-check-input" type="radio" name="folder_parent_path" value="" data-folder-parent {% if not selected_parent %}checked{% endif %}><span class="form-check-label">Create directly under the root</span></label>
+      </div>
+      {% if sharepoint_folder_tree %}{{ render_folder_nodes(sharepoint_folder_tree) }}{% endif %}
+    </details>
+  </div>
+  <div class="row g-3 align-items-end">
+    <div class="col-lg-6"><label class="form-label" for="template-folder-child">New subfolder name</label><input class="form-control" id="template-folder-child" data-folder-child-name value="{{ selected_child }}" placeholder="e.g. incoming" autocomplete="off" pattern="[^/\\]+"><div class="form-text">Enter one folder name. It will be created inside the selected parent when you save.</div></div>
+    <div class="col-lg-6"><div class="small text-secondary" data-folder-create-preview aria-live="polite">Choose a parent and enter a name to create a folder.</div><input type="hidden" name="create_folder_path" value="{{ submitted_create_path }}" data-folder-create-path disabled>
+      <noscript><label class="form-label mt-2" for="template-folder-manual">Or enter a relative folder path</label><input class="form-control" id="template-folder-manual" name="create_folder_path" value="{{ submitted_create_path }}" placeholder="e.g. accessnow/incoming"></noscript>
+    </div>
+  </div>
+  {% if selected_folder %}<p class="small mt-2 mb-0"><strong>Current:</strong> {{ selected_folder }} <span class="text-secondary">under SharePoint root</span></p>{% endif %}
+</section>
