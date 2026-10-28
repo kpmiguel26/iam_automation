@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}{{ display_title or ('Record ' ~ object_record.object_id[:8]) }} · Objects{% endblock %}
+{% block content %}
+<main class="container-fluid px-4 px-lg-5 py-4 page-shell object-detail-page">
+  <a class="back-link" href="{{ url_for('objects.directory') }}">Objects</a>
+
+  <header class="object-detail-header object-profile-hero surface p-4 mt-3">
+    <div class="object-profile-copy">
+      <p class="eyebrow mb-1">OBJECT PROFILE</p>
+      <h1 class="h2 mb-2 text-break">{{ display_title or ('Record ' ~ object_record.object_id[:8]) }}</h1>
+      {% if display_context %}<p class="object-profile-context mb-3">{% for label, value in display_context %}<span><strong>{{ label }}:</strong> {{ value }}</span>{% endfor %}</p>{% endif %}
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        <span class="badge text-bg-light">{{ object_record.status|replace('_', ' ')|title }}</span>
+        <span class="small text-secondary">{{ sources|length }} source(s)</span>
+        <span class="small text-secondary">{{ object_record.evidence_count }} observation(s)</span>
+        <span class="small text-secondary">{{ properties|length }} values</span>
+      </div>
+      <details class="object-id-details mt-2"><summary>Record reference</summary><code class="small text-break">{{ object_record.object_id }}</code></details>
+    </div>
+    <nav class="object-profile-actions d-flex gap-2 flex-wrap" aria-label="Record actions">
+      <a class="btn btn-outline-primary" href="{{ url_for('objects.history', object_id=object_record.object_id) }}">View full history</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('parallel_engine.dashboard') }}">Ingestion activity</a>
+    </nav>
+  </header>
+
+  <div class="row g-3 mt-1 object-metric-grid" aria-label="Record summary">
+    <div class="col-12 col-md-4"><section class="surface object-metric-card h-100"><span class="object-metric-icon" aria-hidden="true">＋</span><div><span class="small text-secondary">First added</span><strong class="d-block">{{ object_record.created_at_utc|human_datetime or 'Not recorded' }}</strong></div></section></div>
+    <div class="col-12 col-md-4"><section class="surface object-metric-card h-100"><span class="object-metric-icon" aria-hidden="true">↻</span><div><span class="small text-secondary">Last source update</span><strong class="d-block">{{ object_record.last_updated|human_datetime or 'Not recorded' }}</strong></div></section></div>
+    <div class="col-12 col-md-4"><section class="surface object-metric-card h-100"><span class="object-metric-icon" aria-hidden="true">!</span><div><span class="small text-secondary">Findings to review</span><strong class="d-block">{{ findings|selectattr('status', 'equalto', 'OPEN')|list|length }}</strong></div></section></div>
+  </div>
+
+  <section class="surface p-4 mt-4" aria-labelledby="object-properties-title">
+    <div class="section-heading mb-3"><div><p class="eyebrow mb-1">SOURCE-BACKED PROFILE</p><h2 class="h5 mb-1" id="object-properties-title">Latest observed values</h2><p class="small text-secondary mb-0">Each value stays connected to the report and row where it was found.</p></div></div>
+    {% if properties %}
+      <div class="object-property-toolbar"><label for="object-property-filter">Find a value</label><input class="form-control" id="object-property-filter" type="search" placeholder="Search fields or values" autocomplete="off" aria-describedby="object-property-count"><span id="object-property-count" class="small text-secondary" aria-live="polite">{{ properties|length }} values</span></div>
+      <div id="object-property-grid">
+        {% for source in property_groups %}<section class="object-property-source-group" data-object-property-group>
+          <header class="object-property-source-heading"><span class="object-source-icon" aria-hidden="true">▤</span><div><h3>{{ source.source_label }}</h3><span>{{ source.properties|length }} value(s) · {{ source.fact_count }} observation(s)</span><small class="text-break">{{ source.latest_filename }} · Updated {{ source.last_seen|human_datetime or 'Not recorded' }}</small></div></header>
+          <div class="object-property-grid">
+            {% for item in source.properties %}{% set search_text = (item.property_key ~ ' ' ~ item.source_field_key ~ ' ' ~ item.source_label ~ ' ' ~ item.source_filename ~ ' ' ~ item.value)|lower %}<article class="object-property-card" data-object-property-card data-search-text="{{ search_text }}">
+              <div class="object-property-card-heading"><h4>{{ item.property_key|replace('_', ' ')|replace('.', ' ')|title }}</h4></div>
+              <p class="object-property-value text-break">{% if item.value is mapping or (item.value is iterable and item.value is not string) %}<code>{{ item.value|tojson }}</code>{% else %}{{ item.value if item.value is not none and item.value != '' else 'Not provided' }}{% endif %}</p>
+              <div class="object-property-evidence"><small>Row {{ item.row_number or '—' }} · {{ item.recorded_at_utc|human_datetime or 'Date unavailable' }}</small></div>
+              <details class="object-property-technical"><summary>Field and file details</summary><dl class="small mb-0 mt-2"><dt>Source field</dt><dd><code class="text-break">{{ item.source_field_key }}</code></dd><dt>Source file</dt><dd>{{ item.source_filename }}</dd><dt>File location</dt><dd class="text-break">{{ item.source_file or 'File unavailable' }}</dd></dl></details>
+            </article>{% endfor %}
+          </div>
+        </section>{% endfor %}
+        <p class="object-property-no-match text-secondary" id="object-property-no-match" hidden>No values match that search.</p>
+      </div>
+      <details class="object-table-details mt-3" data-object-table-details>
+        <summary>Table view and export options</summary>
+        <p class="small text-secondary mt-2 mb-3">Use the table to copy or download these values as CSV or Excel.</p>
+        <div class="table-responsive object-table-surface"><table class="table table-hover align-middle mb-0" data-export-name="{{ display_title or 'Object values' }} - Source values"><thead><tr><th scope="col">Property</th><th scope="col">Observed value</th><th scope="col">Source</th><th scope="col">Evidence</th><th scope="col">Observed</th></tr></thead><tbody>
+          {% for item in properties %}<tr><th scope="row">{{ item.property_key|replace('_', ' ')|title }}</th><td class="text-break object-value-cell">{% if item.value is mapping or (item.value is iterable and item.value is not string) %}<code>{{ item.value|tojson }}</code>{% else %}{{ item.value if item.value is not none and item.value != '' else 'Not provided' }}{% endif %}</td><td>{{ item.source_label }}</td><td><span class="small">{{ item.source_filename }} · Row {{ item.row_number or '—' }}</span></td><td>{{ item.recorded_at_utc|human_datetime or 'Not recorded' }}</td></tr>{% endfor %}
+        </tbody></table></div>
+      </details>
+    {% else %}<div class="object-empty-state py-4"><h3 class="h6">No source values yet</h3><p class="text-secondary mb-0">When a report is processed, its observed values will appear here with their evidence.</p></div>{% endif %}
+  </section>
+
+  <section class="surface p-4 mt-4" aria-labelledby="object-sources-title">
+    <div class="section-heading mb-3"><div><p class="eyebrow mb-1">SOURCE ACTIVITY</p><h2 class="h5 mb-1" id="object-sources-title">Reports and observations</h2><p class="small text-secondary mb-0">Follow each report to the file rows that contributed to this record.</p></div><a class="btn btn-sm btn-outline-primary" href="{{ url_for('objects.history', object_id=object_record.object_id) }}">View all observations</a></div>
+    {% if sources %}<div class="object-source-tree" aria-label="Source report activity">
+      {% for source in sources %}<details class="object-source-tree-node" {% if sources|length == 1 %}open{% endif %}>
+        <summary class="object-source-tree-summary">
+          <span class="object-source-icon" aria-hidden="true">▤</span>
+          <span class="object-source-tree-label"><strong>{{ source.source_label }}</strong><span>{{ source.fact_count }} observation(s) · {{ source.recent_evidence|length }} recent row(s)</span><small>{{ source.latest_filename }} · Updated {{ source.last_seen|human_datetime or 'Not recorded' }}</small></span>
+          <span class="object-tree-chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="object-source-tree-body">
+          {% if source.recent_evidence %}<div class="object-source-observations">
+            {% for item in source.recent_evidence %}<article class="object-source-observation">
+              <div class="object-observation-heading"><span class="object-observation-icon" aria-hidden="true">↳</span><div class="min-w-0"><strong class="d-block text-break">{{ item.source_filename }}</strong><span class="small text-secondary">Row {{ item.row_number or '—' }}{% if item.sheet_name %} · Sheet {{ item.sheet_name }}{% endif %} · {{ item.recorded_at_utc|human_datetime }}</span></div><span class="badge text-bg-light ms-auto">{{ item.evidence_status_label }}</span></div>
+              <details class="object-observation-details" hx-get="{{ url_for('objects.evidence', object_id=object_record.object_id, evidence_id=item.evidence_id) }}" hx-trigger="toggle once" hx-target="find .object-evidence-content" hx-swap="innerHTML">
+                <summary>Review captured values</summary>
+                <div class="object-evidence-content"><span class="small text-secondary" role="status" aria-live="polite">Loading source values…</span><noscript><a href="{{ url_for('objects.history', object_id=object_record.object_id) }}">Open record history</a></noscript></div>
+              </details>
+            </article>{% endfor %}
+          </div>{% else %}<p class="small text-secondary mb-0">No recent file observations are available for this report.</p>{% endif %}
+        </div>
+      </details>{% endfor %}
+    </div>{% else %}<div class="object-empty-state py-4"><h3 class="h6">No linked source reports</h3><p class="text-secondary mb-0">This record does not have source observations yet.</p></div>{% endif %}
+  </section>
+
+  <section class="surface p-4 mt-4 object-identifiers-panel" aria-labelledby="object-identifiers-title">
+    <details class="object-disclosure-card"><summary class="object-disclosure-summary"><span><strong id="object-identifiers-title">Matching identifiers</strong><small>See which identifiers helped connect source reports.</small></span><span class="badge text-bg-light">{{ identifiers|length }}</span></summary>
+      {% if identifiers %}<div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0"><thead><tr><th scope="col">Identifier</th><th scope="col">Value</th><th scope="col">Source</th><th scope="col">Recorded</th></tr></thead><tbody>{% for item in identifiers %}<tr><th scope="row">{{ item.field_key|replace('_', ' ')|title }}</th><td><code>{{ item.identifier_value }}</code></td><td>{{ item.source_id|replace('_', ' ')|title }}</td><td>{{ item.recorded_at_utc|human_datetime }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="small text-secondary mt-3 mb-0">No matching identifiers are recorded.</p>{% endif %}
+    </details>
+  </section>
+
+  <section class="surface p-4 mt-4" aria-labelledby="object-findings-title">
+    <div class="section-heading mb-3"><div><p class="eyebrow mb-1">ADVISORY REVIEW</p><h2 class="h5 mb-1" id="object-findings-title">Rule findings</h2><p class="small text-secondary mb-0">Findings are review evidence and never block ingestion or change source facts.</p></div><span class="badge text-bg-light">{{ findings|length }}</span></div>
+    {% if findings %}<div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th scope="col">Finding</th><th scope="col">Phase</th><th scope="col">Severity / status</th><th scope="col">Source / row</th><th scope="col">Detected</th></tr></thead><tbody>{% for item in findings %}<tr><th scope="row">{{ item.title }}<span class="d-block small text-secondary">{{ item.message }}</span></th><td>{{ item.phase|title }}</td><td><span class="badge text-bg-{{ 'danger' if item.severity in ('ERROR', 'CRITICAL') else 'warning' }}">{{ item.severity }}</span><span class="d-block small text-secondary">{{ item.status|title }}</span></td><td>{{ item.source_id|replace('_', ' ')|title }} · {{ item.row_number }}</td><td>{{ item.created_at_utc|human_datetime }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="object-no-findings"><span class="object-no-findings-icon" aria-hidden="true">✓</span><p class="mb-0">No findings need your attention for this record.</p></div>{% endif %}
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/object-workspace.js', v=static_version) }}" defer></script>{% endblock %}

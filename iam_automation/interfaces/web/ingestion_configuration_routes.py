@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import wraps
 from datetime import date
+from html import unescape
 from pathlib import Path
 from typing import Any, Callable
 import hashlib
@@ -51,6 +52,11 @@ from ...infrastructure.sqlite.orm import DimSourceModel, RuleCalendarVersionMode
 
 
 SESSION_KEY = "ingestion_configuration_draft"
+
+
+def _display_metadata(value: object) -> str:
+    """Decode source-provided HTML entities for display without changing stored keys."""
+    return unescape(str(value or "")).strip()
 
 
 def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_root: Path | None = None) -> Blueprint:
@@ -179,6 +185,9 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                     "source_can_create_object": identity["role"] == "IDENTITY_SEED" and identity["can_create_employee"],
                     "value": json.dumps([card["source_id"], identifier["field_key"]], ensure_ascii=False),
                 })
+        for option in property_options + identity_options:
+            option["display_source_name"] = _display_metadata(option.get("source_name")) or "Unnamed field"
+            option["display_field_key"] = _display_metadata(option.get("field_key")) or "Unnamed field"
         property_options.sort(key=lambda option: (option["source_label"].casefold(), option["source_name"].casefold()))
         identity_options.sort(key=lambda option: (option["source_label"].casefold(), option["source_name"].casefold()))
         object_sources.sort(key=lambda option: (option["ingestion_order"], option["source_label"].casefold()))
@@ -620,20 +629,13 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
     @admin_required
     def delete_template(source_id: str):
         try:
-            summary = templates.delete_template(
-                source_id, current_actor(),
-                confirm_full_object_data=request.form.get("confirm_full_object_data") == "on",
-            )
+            templates.delete_template(source_id, current_actor())
         except ValueError as exc:
             message = str(exc)
             if request.headers.get("HX-Request") == "true":
                 return render_template("admin/_ingestion_template_cards.html", **card_context(), error=message)
             return render_template("admin/ingestion_template_library.html", **card_context(), error=message), 409
-        message = (
-            f"Report template removed. Purged {summary['import_batches']} engine batch(es), "
-            f"{summary['evidence_rows']} imported row(s), and {summary['objects_removed']} object(s). "
-            "Template version history and purge audit were retained."
-        )
+        message = "The template was removed from the active library. Imported evidence and version history were retained."
         if request.headers.get("HX-Request") == "true":
             return render_template(
                 "admin/_ingestion_template_cards.html",
@@ -651,7 +653,7 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             return None
         return str(source_id), str(field_key)
 
-    def object_template_context(form_values=None, *, error: str | None = None):
+    def object_template_context(form_values=None, *, error: str | None = None, partial: bool = False):
         context = card_context()
         saved = context["object_template"]
         prior_definition = (saved or {}).get("definition", {})
@@ -697,6 +699,10 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 })
                 property_refs.add(key)
 
+        for option in property_options + identity_options:
+            option["display_source_name"] = _display_metadata(option.get("source_name")) or "Unnamed field"
+            option["display_field_key"] = _display_metadata(option.get("field_key")) or "Unnamed field"
+
         if form_values is not None:
             posted_source_ids = form_values.getlist("property_source_ids")
             posted_field_keys = form_values.getlist("property_field_keys")
@@ -718,6 +724,10 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             ]
             selected_sources = set(form_values.getlist("object_sources"))
             selected_identifiers = {ref for value in form_values.getlist("object_identifiers") if (ref := parse_object_ref(value))}
+            title_property_key = str(form_values.get("title_property_key", "")).strip()
+            context_property_keys = list(dict.fromkeys(
+                str(value).strip() for value in form_values.getlist("context_property_keys") if str(value).strip()
+            ))
             object_name = str(form_values.get("object_name", ""))
             creation_authorized = form_values.get("allow_object_creation") == "on"
             indices = form_values.getlist("object_match_indices")
@@ -745,6 +755,9 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                 for item in prior_definition.get("identifiers", ())
                 if item.get("source_id") and item.get("field_key")
             }
+            presentation = prior_definition.get("presentation", {})
+            title_property_key = str(presentation.get("title_property_key", ""))
+            context_property_keys = list(presentation.get("context_property_keys", ()))
             object_name = str(prior_definition.get("object_name", ""))
             creation_authorized = bool(prior_definition.get("allow_object_creation", False))
             matches = []
@@ -768,11 +781,40 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
         sources.sort(key=lambda item: (int(item.get("ingestion_order", 2147483647)), str(item.get("source_label", item.get("source_id", ""))).casefold()))
         identity_options.sort(key=lambda item: (str(item.get("source_label", "")).casefold(), str(item.get("source_name", "")).casefold()))
         property_options.sort(key=lambda item: (str(item.get("source_label", "")).casefold(), str(item.get("source_name", "")).casefold()))
+        display_identity_refs = {
+            (item["source_id"], item["field_key"])
+            for item in identity_options
+            if item.get("strength") in {"STRONG", "SUPPORTING"}
+            and (item["source_id"], item["field_key"]) in selected_identifiers
+        }
+        display_options_by_key = {}
+        for prop in property_options:
+            ref = (prop["source_id"], prop["field_key"])
+            key = str(prop.get("canonical_property_key") or prop["field_key"])
+            if ref not in display_identity_refs or prop["source_id"] not in selected_sources:
+                continue
+            option = display_options_by_key.setdefault(key, {"key": key, "sources": []})
+            source_name = str(prop.get("source_label") or prop["source_id"])
+            if source_name not in option["sources"]:
+                option["sources"].append(source_name)
+        display_options = [
+            {**item, "display_key": _display_metadata(item["key"]) or "Unnamed field",
+             "sources": [_display_metadata(source) or source for source in item["sources"]],
+             "source_summary": ", ".join(_display_metadata(source) or source for source in item["sources"])}
+            for item in sorted(display_options_by_key.values(), key=lambda item: item["key"].casefold())
+        ]
+        display_option_keys = {item["key"] for item in display_options}
+        if title_property_key not in display_option_keys:
+            title_property_key = ""
+        context_property_keys = [key for key in context_property_keys if key in display_option_keys and key != title_property_key]
         return render_template(
-            "admin/ingestion_object_template_settings.html",
+            "admin/_object_template_presentation_fields.html" if partial else "admin/ingestion_object_template_settings.html",
             object_sources=sources,
             identity_options=identity_options,
             property_options=property_options,
+            display_options=display_options,
+            title_property_key=title_property_key,
+            context_property_keys=context_property_keys,
             selected_sources=selected_sources,
             selected_identifiers=selected_identifiers,
             next_match_index=max((int(item["index"]) for item in matches), default=-1) + 1,
@@ -791,6 +833,11 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
     @admin_required
     def object_template_settings_page():
         return object_template_context()
+
+    @blueprint.get("/library/template-object/presentation-fields")
+    @admin_required
+    def object_template_presentation_fields():
+        return object_template_context(request.args, partial=True)
 
     @blueprint.get("/library/template-object/match-row")
     @admin_required
@@ -1000,6 +1047,22 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
                             **item,
                             "canonical_property_key": str(item.get("canonical_property_key") or key[1]),
                         })
+        display_property_keys = {
+            str(prop.get("canonical_property_key") or prop.get("field_key", ""))
+            for prop in properties
+            if (str(prop.get("source_id", "")), str(prop.get("field_key", ""))) in selected_identity_map
+            and selected_identity_map[(str(prop.get("source_id", "")), str(prop.get("field_key", "")))].get("strength") in {"STRONG", "SUPPORTING"}
+        }
+        title_property_key = str(request.form.get("title_property_key", "")).strip()
+        context_property_keys = list(dict.fromkeys(
+            str(value).strip() for value in request.form.getlist("context_property_keys") if str(value).strip()
+        ))
+        if title_property_key and title_property_key not in display_property_keys:
+            return object_template_error(request.form, "Choose a primary display value from the selected Strong or Supporting identifiers.")
+        if any(key not in display_property_keys for key in context_property_keys):
+            return object_template_error(request.form, "Choose supporting display values from the selected Strong or Supporting identifiers.")
+        if title_property_key in context_property_keys:
+            context_property_keys.remove(title_property_key)
         # Template Library owns the live ingestion sequence. The Object
         # Template stores membership and source-version references, not a
         # second copy of order that could become stale after Library reorders.
@@ -1012,6 +1075,10 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             "allow_object_creation": allow_creation,
             "source_templates": source_templates,
             "properties": properties,
+            "presentation": {
+                "title_property_key": title_property_key,
+                "context_property_keys": context_property_keys,
+            },
             "identifiers": selected_identifiers,
             "matches": matches,
         }

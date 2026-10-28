@@ -1,9 +1,10 @@
-"""Operational gates for the in-progress parallel ingestion runtime."""
+"""Operational gates for the parallel ingestion runtime."""
 
-# Keep file writes disabled until the object model/lifecycle, rule parity,
-# finding review, and import-path acceptance checks have passed.
-FILE_PROCESSING_ENABLED = False
+# File processing is enabled for this app by explicit user direction. The route
+# still requires an approver role and a valid CSRF token for every file.
+FILE_PROCESSING_ENABLED = True
+
+
 PROCESSING_PAUSED_MESSAGE = (
-    "File processing is paused while object lifecycle, rule parity, finding review, "
-    "and import-path acceptance checks are being completed. Discovery remains active."
+    "File processing is paused. Discovery remains active."
 )

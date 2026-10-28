@@ -4,6 +4,13 @@
 **Readiness:** Not ready for production ingestion
 **Reviewed runtime:** Parallel Ingestion Engine v2 on the local `runtime.sqlite`
 
+**Current deployment update (October 28, 2026):** Per explicit user direction,
+the per-file processing gate is enabled in this deployment so an authorized
+administrator can trigger v2 imports from the UI. This does not mean the
+production acceptance criteria below have passed. Every file still requires an
+explicit administrator action; imported rows stay in engine-v2 tables and do
+not update legacy Employee records.
+
 ## Progress recorded October 27, 2026
 
 The code defines additive schema version 7, including stable object-type
@@ -26,8 +33,9 @@ The dashboard also exposes the latest 50 quarantined rows with their source,
 row number, validation diagnostics, raw values, and normalized values. This is
 read-only triage; correction, rejection, and idempotent replay remain open.
 Existing evidence JSON matching remains as a compatibility
-fallback for prior rows. The authorization gate remains disabled, and no
-migration was applied to the local runtime in this code change.
+fallback for prior rows. The authorization gate was enabled on October 28 for
+manual per-file processing in this deployment. No schema migration was applied
+to the local runtime in that code change.
 
 ## Readiness decision
 
@@ -37,8 +45,9 @@ does not populate the application's physical star schema or perform
 dependency-safe template changes, and it lacks complete quarantine/replay and
 finding review workflows. Its advisory rule adapter reads current configured
 record rules and stores matches in the v2 evidence model; it does not invoke
-legacy batch execution. The authorization route remains gated off. Folder
-discovery and file recognition remain active.
+legacy batch execution. The current deployment allows manual per-file
+processing after administrator authorization. Folder discovery and file
+recognition remain active.
 
 ## Implemented first step: persist file discovery and analysis
 
@@ -210,10 +219,11 @@ tables were not changed by the five v2 batches.
 
 ## Implementation plan
 
-### Phase 0 — Hold processing and classify prototype data
+### Phase 0 — Hold broad cutover and classify prototype data
 
-- Keep the processing feature gate off. Continue read-only discovery and
-  recognition only.
+- Keep source-by-source cutover on hold until acceptance passes. The current
+  deployment permits explicit per-file v2 testing; automatic or broad
+  processing remains out of scope.
 - Keep the 36 prototype object rows and associated evidence isolated and
   clearly labeled. Do not merge them into Employees or legacy facts.
 - Decide separately whether prototype rows should be retained as test evidence
@@ -316,8 +326,10 @@ tables were not changed by the five v2 batches.
 - Run end-to-end tests on an isolated copy of the runtime database and a
   representative folder. Inspect every generated object, property, identifier,
   fact, link, rule result, and quarantine row.
-- Enable file processing only after acceptance checks pass and the operational
-  owner approves the reviewed result. Then begin source-by-source cutover.
+- Enable production file processing only after acceptance checks pass and the
+  operational owner approves the reviewed result. Then begin source-by-source
+  cutover. The current deployment's manual testing authorization is not a
+  production cutover approval.
 
 ## Acceptance criteria for enabling import
 
@@ -342,4 +354,5 @@ tables were not changed by the five v2 batches.
 - Invalid, ambiguous, and database-failed rows have distinct diagnostics and
   safe quarantine/replay behavior.
 - The import transaction is idempotent and passes foreign-key and orphan
-  checks; processing remains disabled until the full acceptance suite passes.
+  checks; production processing remains disabled until the full acceptance
+  suite passes.

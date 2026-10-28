@@ -59,6 +59,7 @@ from .interfaces.web.bug_report_routes import create_bug_report_blueprint
 from .interfaces.web.employee_routes import create_employee_blueprint
 from .interfaces.web.report_routes import create_report_blueprint
 from .interfaces.web.parallel_engine_app import create_parallel_engine_blueprint
+from .interfaces.web.object_routes import create_object_blueprint
 from .startup import PreflightResult
 
 try:
@@ -285,6 +286,7 @@ def create_app(
         static_root / "js" / "data-tables.js",
         static_root / "js" / "ingestion-identity-guidance.js",
         static_root / "js" / "ingestion-template-library.js",
+        static_root / "js" / "object-workspace.js",
     )
 
     def current_static_version() -> str:
@@ -314,6 +316,7 @@ def create_app(
         )
         app.register_blueprint(engine_blueprint)
         app.extensions.update(engine_blueprint.parallel_engine_extensions)
+        app.register_blueprint(create_object_blueprint(runtime_path))
         app.register_blueprint(create_master_blueprint(runtime_path, preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_user_blueprint(runtime_path, audit_path=preflight_result.settings.audit_folder_path))
         app.register_blueprint(create_identity_blueprint(runtime_path, discovery_file=discovery_path(preflight_result.settings.sharepoint_root_path), traceability_directory=traceability_path(preflight_result.settings.sharepoint_root_path), audit_path=preflight_result.settings.audit_folder_path))

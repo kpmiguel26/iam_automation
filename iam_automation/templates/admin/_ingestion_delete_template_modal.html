@@ -1,41 +1,35 @@
 <div class="modal fade" id="deleteReportTemplateModal" tabindex="-1" aria-labelledby="deleteReportTemplateModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <form class="modal-content" method="post" action="{{ url_for('ingestion_configuration.delete_template', source_id=item.source_id) }}" data-template-config-save hx-post="{{ url_for('ingestion_configuration.delete_template', source_id=item.source_id) }}" hx-target="#template-cards" hx-swap="outerHTML" hx-indicator="#delete-template-saving">
-      <div class="modal-header"><div><p class="eyebrow mb-1">Report template · Removal</p><h2 class="modal-title h4" id="deleteReportTemplateModalTitle">Review deletion impact</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-header"><div><p class="eyebrow mb-1">Source templates · Removal</p><h2 class="modal-title h4" id="deleteReportTemplateModalTitle">Review before removing this template</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
       <div class="modal-body">
-        <p class="mb-3">Removing <strong>{{ item.definition.display_name or item.source_id }}</strong> removes it from the active library and purges its imported data owned by the Parallel Engine.</p>
+        <p class="mb-3">You are removing <strong>{{ item.definition.display_name or item.source_id }}</strong> from the active library. Imported evidence and history will be retained.</p>
         <section class="border rounded p-3 mb-3" aria-labelledby="template-delete-impact-heading">
-          <h3 class="h6" id="template-delete-impact-heading">Current impact in this database</h3>
+          <h3 class="h6" id="template-delete-impact-heading">Associated data</h3>
           <ul class="mb-0">
-            <li>{{ impact.import_batches }} engine import batch(es)</li>
-            <li>{{ impact.evidence_rows }} imported row(s)</li>
+            <li>{{ impact.import_batches }} import batch(es)</li>
+            <li>{{ impact.evidence_rows }} evidence row(s)</li>
             <li>{{ impact.object_evidence_links }} object-to-evidence link(s)</li>
             <li>{{ impact.objects_with_source_evidence }} object(s) with evidence from this report</li>
-            <li>Up to {{ impact.objects_to_remove_if_orphaned }} object(s) would have no other report evidence</li>
+            <li>{{ impact.objects_to_remove_if_orphaned }} object(s) with no evidence from other reports</li>
           </ul>
         </section>
         {% if impact.linked_object_templates %}
           <section class="border rounded p-3 mb-3" aria-labelledby="template-delete-object-heading">
-            <h3 class="h6" id="template-delete-object-heading">Object Template dependencies</h3>
+            <h3 class="h6" id="template-delete-object-heading">Object Templates that depend on this report</h3>
             {% for object in impact.linked_object_templates %}
-              <p class="mb-1"><strong>{{ object.object_name }}</strong> · v{{ object.version_number }} · {{ object.source_count }} report template(s)</p>
-              <p class="small text-secondary">References: {{ object.reference_types|join(', ') }}{% if object.sole_source %} · this is its only report{% endif %}</p>
+              <p class="mb-1"><strong>{{ object.object_name }}</strong> · version {{ object.version_number }} · {{ object.source_count }} report(s)</p>
+              <p class="small text-secondary">Used as: {{ object.reference_types|join(', ') }}{% if object.sole_source %} · only source report{% endif %}</p>
             {% endfor %}
           </section>
         {% endif %}
         {% if impact.requires_object_detach %}
-          <div class="alert alert-warning mb-0" role="alert"><strong>Deletion blocked.</strong> First edit and save each listed Object Template after unlinking this report and removing its properties, Strong Identifiers and Strong links. The deletion will be available after those dependencies are validated.</div>
-        {% elif impact.sole_source_objects %}
-          <div class="alert alert-danger" role="alert"><strong>This report is the only source for the listed object.</strong> Confirming removes all engine batches and imported rows for every version of this object type, its object-to-evidence links, object instances and runtime approvals. The versioned Object Template definition remains as configuration history and must be reconfigured and approved before it can run again.</div>
-          <label class="form-check d-flex gap-2 align-items-start">
-            <input class="form-check-input mt-1" type="checkbox" name="confirm_full_object_data" required>
-            <span>I understand this will delete all imported data and object instances for the listed Object Template.</span>
-          </label>
+          <div class="alert alert-warning mb-0" role="alert"><strong>Remove these dependencies first.</strong> Edit each listed Object Template: add another source if needed, unlink this report, and remove its properties, identifiers, and Strong links. Then save and approve the new version. Removal will be available when no current or approved version depends on this report.</div>
         {% else %}
-          <p class="small text-secondary mb-0">Object instances with evidence from another report will remain. Objects left without any evidence will be removed. File observation and analysis history, legacy import tables and source-template version history are retained.</p>
+          <div class="alert alert-info mb-0" role="status">The template will leave the active library. Existing batches, evidence, objects, and historical versions will be retained.</div>
         {% endif %}
       </div>
-      <div class="modal-footer"><span id="delete-template-saving" class="htmx-indicator small text-secondary" role="status">Deleting related engine data…</span><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger" type="submit" {% if impact.requires_object_detach %}disabled{% endif %}>Remove template and related data</button></div>
+      <div class="modal-footer"><span id="delete-template-saving" class="htmx-indicator small text-secondary" role="status">Removing template…</span><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger" type="submit" {% if impact.requires_object_detach %}disabled{% endif %}>Remove template</button></div>
     </form>
   </div>
 </div>

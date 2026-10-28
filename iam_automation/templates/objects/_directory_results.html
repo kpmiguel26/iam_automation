@@ -1,0 +1,34 @@
+{% if oob_counts %}<strong id="object-matching-count" hx-swap-oob="true">{{ matching_count }}</strong><span id="object-search-status" hx-swap-oob="true">{% if has_query %}{{ matching_count }} result(s){% else %}Choose a filter or load records to begin.{% endif %}</span>{% endif %}
+{% if has_query %}
+<div class="d-flex align-items-center justify-content-between gap-3 flex-wrap mb-2 object-results-summary">
+  <p class="small text-secondary mb-0" id="object-result-count">{{ matching_count }} record(s){% if not filters.all %} · page {{ page }} of {{ page_count }}{% else %} · all matches shown{% endif %}</p>
+</div>
+<section class="surface object-table-surface" aria-label="Search results">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" data-datatable="{{ 'on' if filters.all and has_query else 'off' }}" data-export-name="Records">
+      <thead><tr><th scope="col">Record</th><th scope="col">Properties</th><th scope="col">Sources</th><th scope="col">Evidence rows</th><th scope="col">Review</th><th scope="col">Status</th><th scope="col">Last updated</th></tr></thead>
+      <tbody>
+      {% for item in objects %}<tr>
+        <th scope="row"><a class="fw-semibold text-decoration-none text-break" href="{{ url_for('objects.detail', object_id=item.object_id) }}">{{ item.display_title or ('Record ' ~ item.object_id[:8]) }}</a>{% if item.display_context %}<span class="d-block small text-secondary text-break">{% for label, value in item.display_context %}{{ label }}: {{ value }}{% if not loop.last %} · {% endif %}{% endfor %}</span>{% endif %}<details class="object-id-details"><summary class="small text-secondary">Record reference</summary><code class="small text-break">{{ item.object_id }}</code></details></th>
+        <td>{{ item.property_count }}</td><td>{{ item.source_count }}</td><td>{{ item.evidence_count }}</td>
+        <td>{% if item.open_findings %}<span class="badge text-bg-warning">{{ item.open_findings }} to review</span>{% else %}<span class="small text-success">No open findings</span>{% endif %}</td>
+        <td><span class="badge text-bg-light">{{ item.status|replace('_', ' ')|title }}</span></td>
+        <td data-order="{{ item.last_updated or '' }}">{{ item.last_updated|human_datetime or 'Not available' }}</td>
+      </tr>{% else %}<tr><td colspan="7"><div class="text-center py-5"><strong>No records match those filters.</strong><p class="small text-secondary mb-0 mt-2">Try a different name, source, property, or status.</p></div></td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% if page_count > 1 and not filters.all %}
+<nav class="d-flex justify-content-between align-items-center mt-3" aria-label="Search result pages">
+  <span class="small text-secondary">{{ matching_count }} records</span>
+  <div class="btn-group" role="group" aria-label="Page navigation">
+    {% if page > 1 %}<a class="btn btn-outline-secondary" href="{{ url_for('objects.directory', q=filters.q, type=filters.type, source=filters.source, status=filters.status, property=filters.property, value=filters.value, review=filters.review, updated=filters.updated, sort=filters.sort, page=page-1) }}" hx-get="{{ url_for('objects.directory', q=filters.q, type=filters.type, source=filters.source, status=filters.status, property=filters.property, value=filters.value, review=filters.review, updated=filters.updated, sort=filters.sort, page=page-1) }}" hx-target="#object-results" hx-swap="innerHTML" hx-push-url="true">Previous</a>{% endif %}
+    <span class="btn btn-light" aria-current="page">{{ page }} / {{ page_count }}</span>
+    {% if page < page_count %}<a class="btn btn-outline-secondary" href="{{ url_for('objects.directory', q=filters.q, type=filters.type, source=filters.source, status=filters.status, property=filters.property, value=filters.value, review=filters.review, updated=filters.updated, sort=filters.sort, page=page+1) }}" hx-get="{{ url_for('objects.directory', q=filters.q, type=filters.type, source=filters.source, status=filters.status, property=filters.property, value=filters.value, review=filters.review, updated=filters.updated, sort=filters.sort, page=page+1) }}" hx-target="#object-results" hx-swap="innerHTML" hx-push-url="true">Next</a>{% endif %}
+  </div>
+</nav>
+{% endif %}
+{% else %}
+<section class="surface object-empty-state" aria-label="Search guidance"><div class="object-empty-icon" aria-hidden="true">⌕</div><h2 class="h5">Start with a search</h2><p class="text-secondary mb-3">Choose a source or enter a value to find records. We’ll show the matching evidence without loading the full catalog.</p><span class="badge text-bg-light">{{ total_objects }} records available</span></section>
+{% endif %}

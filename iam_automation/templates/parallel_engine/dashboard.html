@@ -9,7 +9,7 @@
 <header class="topbar"><div><p class="eyebrow">IAM Automation · Runtime v2</p><h1>Parallel Ingestion Engine</h1></div><div class="topbar-user">{{ username }} <a href="/legacy/logout">Sign out</a></div></header>
 <main>
   {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<section class="notice" role="status">{{ message }}</section>{% endfor %}{% endwith %}
-  <section class="notice" role="status">Discovery is active. Processing remains paused while object lifecycle, mappings for existing templates, composite/cross-source rules, finding disposition, and import review are completed.</section>
+  <section class="notice" role="status">{% if processing_enabled %}Files are processed only after an administrator authorizes each one. Results are written to v2 evidence and object tables; legacy Employee records are not changed.{% else %}Discovery is active, but processing is paused.{% endif %}</section>
   <section class="summary-grid" aria-label="Engine status">
     <article class="card"><h2>Watcher</h2><p class="status">{{ health.status if health else 'WAITING' }}</p><p class="muted">Last cycle: {{ health.last_cycle_at_utc if health and health.last_cycle_at_utc else 'Not started' }}</p>{% if health and health.last_error %}<p class="error">{{ health.last_error }}</p>{% endif %}</article>
     <article class="card"><h2>Approved object</h2><p>{{ object_name or 'No active Object Template' }}</p><p class="muted">{{ approved_object_templates }} approved version(s)</p></article>

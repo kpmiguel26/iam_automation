@@ -79,8 +79,8 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
                   class="nav-symbol">▤</span>My requests</a></li>
             <li><a class="dropdown-item" href="{{ url_for('testing_help') }}"><span class="nav-symbol">?</span>Testing
                 &amp; Help Center</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('employees_help') }}"><span
-                  class="nav-symbol">◎</span>Employees guide</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('objects.directory') }}"><span
+                  class="nav-symbol">◎</span>Object workspace</a></li>
             <li><a class="dropdown-item" href="{{ url_for('business_rules_help') }}"><span
                   class="nav-symbol">◇</span>Business Rules guide</a></li>
             <li><a class="dropdown-item" href="{{ url_for('bug_reports.index') }}"><span
@@ -90,8 +90,8 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
         <div class="dropdown nav-menu-group"><button class="btn nav-menu-toggle dropdown-toggle"
             data-bs-toggle="dropdown" aria-expanded="false"><span class="nav-group-label">Operations</span></button>
           <ul class="dropdown-menu shadow-sm">
-            <li><a class="dropdown-item" href="{{ url_for('employees.employee_directory') }}"><span
-                  class="nav-symbol">◎</span>Employees</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('objects.directory') }}"><span
+                  class="nav-symbol">◎</span>Objects</a></li>
             <li><a class="dropdown-item" href="{{ url_for('reports.reports_home') }}"><span
                   class="nav-symbol">▥</span>Reports</a></li>
             <li>{% set can_review = session.get('iam_roles') and ((session.get('iam_roles')|reject('equalto',
@@ -120,8 +120,8 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
                   class="nav-symbol">▣</span>New hire readiness</a></li>
             <li><a class="dropdown-item" href="{{ url_for('reports.report_studio') }}"><span
                   class="nav-symbol">✦</span>Report Studio</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('employees.employee_directory', all='1') }}"><span
-                  class="nav-symbol">◎</span>Employee directory</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('objects.directory', all='1') }}"><span
+                  class="nav-symbol">◎</span>Objects</a></li>
           </ul>
         </div>
         {% if session.get('is_admin') %}<div class="dropdown nav-menu-group"><button
@@ -357,6 +357,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
       });
     });
   </script>
+  <script src="{{ url_for('static', filename='js/parallel-engine-progress.js') }}" defer></script>
 </body>
 
 </html>

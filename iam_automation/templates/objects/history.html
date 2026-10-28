@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Record history · {{ object_record.object_id[:8] }}{% endblock %}
+{% block content %}
+<main class="container-fluid px-4 px-lg-5 py-4 page-shell object-history-page">
+  <a class="back-link" href="{{ url_for('objects.detail', object_id=object_record.object_id) }}">Back to record</a>
+  <header class="page-heading mt-3"><div><p class="eyebrow">RECORD HISTORY</p><h1 class="h3">Record {{ object_record.object_id[:8] }}</h1><p class="text-secondary mb-0">Source observations for this record, newest first.</p></div><details class="object-id-details"><summary>Record reference</summary><code class="small text-break">{{ object_record.object_id }}</code></details></header>
+  <section class="surface p-4 mt-4 object-search-panel">
+    <form method="get" action="{{ url_for('objects.history', object_id=object_record.object_id) }}" class="row g-3 align-items-end" aria-label="Filter record history"
+          hx-get="{{ url_for('objects.history', object_id=object_record.object_id) }}" hx-target="#history-results" hx-swap="innerHTML" hx-push-url="true" hx-indicator="#history-search-indicator" hx-sync="this:replace">
+      <div class="col-12 col-md-5"><label class="form-label" for="history-search">Search evidence</label><input class="form-control" id="history-search" name="q" value="{{ search }}" placeholder="A value, source file, or review note"></div>
+      <div class="col-12 col-md-4"><label class="form-label" for="history-source">Source</label><select class="form-select" id="history-source" name="source" hx-get="{{ url_for('objects.history', object_id=object_record.object_id) }}" hx-trigger="change" hx-include="closest form" hx-target="#history-results" hx-swap="innerHTML" hx-push-url="true" hx-indicator="#history-search-indicator"><option value="ALL">All sources</option>{% for source in sources %}<option value="{{ source }}" {% if source_filter == source %}selected{% endif %}>{{ source|replace('_', ' ')|title }}</option>{% endfor %}</select></div>
+      <div class="col-12 col-md-3 d-flex gap-2"><button class="btn btn-primary" type="submit"><span class="htmx-indicator spinner-border spinner-border-sm me-1" id="history-search-indicator" aria-hidden="true"></span>Search history</button><a class="btn btn-light" href="{{ url_for('objects.history', object_id=object_record.object_id) }}">Clear</a></div>
+    </form>
+  </section>
+  <div id="history-results-error" class="alert alert-danger d-none mt-3" role="alert"></div>
+  <div id="history-results" class="mt-4" aria-live="polite" aria-busy="false">{% include "objects/_history_results.html" %}</div>
+</main>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/object-workspace.js', v=static_version) }}" defer></script>{% endblock %}

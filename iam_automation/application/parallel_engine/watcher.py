@@ -7,6 +7,7 @@ import json
 import threading
 import time
 import uuid
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,6 +34,87 @@ class ParallelFileWatcher:
         self._activity = "IDLE"
         self._files_checked_this_cycle = 0
         self._processing_file = ""
+        self._progress_lock = threading.Lock()
+        self._processing_condition = threading.Condition(self._progress_lock)
+        self._processing_progress: dict[str, dict[str, object]] = {}
+        self._processing_queue: deque[tuple[str, str]] = deque()
+        self._active_processing_observation: str | None = None
+        self._processing_worker: threading.Thread | None = None
+
+    def processing_progress(self, observation_id: str) -> dict[str, object] | None:
+        with self._progress_lock:
+            progress = self._processing_progress.get(observation_id)
+            return dict(progress) if progress else None
+
+    def _update_processing_progress(self, observation_id: str, **updates: object) -> None:
+        with self._progress_lock:
+            current = self._processing_progress.setdefault(observation_id, {})
+            if updates.get("stage") == "checking":
+                updates = {**updates, "status": "RUNNING", "queue_position": 0}
+            current.update(updates)
+
+    def start_authorized_processing(self, observation_id: str, actor: str) -> bool:
+        """Add an authorized import to the serial background queue."""
+        with self._processing_condition:
+            current = self._processing_progress.get(observation_id, {})
+            if current.get("status") in {"QUEUED", "RUNNING"}:
+                return False
+            self._processing_queue.append((observation_id, actor))
+            queue_position = len(self._processing_queue) + (1 if self._active_processing_observation else 0)
+            self._processing_progress[observation_id] = {
+                "status": "QUEUED", "stage": "queued", "message": "Queued for processing",
+                "queue_position": queue_position,
+                "processed": 0, "total": 0, "created": 0, "linked": 0, "quarantined": 0,
+            }
+            if not self._processing_worker or not self._processing_worker.is_alive():
+                self._processing_worker = threading.Thread(
+                    target=self._run_processing_queue,
+                    name="iam-engine-import-queue", daemon=True,
+                )
+                self._processing_worker.start()
+            self._processing_condition.notify()
+        return True
+
+    def _run_processing_queue(self) -> None:
+        """Process accepted imports one at a time, in the order they were queued."""
+        while True:
+            with self._processing_condition:
+                while not self._processing_queue:
+                    self._processing_condition.wait()
+                observation_id, actor = self._processing_queue.popleft()
+                self._active_processing_observation = observation_id
+                progress = self._processing_progress.setdefault(observation_id, {})
+                progress.update(queue_position=1)
+                self._refresh_queue_positions_locked()
+            try:
+                result = self.authorize_and_process(
+                    observation_id, actor,
+                    progress_callback=lambda values: self._update_processing_progress(observation_id, **values),
+                    wait_for_lock=True,
+                )
+            except Exception as exc:
+                self._update_processing_progress(
+                    observation_id, status="FAILED", stage="failed",
+                    message=f"Import failed: {type(exc).__name__}: {exc}",
+                )
+            else:
+                self._update_processing_progress(
+                    observation_id, status="COMPLETED", stage="completed",
+                    message="Import complete", processed=result.total_rows, total=result.total_rows,
+                    created=result.objects_created, linked=result.objects_linked,
+                    quarantined=result.quarantined_rows,
+                )
+            finally:
+                with self._processing_condition:
+                    self._active_processing_observation = None
+                    self._refresh_queue_positions_locked()
+
+    def _refresh_queue_positions_locked(self) -> None:
+        """Refresh visible FIFO positions; caller must hold _processing_condition."""
+        offset = 1 if self._active_processing_observation else 0
+        for position, (observation_id, _actor) in enumerate(self._processing_queue, start=1 + offset):
+            progress = self._processing_progress.setdefault(observation_id, {})
+            progress["queue_position"] = position
 
     def runtime_status(self) -> dict[str, object]:
         """Return live watcher activity for status panels; persisted health remains authoritative for outcomes."""
@@ -147,12 +229,17 @@ class ParallelFileWatcher:
             self._set_runtime_activity("IDLE")
             self._cycle_lock.release()
 
-    def authorize_and_process(self, observation_id: str, actor: str):
+    def authorize_and_process(
+        self, observation_id: str, actor: str, *, progress_callback=None, wait_for_lock: bool = False,
+    ):
         """Process one unchanged, recognized file after an approver's explicit action."""
-        if not self._cycle_lock.acquire(timeout=30):
+        acquired = self._cycle_lock.acquire() if wait_for_lock else self._cycle_lock.acquire(timeout=30)
+        if not acquired:
             raise ValueError("The watcher is busy scanning files. Please try again shortly.")
         self._set_runtime_activity("PROCESSING")
         try:
+            if progress_callback:
+                progress_callback({"stage": "checking", "message": "Checking authorization and file signature"})
             connection = connect(self.database_path)
             try:
                 row = connection.execute(
@@ -165,6 +252,8 @@ class ParallelFileWatcher:
             if row is None or row["status"] != "PENDING_AUTHORIZATION":
                 raise ValueError("This file is no longer awaiting authorization. Refresh the dashboard and review its current status.")
             self._set_runtime_activity("PROCESSING", processing_file=Path(str(row["path"])).name)
+            if progress_callback:
+                progress_callback({"stage": "recognition", "message": "Confirming source template"})
 
             configuration = self.engine.configuration()
             if configuration is None:
@@ -204,7 +293,10 @@ class ParallelFileWatcher:
                 authorized_by=actor, authorized_at_utc=authorized_at_utc,
             )
             try:
-                result = self.engine.ingest_file(path, content, configuration, authorized_by=actor)
+                result = self.engine.ingest_file(
+                    path, content, configuration, authorized_by=actor,
+                    progress_callback=progress_callback,
+                )
             except Exception as exc:
                 self._record(
                     source, path, checksum, "RETRY", f"{type(exc).__name__}: {exc}",
@@ -215,6 +307,8 @@ class ParallelFileWatcher:
                 source, path, checksum, "PROCESSED", result.message,
                 authorized_by=actor, authorized_at_utc=authorized_at_utc,
             )
+            if progress_callback:
+                progress_callback({"stage": "completed", "message": "Import complete"})
             return result
         finally:
             self._set_runtime_activity("IDLE")

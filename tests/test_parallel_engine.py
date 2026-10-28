@@ -290,7 +290,7 @@ class ParallelEngineTests(unittest.TestCase):
         self.assertTrue(authorizer[1])
         self.assertEqual(authorizer[2], "PROCESSED")
 
-    def test_processing_authorization_route_requires_approver_csrf_and_disabled_gate(self):
+    def test_processing_authorization_route_requires_approver_csrf_and_processes_v2(self):
         self._approve_object()
         file_path = self.root / "source-a" / "authorized.csv"
         file_path.write_text("Employee ID,Account\n00123,A-1\n", encoding="utf-8")
@@ -314,10 +314,15 @@ class ParallelEngineTests(unittest.TestCase):
         self.assertEqual(client.post(url, data={"csrf_token": "valid-token"}).status_code, 403)
         with client.session_transaction() as session:
             session["iam_roles"] = ["APPLICATION_ADMIN"]
+        dashboard = client.get("/dashboard")
+        self.assertIn(b"Authorize and process this file", dashboard.data)
         self.assertEqual(client.post(url, data={"csrf_token": "valid-token"}).status_code, 302)
         with sqlite3.connect(self.database) as connection:
-            self.assertEqual(connection.execute("SELECT COUNT(*) FROM engine_v2_batches").fetchone()[0], 0)
-            self.assertEqual(connection.execute("SELECT status FROM engine_v2_file_observations WHERE path=?", (str(file_path.resolve()),)).fetchone()[0], "PENDING_AUTHORIZATION")
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM engine_v2_batches").fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM engine_v2_objects").fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM employees").fetchone()[0], 0)
+            self.assertEqual(connection.execute("SELECT status FROM engine_v2_file_observations WHERE path=?", (str(file_path.resolve()),)).fetchone()[0], "PROCESSED")
+        connection.close()
 
     def test_object_template_approval_route_requires_role_and_csrf(self):
         app = create_parallel_engine_app(self.database, self.root, shared_secret="test-secret")

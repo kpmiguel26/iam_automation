@@ -127,6 +127,8 @@ def create_parallel_engine_blueprint(
             ).fetchone()[0]
         finally:
             connection.close()
+        for item in observations:
+            item["processing_progress"] = watcher.processing_progress(str(item["observation_id"]))
         configuration_error = ""
         try:
             configuration = catalog.load()
@@ -161,20 +163,38 @@ def create_parallel_engine_blueprint(
             if parsed_return_to.path == "/employees/source-updates" and not parsed_return_to.netloc:
                 return redirect(return_to)
             return redirect(url_for("parallel_engine.dashboard"))
+        is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
         try:
-            result = watcher.authorize_and_process(observation_id, actor)
+            started = watcher.start_authorized_processing(observation_id, actor)
         except (OSError, RuntimeError, ValueError) as exc:
-            flash(f"File was not processed: {exc}", "danger")
+            if is_ajax:
+                return {"status": "FAILED", "message": str(exc)}, 400
+            flash(f"File could not be added to the processing queue: {exc}", "danger")
         else:
-            flash(
-                f"Authorized and processed {Path(result.file_path).name}: "
-                f"{result.total_rows} row(s), {result.objects_created} new object(s), "
-                f"{result.objects_linked} linked object(s).",
-                "success",
-            )
+            if is_ajax:
+                progress = watcher.processing_progress(observation_id) or {}
+                status = str(progress.get("status", "QUEUED"))
+                message = (
+                    "Import is already queued or running."
+                    if not started else "Import added to the processing queue."
+                )
+                return {
+                    "status": status, "message": message,
+                    "queue_position": progress.get("queue_position", 0),
+                    "progress_url": url_for("parallel_engine.file_processing_progress", observation_id=observation_id),
+                }, 202
+            flash("File added to the processing queue." if started else "File is already queued or processing.", "success")
         if parsed_return_to.path == "/employees/source-updates" and not parsed_return_to.netloc:
             return redirect(return_to)
         return redirect(url_for("parallel_engine.dashboard"))
+
+    @blueprint.get("/files/<observation_id>/progress")
+    def file_processing_progress(observation_id: str):
+        require_admin()
+        progress = watcher.processing_progress(observation_id)
+        if progress is None:
+            return {"status": "UNKNOWN", "message": "Live progress is not available in this app process."}
+        return progress
 
     @blueprint.get("/status")
     def status():

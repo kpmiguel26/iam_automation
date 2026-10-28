@@ -15,7 +15,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
 {% block title %}Source updates{% endblock %}
 {% block content %}
 <div class="container-fluid px-4 px-lg-5 py-4 page-shell">
-  <a class="back-link" href="{{ url_for('employees.employee_directory') }}">Back to Employees</a>
+  <a class="back-link" href="{{ url_for('objects.directory') }}">Back to Objects</a>
   <div class="page-heading mt-3">
     <div><p class="eyebrow">Operations</p><h1>Source update review</h1><p class="text-secondary mb-0">Start with files that need attention. Completed files remain available in Review history.</p></div>
   </div>
@@ -79,6 +79,7 @@ Estimated implementation effort: 1.25 h (Git-derived heuristic; see docs/file-ef
     </section>
   {% else %}
     {% set show_history_files = view == 'RECENT_FILES' %}
+    {% if parallel_engine_panel %}{% include "employees/_source_parallel_engine.html" %}{% endif %}
     {% include "employees/_source_import_timeline.html" %}
     <section class="surface p-4 mt-4">
       <div class="section-heading"><div><p class="eyebrow mb-1">Source systems</p><h2 class="h5 mb-0">Choose a source to review</h2></div><span class="small text-secondary">{{ sources|length }} source(s)</span></div>

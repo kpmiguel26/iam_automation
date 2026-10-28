@@ -193,6 +193,9 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
         for observation in observations:
             observation["filename"] = Path(str(observation["path"])).name
             observation["diagnostic"] = observation["last_error"] or observation["batch_message"] or ""
+            observation["processing_progress"] = (
+                watcher.processing_progress(str(observation["observation_id"])) if watcher is not None else None
+            )
             batch = batches_by_id.get(str(observation.get("batch_id") or ""), {})
             observation["diagnostics"] = batch.get("diagnostics", [])
         for batch in batches:
@@ -416,48 +419,8 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
     @blueprint.get("")
     @authenticated
     def employee_directory():
-        search = request.args.get("q", "")
-        status = request.args.get("status", "ALL")
-        vendor = request.args.get("vendor", "ALL")
-        source = request.args.get("source", "ALL")
-        engagement = request.args.get("engagement", "")
-        review = request.args.get("review", "")
-        updated = request.args.get("updated", "ALL")
-        sort = request.args.get("sort", "UPDATED_DESC").strip().upper()
-        if sort not in {"UPDATED_DESC", "UPDATED_ASC", "NAME_ASC", "NAME_DESC"}:
-            sort = "UPDATED_DESC"
-        # Do not query the directory until the user supplies a search/filter
-        # or explicitly requests the complete result set. Empty GET forms are
-        # intentionally treated as the initial, on-demand state.
-        show_all = request.args.get("all", "0") == "1"
-        try:
-            requested_page = max(1, int(request.args.get("page", "1")))
-        except ValueError:
-            requested_page = 1
-        page = requested_page
-        # Filter options are metadata, not an employee directory load. Keep
-        # them available on the empty screen without loading employee rows.
-        statuses, vendors, sources = service.filter_values()
-        has_query = bool(show_all or search.strip() or engagement.strip() or review or updated != "ALL" or status != "ALL" or vendor != "ALL" or source != "ALL" or sort != "UPDATED_DESC")
-        if not has_query:
-            # Collapse browser-generated forms containing only empty/default
-            # values back to the short canonical URL and avoid all DB work.
-            if request.args:
-                return redirect(url_for("employees.employee_directory"))
-            workers, total_workers = [], 0
-            page_count = 1
-            # Keep the directory on-demand, but load lightweight review
-            # counters so the Updates action does not look stale.
-            pending_source_updates = pending_source_update_count()
-        else:
-            page_size = None if show_all else 25
-            workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size)
-            page_count = 1 if show_all else max(1, (total_workers + 24) // 25)
-            page = min(page, page_count)
-            if page != requested_page:
-                workers, total_workers = service.list_workers_page(search=search, status=status, vendor=vendor, source=source, engagement=engagement, review=review, updated=updated, sort=sort, page=page, per_page=page_size)
-            pending_source_updates = pending_source_update_count()
-        return render_template("employees/list.html", workers=workers, statuses=statuses, vendors=vendors, sources=sources, filters={"q": search, "status": status, "vendor": vendor, "source": source, "engagement": engagement, "review": review, "updated": updated, "sort": sort, "all": show_all}, page=page, page_count=page_count, total_workers=total_workers, has_query=has_query, pending_source_updates=pending_source_updates)
+        """Compatibility entry point; the default catalog now contains runtime objects."""
+        return redirect(url_for("objects.directory", **request.args))
 
     @blueprint.get("/source-updates")
     @authenticated
@@ -521,7 +484,6 @@ def create_employee_blueprint(database_path: Path, *, sharepoint_root: Path | No
             source_timeline=source_timeline(include_imported=request.args.get("view", "ATTENTION").upper() == "RECENT_FILES", max_files=25 if request.args.get("view", "ATTENTION").upper() == "RECENT_FILES" else None),
             show_history_files=request.args.get("view", "ATTENTION").upper() == "RECENT_FILES",
             view=request.args.get("view", "ATTENTION").upper(),
-            parallel_engine_panel=parallel_engine_panel(),
         )
 
     @blueprint.get("/source-updates/history")

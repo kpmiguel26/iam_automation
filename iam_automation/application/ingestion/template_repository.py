@@ -124,9 +124,9 @@ class TemplateRepository:
                 raise ValueError("Report template is already removed from the active library.")
             impact = self._deletion_impact(connection, source_id)
             if impact["object_references"]:
-                names = ", ".join(impact["object_references"])
+                names = ", ".join(dict.fromkeys(impact["object_references"]))
                 raise ValueError(
-                    f"This report is still linked to {names}. Edit and save the Object Template without this report before removing it."
+                    f"This report is still linked to {names}. Unlink it, save, and approve the Object Template before removing it."
                 )
             columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(source_template_lifecycle_events)")}
             if "removal_impact_json" in columns:
@@ -176,6 +176,7 @@ class TemplateRepository:
     @staticmethod
     def _deletion_impact(connection: sqlite3.Connection, source_id: str) -> dict[str, Any]:
         references: list[str] = []
+        linked_templates: list[dict[str, Any]] = []
         table = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'employee_template_versions'"
         ).fetchone()
@@ -208,25 +209,107 @@ class TemplateRepository:
                     definition = json.loads(row["definition_json"] or "{}")
                 except (TypeError, json.JSONDecodeError):
                     definition = {}
+                source_templates = [
+                    source for source in definition.get("source_templates", ())
+                    if isinstance(source, dict) and str(source.get("source_id", ""))
+                ]
+                if not any(str(source.get("source_id", "")) == source_id for source in source_templates):
+                    continue
+                object_name = str(definition.get("object_name") or "Current Object Template")
+                references.append(object_name)
+                reference_types = []
+                if any(str(source.get("source_id", "")) == source_id for source in source_templates):
+                    reference_types.append("selected as a report source")
+                if any(str(prop.get("source_id", "")) == source_id for prop in definition.get("properties", ()) if isinstance(prop, dict)):
+                    reference_types.append("provides object properties")
+                if any(str(identifier.get("source_id", "")) == source_id for identifier in definition.get("identifiers", ()) if isinstance(identifier, dict)):
+                    reference_types.append("provides matching identifiers")
                 if any(
-                    isinstance(source, dict) and str(source.get("source_id", "")) == source_id
-                    for source in definition.get("source_templates", ())
+                    str(endpoint.get("source_id", "")) == source_id
+                    for match in definition.get("matches", ()) if isinstance(match, dict)
+                    for endpoint in (match.get("left", {}), match.get("right", {})) if isinstance(endpoint, dict)
                 ):
-                    references.append(str(definition.get("object_name") or "the current Object Template"))
-        counts: dict[str, int] = {}
-        for table_name, column in (
-            ("engine_v2_file_observations", "source_id"),
-            ("engine_v2_batches", "source_id"),
-            ("engine_v2_evidence", "source_id"),
-        ):
-            exists = connection.execute(
+                    reference_types.append("participates in cross-report matching")
+                linked_templates.append({
+                    "object_name": object_name,
+                    "version_number": int(row["version_number"]),
+                    "source_count": len(source_templates),
+                    "sole_source": len(source_templates) == 1,
+                    "reference_types": reference_types,
+                })
+
+        def table_exists(table_name: str) -> bool:
+            return connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table_name,)
-            ).fetchone()
-            if exists is not None:
-                counts[table_name] = int(connection.execute(
-                    f"SELECT COUNT(*) FROM {table_name} WHERE {column} = ?", (source_id,)
-                ).fetchone()[0])
-        return {"source_id": source_id, "object_references": tuple(references), "engine_data_counts": counts}
+            ).fetchone() is not None
+
+        def has_columns(table_name: str, *expected: str) -> bool:
+            if not table_exists(table_name):
+                return False
+            columns = {str(row[1]) for row in connection.execute(f"PRAGMA table_info({table_name})")}
+            return set(expected).issubset(columns)
+
+        observation_count = 0
+        if has_columns("engine_v2_file_observations", "source_id"):
+            observation_count = int(connection.execute(
+                "SELECT COUNT(*) FROM engine_v2_file_observations WHERE source_id = ?", (source_id,)
+            ).fetchone()[0])
+        batch_count = 0
+        if has_columns("engine_v2_batches", "source_id", "batch_id"):
+            batch_count = int(connection.execute(
+                "SELECT COUNT(*) FROM engine_v2_batches WHERE source_id = ?", (source_id,)
+            ).fetchone()[0])
+        evidence_count = object_link_count = objects_with_evidence = orphaned_objects = 0
+        if has_columns("engine_v2_evidence", "evidence_id", "batch_id") and has_columns("engine_v2_batches", "batch_id", "source_id"):
+            evidence_count = int(connection.execute(
+                "SELECT COUNT(*) FROM engine_v2_evidence e JOIN engine_v2_batches b ON b.batch_id = e.batch_id WHERE b.source_id = ?",
+                (source_id,),
+            ).fetchone()[0])
+        if (
+            has_columns("engine_v2_object_evidence", "object_id", "evidence_id")
+            and has_columns("engine_v2_evidence", "evidence_id", "batch_id")
+            and has_columns("engine_v2_batches", "batch_id", "source_id")
+        ):
+            relation = """FROM engine_v2_object_evidence oe
+                          JOIN engine_v2_evidence e ON e.evidence_id = oe.evidence_id
+                          JOIN engine_v2_batches b ON b.batch_id = e.batch_id
+                          WHERE b.source_id = ?"""
+            object_link_count = int(connection.execute(
+                "SELECT COUNT(*) " + relation, (source_id,)
+            ).fetchone()[0])
+            objects_with_evidence = int(connection.execute(
+                "SELECT COUNT(DISTINCT oe.object_id) " + relation, (source_id,)
+            ).fetchone()[0])
+            orphaned_objects = int(connection.execute(
+                """SELECT COUNT(DISTINCT oe.object_id) FROM engine_v2_object_evidence oe
+                   JOIN engine_v2_evidence e ON e.evidence_id = oe.evidence_id
+                   JOIN engine_v2_batches b ON b.batch_id = e.batch_id
+                   WHERE b.source_id = ? AND NOT EXISTS (
+                     SELECT 1 FROM engine_v2_object_evidence other_oe
+                     JOIN engine_v2_evidence other_e ON other_e.evidence_id = other_oe.evidence_id
+                     JOIN engine_v2_batches other_b ON other_b.batch_id = other_e.batch_id
+                     WHERE other_oe.object_id = oe.object_id AND other_b.source_id <> ?
+                   )""",
+                (source_id, source_id),
+            ).fetchone()[0])
+        counts = {
+            "engine_v2_file_observations": observation_count,
+            "engine_v2_batches": batch_count,
+            "engine_v2_evidence": evidence_count,
+        }
+        return {
+            "source_id": source_id,
+            "object_references": tuple(references),
+            "linked_object_templates": linked_templates,
+            "requires_object_detach": bool(linked_templates),
+            "sole_source_objects": orphaned_objects,
+            "objects_to_remove_if_orphaned": orphaned_objects,
+            "objects_with_source_evidence": objects_with_evidence,
+            "object_evidence_links": object_link_count,
+            "import_batches": batch_count,
+            "evidence_rows": evidence_count,
+            "engine_data_counts": counts,
+        }
 
     def get(self, definition_version_id: str) -> dict[str, Any] | None:
         with self._connection() as connection:

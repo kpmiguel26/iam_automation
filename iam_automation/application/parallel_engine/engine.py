@@ -7,7 +7,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .contracts import EngineRunResult, FileRecognitionAnalysis, ObjectTemplate, ParsedSourceRow, RuntimeConfiguration, SourceTemplate, TemplateConfigurationError
 from .database import connect
@@ -234,6 +234,7 @@ class ParallelIngestionEngine:
     def ingest_file(
         self, path: Path, content: bytes | None = None,
         configuration: RuntimeConfiguration | None = None, *, authorized_by: str = "",
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> EngineRunResult:
         resolved = path.expanduser().resolve()
         if content is None:
@@ -247,6 +248,8 @@ class ParallelIngestionEngine:
         if config is None:
             raise TemplateConfigurationError("No approved Object Template is active in the runtime catalog.")
         source = self.recognize(resolved, content, config)
+        if progress_callback:
+            progress_callback({"stage": "reading", "message": "Reading and validating rows"})
         rows, file_errors, unknown_headers = parse_source_rows(resolved, content, source)
         batch_id = str(uuid.uuid4())
         now = _utc_now()
@@ -255,6 +258,8 @@ class ParallelIngestionEngine:
         messages = list(file_errors)
         before_findings: list[dict[str, Any]] = []
         if not file_errors:
+            if progress_callback:
+                progress_callback({"stage": "rules_before", "message": "Checking advisory rules"})
             try:
                 before_findings, rule_diagnostics = evaluate_configured_rules(
                     self.database_path, phase="BEFORE", source_id=source.source_id,
@@ -267,6 +272,8 @@ class ParallelIngestionEngine:
             messages.append("Unconfigured source columns: " + ", ".join(unknown_headers))
             status = "COMPLETED_WITH_WARNINGS"
 
+        if progress_callback:
+            progress_callback({"stage": "processing", "message": "Preparing evidence and objects", "total": len(rows)})
         connection = connect(self.database_path)
         try:
             existing = connection.execute(
@@ -296,7 +303,13 @@ class ParallelIngestionEngine:
                     (batch_id, source.source_id, source.version_id, config.object_template.version_id,
                      str(resolved), checksum, len(rows), now, "", str(authorized_by or ""), now if authorized_by else None),
                 )
-                for row in rows:
+                for processed_rows, row in enumerate(rows, start=1):
+                    if progress_callback:
+                        progress_callback({
+                            "stage": "processing", "message": "Staging evidence and resolving objects",
+                            "processed": processed_rows - 1, "current_row": processed_rows, "total": len(rows),
+                            "created": created_count, "linked": linked_count, "quarantined": quarantine_count,
+                        })
                     evidence_id = str(uuid.uuid4())
                     row_status = "QUARANTINED" if row.issues else "STAGED"
                     if row.issues:
@@ -386,6 +399,12 @@ class ParallelIngestionEngine:
                              json.dumps(row.normalized_values[source_field_key], ensure_ascii=False, sort_keys=True, default=str),
                              now),
                         )
+                if progress_callback:
+                    progress_callback({
+                        "stage": "processing", "message": "Evidence and objects staged",
+                        "processed": len(rows), "current_row": 0, "total": len(rows),
+                        "created": created_count, "linked": linked_count, "quarantined": quarantine_count,
+                    })
                 if quarantine_count and status == "COMPLETED":
                     status = "COMPLETED_WITH_WARNINGS"
                 if messages and status == "COMPLETED":
@@ -404,6 +423,8 @@ class ParallelIngestionEngine:
         finally:
             connection.close()
         if not file_errors:
+            if progress_callback:
+                progress_callback({"stage": "rules_after", "message": "Saving advisory rule findings"})
             rule_diagnostics = []
             try:
                 after_findings, rule_diagnostics = evaluate_configured_rules(
