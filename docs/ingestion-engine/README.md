@@ -17,8 +17,8 @@ and read-only triage details for up to 50 quarantined rows. Authorized imports
 run in the background and report their current phase and row/object counts in
 the review panel. Live progress is held in app-process memory; the current local
 development setup runs the dashboard and import in that process. It still lacks
-canonical property authority/priority and conflict handling, template-safe
-data lifecycle, composite/cross-source rule parity, finding disposition
+canonical property authority/priority and conflict handling, full report-
+template data lifecycle, composite/cross-source rule parity, finding disposition
 controls, quarantine correction/replay, and acceptance checks. Existing approved templates need an explicit
 source mapping when their internal key differs from the Business Rules source
 key. Manual, per-file processing is enabled for this deployment, while the

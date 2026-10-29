@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 from flask import Blueprint, flash, make_response, redirect, render_template, request, session, url_for
 from sqlalchemy import select
 
+from ...application.audit_service import record_audit
 from ...application.ingestion.configuration_contracts import (
     DRAFT_DRIFT_POLICIES,
     DRAFT_FIELD_TYPES,
@@ -59,7 +60,9 @@ def _display_metadata(value: object) -> str:
     return unescape(str(value or "")).strip()
 
 
-def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_root: Path | None = None) -> Blueprint:
+def create_ingestion_configuration_blueprint(
+    database_path: Path, sharepoint_root: Path | None = None, *, audit_path: Path | None = None,
+) -> Blueprint:
     """Create the persisted, non-activating template configuration blueprint."""
     blueprint = Blueprint("ingestion_configuration", __name__, url_prefix="/admin/ingestion-sources")
     service = DraftConfigurationService(database_path)
@@ -628,6 +631,20 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
     @blueprint.post("/library/<source_id>/delete")
     @admin_required
     def delete_template(source_id: str):
+        item = next((card for card in templates.list_template_cards() if card["source_id"] == source_id), None)
+        if item is None:
+            return "Report template not found.", 404
+        confirmation = request.form.get("confirmation", "").strip()
+        if confirmation != "DELETE REPORT TEMPLATE":
+            impact = templates.deletion_impact(source_id)
+            return render_template(
+                "admin/_ingestion_delete_template_modal.html", item=item, impact=impact,
+                error="Type DELETE REPORT TEMPLATE exactly to confirm this cascading removal.",
+            ), fragment_status(400)
+        try:
+            impact = templates.deletion_impact(source_id)
+        except ValueError as exc:
+            return str(exc), 409
         try:
             templates.delete_template(source_id, current_actor())
         except ValueError as exc:
@@ -635,13 +652,75 @@ def create_ingestion_configuration_blueprint(database_path: Path, sharepoint_roo
             if request.headers.get("HX-Request") == "true":
                 return render_template("admin/_ingestion_template_cards.html", **card_context(), error=message)
             return render_template("admin/ingestion_template_library.html", **card_context(), error=message), 409
-        message = "The template was removed from the active library. Imported evidence and version history were retained."
+        record_audit(
+            audit_path, current_actor(), "SOURCE_TEMPLATE_DELETED", "source_template", source_id,
+            new_values={
+                **impact,
+                "display_name": item["definition"].get("display_name", source_id),
+                "cascade": "source-owned imported data and all template versions deleted",
+            },
+        )
+        message = "The report template, its versions, and its imported data were deleted. Objects still supported by other reports were kept."
         if request.headers.get("HX-Request") == "true":
-            return render_template(
+            response = make_response(render_template(
                 "admin/_ingestion_template_cards.html",
                 **card_context(),
                 message=message,
+            ))
+            response.headers["HX-Trigger"] = "libraryTemplateDeleted"
+            return response
+        return redirect(url_for("ingestion_configuration.template_library"))
+
+    @blueprint.get("/library/template-object/<version_id>/delete")
+    @admin_required
+    def delete_object_template_modal(version_id: str):
+        saved = object_templates.latest()
+        if saved is None or saved["employee_template_version_id"] != version_id:
+            return "Object Template not found or no longer current.", 404
+        try:
+            impact = object_templates.deletion_impact(version_id)
+        except ValueError as exc:
+            return str(exc), 409
+        return render_template(
+            "admin/_object_template_delete_modal.html", item=saved, impact=impact,
+            impact_token=object_templates.impact_token(impact),
+        )
+
+    @blueprint.post("/library/template-object/<version_id>/delete")
+    @admin_required
+    def delete_object_template(version_id: str):
+        saved = object_templates.latest()
+        if saved is None or saved["employee_template_version_id"] != version_id:
+            return "Object Template not found or no longer current.", 409
+        confirmation = request.form.get("confirmation", "").strip()
+        if confirmation != "DELETE OBJECT TEMPLATE":
+            impact = object_templates.deletion_impact(version_id)
+            return render_template(
+                "admin/_object_template_delete_modal.html", item=saved, impact=impact,
+                impact_token=object_templates.impact_token(impact),
+                error="Type DELETE OBJECT TEMPLATE exactly to confirm this full data removal.",
+            ), fragment_status(400)
+        try:
+            impact = object_templates.delete(
+                version_id, current_actor(),
+                expected_impact_token=request.form.get("impact_token", ""),
             )
+        except ValueError as exc:
+            impact = object_templates.deletion_impact(version_id)
+            return render_template(
+                "admin/_object_template_delete_modal.html", item=saved, impact=impact,
+                impact_token=object_templates.impact_token(impact),
+                error=str(exc),
+            ), fragment_status(409)
+        record_audit(
+            audit_path, current_actor(), "OBJECT_TEMPLATE_DELETED", "object_template", version_id,
+            new_values={**impact, "object_name": saved["definition"].get("object_name", "")},
+        )
+        flash("Object Template removed. Its runtime objects and imported evidence were deleted; version and file analysis history were retained.", "success")
+        if request.headers.get("HX-Request") == "true":
+            response = make_response("", 204)
+            response.headers["HX-Redirect"] = url_for("ingestion_configuration.template_library")
+            return response
         return redirect(url_for("ingestion_configuration.template_library"))
 
     def parse_object_ref(value: str) -> tuple[str, str] | None:

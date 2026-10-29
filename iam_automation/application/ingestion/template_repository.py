@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -106,7 +105,7 @@ class TemplateRepository:
         return self.list_template_cards()
 
     def delete_template(self, source_id: str, actor: str) -> None:
-        """Hide a report template while retaining its versions and source lineage."""
+        """Physically remove a report template and cascade its locally owned data."""
         now = datetime.now(timezone.utc).isoformat()
         with self._connection() as connection:
             exists = connection.execute(
@@ -128,21 +127,14 @@ class TemplateRepository:
                 raise ValueError(
                     f"This report is still linked to {names}. Unlink it, save, and approve the Object Template before removing it."
                 )
-            columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(source_template_lifecycle_events)")}
-            if "removal_impact_json" in columns:
-                connection.execute(
-                    """INSERT INTO source_template_lifecycle_events
-                       (lifecycle_event_id, source_id, deleted_by, deleted_at_utc, removal_impact_json)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (str(uuid.uuid4()), source_id, actor, now, json.dumps(impact, ensure_ascii=False, sort_keys=True)),
-                )
-            else:
-                connection.execute(
-                    """INSERT INTO source_template_lifecycle_events
-                       (lifecycle_event_id, source_id, deleted_by, deleted_at_utc)
-                       VALUES (?, ?, ?, ?)""",
-                    (str(uuid.uuid4()), source_id, actor, now),
-                )
+            self._cascade_source_data(connection, source_id)
+            connection.execute("DELETE FROM source_ingestion_orders WHERE source_id = ?", (source_id,))
+            # These lifecycle tables implement archival. A physical removal must
+            # not leave a hidden template row that can be reactivated later.
+            for table in ("source_template_lifecycle_events", "source_template_deletions"):
+                if self._table_exists(connection, table):
+                    connection.execute(f"DELETE FROM {table} WHERE source_id = ?", (source_id,))
+            connection.execute("DELETE FROM source_definition_versions WHERE source_id = ?", (source_id,))
             active_sources = [str(row[0]) for row in connection.execute(
                 """SELECT v.source_id, MIN(COALESCE(o.ingestion_order, 2147483647)) AS sort_order
                    FROM source_definition_versions v
@@ -161,6 +153,84 @@ class TemplateRepository:
                            updated_by = excluded.updated_by, updated_at_utc = excluded.updated_at_utc""",
                     (active_source_id, position, actor, now),
                 )
+
+    @staticmethod
+    def _table_exists(connection: sqlite3.Connection, table_name: str) -> bool:
+        return connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table_name,)
+        ).fetchone() is not None
+
+    @classmethod
+    def _cascade_source_data(cls, connection: sqlite3.Connection, source_id: str) -> None:
+        """Delete source-owned runtime rows while retaining objects shared by other reports."""
+        def ids(sql: str, params: tuple[Any, ...]) -> list[str]:
+            return [str(row[0]) for row in connection.execute(sql, params).fetchall()]
+
+        def delete_in(table: str, column: str, values: list[str]) -> None:
+            if not values or not cls._table_exists(connection, table):
+                return
+            columns = {str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})")}
+            if column not in columns:
+                return
+            for offset in range(0, len(values), 500):
+                chunk = values[offset:offset + 500]
+                marks = ",".join("?" for _ in chunk)
+                connection.execute(f"DELETE FROM {table} WHERE {column} IN ({marks})", chunk)
+
+        batch_ids = (
+            ids("SELECT batch_id FROM engine_v2_batches WHERE source_id = ?", (source_id,))
+            if cls._table_exists(connection, "engine_v2_batches") else []
+        )
+        evidence_ids = []
+        if batch_ids and cls._table_exists(connection, "engine_v2_evidence"):
+            marks = ",".join("?" for _ in batch_ids)
+            evidence_ids = ids(f"SELECT evidence_id FROM engine_v2_evidence WHERE batch_id IN ({marks})", tuple(batch_ids))
+        object_ids: list[str] = []
+        if batch_ids and cls._table_exists(connection, "engine_v2_object_evidence"):
+            marks = ",".join("?" for _ in batch_ids)
+            object_ids = ids(
+                f"""SELECT DISTINCT oe.object_id FROM engine_v2_object_evidence oe
+                    JOIN engine_v2_evidence e ON e.evidence_id = oe.evidence_id
+                    WHERE e.batch_id IN ({marks})""",
+                tuple(batch_ids),
+            )
+        orphan_ids = []
+        if object_ids and cls._table_exists(connection, "engine_v2_object_evidence"):
+            for object_id in object_ids:
+                other = connection.execute(
+                    """SELECT 1 FROM engine_v2_object_evidence oe
+                       JOIN engine_v2_evidence e ON e.evidence_id = oe.evidence_id
+                       JOIN engine_v2_batches b ON b.batch_id = e.batch_id
+                       WHERE oe.object_id = ? AND b.source_id <> ? LIMIT 1""",
+                    (object_id, source_id),
+                ).fetchone()
+                if other is None:
+                    orphan_ids.append(object_id)
+
+        facts = []
+        if cls._table_exists(connection, "engine_v2_source_facts"):
+            facts = ids("SELECT fact_id FROM engine_v2_source_facts WHERE source_id = ?", (source_id,))
+        delete_in("engine_v2_object_property_values", "fact_id", facts)
+        delete_in("engine_v2_rule_findings", "batch_id", batch_ids)
+        delete_in("engine_v2_strong_identifiers", "source_id", [source_id])
+        delete_in("engine_v2_source_facts", "fact_id", facts)
+        delete_in("engine_v2_object_evidence", "evidence_id", evidence_ids)
+        delete_in("engine_v2_evidence", "evidence_id", evidence_ids)
+        delete_in("engine_v2_batches", "batch_id", batch_ids)
+
+        # Remove any remaining dependent rows before deleting objects that became
+        # source-exclusive. Other-source evidence and its objects remain intact.
+        delete_in("engine_v2_rule_findings", "object_id", orphan_ids)
+        delete_in("engine_v2_object_property_values", "object_id", orphan_ids)
+        delete_in("engine_v2_strong_identifiers", "object_id", orphan_ids)
+        delete_in("engine_v2_source_facts", "object_id", orphan_ids)
+        delete_in("engine_v2_object_evidence", "object_id", orphan_ids)
+        delete_in("engine_v2_objects", "object_id", orphan_ids)
+
+        delete_in("engine_v2_file_analyses", "source_id", [source_id])
+        delete_in("engine_v2_file_observations", "source_id", [source_id])
+        version_ids = ids("SELECT definition_version_id FROM source_definition_versions WHERE source_id = ?", (source_id,))
+        delete_in("source_template_validation_events", "definition_version_id", version_ids)
 
     def deletion_impact(self, source_id: str) -> dict[str, Any]:
         """Preview active object-template dependencies without changing stored data."""
@@ -181,10 +251,19 @@ class TemplateRepository:
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'employee_template_versions'"
         ).fetchone()
         if table is not None:
+            deletion_table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'engine_v2_object_template_deletions'"
+            ).fetchone()
+            active_versions_only = (
+                "AND NOT EXISTS (SELECT 1 FROM engine_v2_object_template_deletions d "
+                "WHERE d.object_template_version_id = v.employee_template_version_id)"
+                if deletion_table else ""
+            )
             rows = connection.execute(
-                """SELECT v.employee_template_version_id, v.definition_json, v.version_number
+                f"""SELECT v.employee_template_version_id, v.definition_json, v.version_number
                    FROM employee_template_versions v
                    WHERE v.template_key = 'EMPLOYEE_PROFILE'
+                     {active_versions_only}
                    ORDER BY v.version_number DESC"""
             ).fetchall()
             approved_ids: set[str] = set()
@@ -250,6 +329,9 @@ class TemplateRepository:
             return set(expected).issubset(columns)
 
         observation_count = 0
+        template_version_count = int(connection.execute(
+            "SELECT COUNT(*) FROM source_definition_versions WHERE source_id = ?", (source_id,)
+        ).fetchone()[0])
         if has_columns("engine_v2_file_observations", "source_id"):
             observation_count = int(connection.execute(
                 "SELECT COUNT(*) FROM engine_v2_file_observations WHERE source_id = ?", (source_id,)
@@ -260,6 +342,7 @@ class TemplateRepository:
                 "SELECT COUNT(*) FROM engine_v2_batches WHERE source_id = ?", (source_id,)
             ).fetchone()[0])
         evidence_count = object_link_count = objects_with_evidence = orphaned_objects = 0
+        shared_objects = 0
         if has_columns("engine_v2_evidence", "evidence_id", "batch_id") and has_columns("engine_v2_batches", "batch_id", "source_id"):
             evidence_count = int(connection.execute(
                 "SELECT COUNT(*) FROM engine_v2_evidence e JOIN engine_v2_batches b ON b.batch_id = e.batch_id WHERE b.source_id = ?",
@@ -292,6 +375,7 @@ class TemplateRepository:
                    )""",
                 (source_id, source_id),
             ).fetchone()[0])
+            shared_objects = max(0, objects_with_evidence - orphaned_objects)
         counts = {
             "engine_v2_file_observations": observation_count,
             "engine_v2_batches": batch_count,
@@ -299,6 +383,8 @@ class TemplateRepository:
         }
         return {
             "source_id": source_id,
+            "template_versions": template_version_count,
+            "shared_objects_retained": shared_objects,
             "object_references": tuple(references),
             "linked_object_templates": linked_templates,
             "requires_object_detach": bool(linked_templates),
@@ -504,6 +590,7 @@ class TemplateRepository:
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=5)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
     @contextmanager

@@ -10,6 +10,15 @@ cross-source rule conditions, finding disposition, and quarantine/replay
 remain unimplemented. Findings never block ingestion.
 **Updated:** October 27, 2026
 
+**Implementation note (October 29, 2026):** The Template Library now supports
+an administrator-confirmed deletion of the current Object Template. It previews
+the v2 data owned by the singleton object type, removes runtime objects, batches,
+evidence, source facts, properties, identifiers, findings, links and approvals
+in one transaction, and blocks evidence links to other object types. Object
+Template definitions remain as immutable version history with deletion events;
+file observations and analyses, source report templates, legacy Employee data
+and the audit trail remain intact.
+
 This document records the object identity and deletion requirements for the
 Parallel Ingestion Engine. It is a design input for the physical model and
 import coordinator, not evidence that runtime v2 implements these behaviors.
@@ -140,33 +149,31 @@ should serve all user-defined types.
 
 ## Template removal and cascade behavior
 
-Removing a report template that contributes to an Object Template must use a
-preview-and-validate workflow. A direct delete or automatic archive is not a
-substitute for this workflow.
+Removing a report template uses a preview-and-validate workflow followed by a
+physical cascade. The report cannot be removed while an active or approved
+Object Template still depends on it. Once detached, the report versions and
+source-owned import data are deleted; an audit event records the decision, but
+no archive or tombstone is created.
 
 1. **Preview impact.** Identify the source template/version, Strong Identifier
    bindings and values, source facts, properties and links that depend on it,
    plus objects that have no remaining supporting source. Show counts and the
    effects of the cascade before accepting the request.
-2. **Require Object Template changes first.** If the template contributes
-   Strong Identifiers, ask the user to edit the Object Template and detach or
-   replace those bindings. Do not delete the source template or its rows yet.
+2. **Require Object Template changes first.** If the template is referenced,
+   ask the user to edit the Object Template and detach or replace those
+   bindings. Do not delete the source template or its rows yet.
 3. **Validate detachment.** Re-read the saved Object Template and validate
    that no active Strong Identifier binding references the template/version
    being removed; all remaining bindings reference live included fields; and
    no surviving object link would be orphaned or invalidated. If any check
    fails, stop and explain what must be changed.
-4. **Warn on the last source.** If this is the only report template in the
-   Object Template, state clearly that deleting it will delete all data owned
-   by that object type, including its instances, properties/facts, identifiers
-   and links. Require an explicit final confirmation for this full cascade.
+4. **Warn about the cascade.** State which source-owned rows will be deleted
+   and how many objects have no evidence from another report. Require an
+   explicit final confirmation.
 5. **Apply one atomic cascade.** After validation and confirmation, delete the
-   source-owned Strong Identifier values, facts and associations. Delete an
-   instance only when no surviving template/source supports it and no external
-   relationship references it. When deleting the last template, remove all
-   instance data owned by the object type as stated in the warning. Enforce
-   ownership with foreign keys; use restrictive references for cross-object
-   links that cannot safely cascade.
+   source-owned batches, evidence, analyses, findings, identifiers, facts,
+   property values and associations. Delete an instance only when no surviving
+   report supports it. Shared objects and other-source evidence remain.
 6. **Commit or roll back.** Perform validation and deletion in one database
    transaction. On any conflict or database failure, roll back the entire
    operation; leave configuration and data unchanged and show the failure.
@@ -193,8 +200,9 @@ substitute for this workflow.
 - A multi-template deletion only removes data owned by the selected source;
   objects still supported by another source survive. Orphan candidates are
   explicitly identified and handled by the confirmed cascade policy.
-- Deleting the sole template requires a clear full-object-data warning and an
-  explicit confirmation, then removes all data owned by that Object Template.
+- Deleting a report template requires a clear cascade warning and explicit
+  confirmation; its audit event remains while its template and source data do
+  not.
 - Any failed validation or cascade leaves the database unchanged.
 
 ## First implementation slice

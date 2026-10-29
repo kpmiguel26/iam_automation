@@ -10,6 +10,8 @@ dist/
 # SQLite sidecar files are temporary and must not be synchronized.
 runtime.sqlite
 runtime.sqlite.source-checksum
+runtime.sqlite.watcher-health.json
+runtime.sqlite.watcher-manifest.json
 .iam_notifications/
 *.sqlite-wal
 *.sqlite-shm

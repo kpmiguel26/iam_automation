@@ -64,19 +64,25 @@ explicit authorization; an unrecognized or ambiguous file records its reason.
 The authorization route remains gated, so this discovery persistence is not an
 import execution path.
 
-## Implemented template-removal safeguard
+## Implemented template-removal behavior
 
-The Template Library now previews references and Parallel Engine data before
-removing a report. Remaining Object Template bindings for that report's
-properties, Strong Identifiers and Strong links block deletion until detached;
-multi-report objects must also unlink the report. If it is the object's only
-report, removal requires a separate confirmation and purges all v2 batches,
-evidence, evidence links, instances and runtime approvals for that object type.
-When other report evidence still supports an instance, that instance remains;
-instances left without evidence are removed. File observation/analysis history,
-template versions and an audit summary are retained. Legacy import and employee
-tables are not changed. As physical property, identifier and fact tables are
-added, their dependent rows must be added to this same transactional cascade.
+Removing a report template from the active library permanently deletes its
+saved versions and source-owned imported data after an impact preview and exact
+text confirmation. Removal remains blocked while an active or approved Object
+Template version depends on the report. Batches, evidence, facts, property
+values, identifiers, findings, file analyses and source observations are
+cascaded; an object is deleted only when it has no evidence from another
+report. Shared objects and the other report's evidence remain. A deletion audit
+event is retained, but no template tombstone or lifecycle archive is created.
+
+The Template Library also supports deleting its current Object Template after
+an impact preview and exact-text confirmation. The atomic cascade removes the
+v2 runtime data owned by the singleton object type, including batches, evidence,
+evidence links, instances, facts, property values, identifiers, findings and
+runtime approvals. Evidence linked to another object type blocks deletion.
+Object Template definitions and deletion metadata remain for history, as do
+file observation/analysis history, source report templates, legacy Employee
+data, and the audit trail.
 
 The engine also has a separate row-staging operation for the next import phase.
 It records the approving actor and time on the batch, persists each parsed row

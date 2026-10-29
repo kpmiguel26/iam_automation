@@ -88,11 +88,30 @@ def create_parallel_engine_blueprint(
     @blueprint.get("/dashboard")
     def dashboard():
         require_admin()
+        configuration_error = ""
+        try:
+            configuration = catalog.load()
+            sources = configuration.sources if configuration else ()
+            object_name = configuration.object_template.definition.get("object_name", "") if configuration else ""
+        except Exception as exc:
+            configuration = None
+            sources = ()
+            object_name = ""
+            configuration_error = str(exc)
+        active_source_versions = {(source.source_id, source.version_id) for source in sources}
         connection = connect(database_path)
         try:
             health_row = connection.execute("SELECT * FROM engine_v2_watcher_state WHERE singleton_id = 1").fetchone()
             batches = [dict(row) for row in connection.execute("SELECT * FROM engine_v2_batches ORDER BY started_at_utc DESC LIMIT 20").fetchall()]
-            observations = [dict(row) for row in connection.execute("SELECT * FROM engine_v2_file_observations ORDER BY last_seen_at_utc DESC LIMIT 30").fetchall()]
+            observations = []
+            if active_source_versions:
+                active_filter = " OR ".join("(source_id = ? AND source_version_id = ?)" for _ in active_source_versions)
+                active_params = [value for pair in sorted(active_source_versions) for value in pair]
+                observations = [dict(row) for row in connection.execute(
+                    f"SELECT * FROM engine_v2_file_observations WHERE {active_filter} "
+                    "ORDER BY last_seen_at_utc DESC LIMIT 30",
+                    active_params,
+                ).fetchall()]
             quarantined_rows = [dict(row) for row in connection.execute(
                 """SELECT e.evidence_id, e.batch_id, e.row_number, e.sheet_name,
                           e.raw_json, e.normalized_json, e.diagnostics_json,
@@ -129,15 +148,6 @@ def create_parallel_engine_blueprint(
             connection.close()
         for item in observations:
             item["processing_progress"] = watcher.processing_progress(str(item["observation_id"]))
-        configuration_error = ""
-        try:
-            configuration = catalog.load()
-            sources = configuration.sources if configuration else ()
-            object_name = configuration.object_template.definition.get("object_name", "") if configuration else ""
-        except Exception as exc:
-            sources = ()
-            object_name = ""
-            configuration_error = str(exc)
         return render_template(
             dashboard_template, username=session.get("iam_user"), health=dict(health_row) if health_row else None,
             batches=batches, observations=observations, sources=sources, object_name=object_name,

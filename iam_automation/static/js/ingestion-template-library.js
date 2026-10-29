@@ -3,7 +3,7 @@
 
   function openLibraryModal(target) {
     if (!target) return;
-    var modalElement = target.querySelector('#deleteReportTemplateModal');
+    var modalElement = target.querySelector('#deleteReportTemplateModal, #deleteObjectTemplateModal');
     if (!modalElement || modalElement.dataset.libraryModalOpened === 'true') return;
     modalElement.dataset.libraryModalOpened = 'true';
     if (window.bootstrap && window.bootstrap.Modal) {
@@ -33,6 +33,12 @@
     var target = event.detail && event.detail.target ? event.detail.target : event.target;
     if (!target || target.id !== 'template-modal-region') return;
     openLibraryModal(target);
+  });
+
+  document.body.addEventListener('libraryTemplateDeleted', function () {
+    var modalElement = document.querySelector('#deleteReportTemplateModal.show');
+    if (!modalElement || !window.bootstrap || !window.bootstrap.Modal) return;
+    window.bootstrap.Modal.getOrCreateInstance(modalElement).hide();
   });
 
   var modalRegion = document.getElementById('template-modal-region');

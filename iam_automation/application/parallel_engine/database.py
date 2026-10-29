@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 
-ENGINE_SCHEMA_VERSION = 7
+ENGINE_SCHEMA_VERSION = 8
 
 
 DDL = (
@@ -20,6 +20,14 @@ DDL = (
         object_template_version_id TEXT PRIMARY KEY,
         approved_by TEXT NOT NULL,
         approved_at_utc TEXT NOT NULL,
+        FOREIGN KEY(object_template_version_id)
+            REFERENCES employee_template_versions(employee_template_version_id)
+    )""",
+    """CREATE TABLE IF NOT EXISTS engine_v2_object_template_deletions (
+        object_template_version_id TEXT PRIMARY KEY,
+        deleted_by TEXT NOT NULL,
+        deleted_at_utc TEXT NOT NULL,
+        removal_impact_json TEXT NOT NULL,
         FOREIGN KEY(object_template_version_id)
             REFERENCES employee_template_versions(employee_template_version_id)
     )""",

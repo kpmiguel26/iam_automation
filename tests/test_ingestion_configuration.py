@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 import sqlite3
 import tempfile
 import unittest
@@ -11,6 +12,9 @@ from openpyxl import Workbook
 from iam_automation import webapp
 from iam_automation.application.ingestion.configuration_contracts import DraftFieldDefinition, DraftIdentityGovernance, DraftIdentityIdentifier, DraftRecognitionSettings, DraftSourceDefinition
 from iam_automation.application.ingestion.configuration_service import DraftConfigurationService
+from iam_automation.application.ingestion.object_template_repository import ObjectTemplateRepository
+from iam_automation.application.ingestion.template_repository import TemplateRepository
+from iam_automation.application.parallel_engine.database import connect as engine_connect
 from iam_automation.database.runtime_schema import initialize_runtime_database
 from iam_automation.identity import CurrentUser, ROLE_APPLICATION_ADMIN
 from iam_automation.infrastructure.sqlite.orm import ImportBatchModel, IngestionRecordModel, orm_session
@@ -46,6 +50,252 @@ class IngestionConfigurationTests(unittest.TestCase):
             self.assertIn(b"Read sample", response.data)
             self.assertIn(b"hx-indicator=\"#read-sample-button\"", response.data)
             self.assertIn(b"Reading report", response.data)
+
+    def test_object_template_delete_previews_confirms_and_cascades_runtime_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = initialize_runtime_database(Path(tmp) / "runtime.sqlite")
+            client = self.make_app(database)
+            with sqlite3.connect(database) as setup:
+                setup.execute(
+                    """INSERT INTO source_definition_versions
+                       (definition_version_id, source_id, version_number, status, definition_json,
+                        content_sha256, created_by, created_at_utc, updated_by, updated_at_utc)
+                       VALUES (?, ?, 1, 'APPROVED', ?, 'sha256', 'app.admin', 'now', 'app.admin', 'now')""",
+                    ("SOURCE_A_V1", "SOURCE_A", '{"source_id":"SOURCE_A","display_name":"Source A"}'),
+                )
+                setup.commit()
+            setup.close()
+            repository = ObjectTemplateRepository(database)
+            definition = {
+                "object_name": "Temporary Object",
+                "source_templates": [{"source_id": "SOURCE_A", "source_definition_version_id": "SOURCE_A_V1"}],
+                "properties": [], "identifiers": [], "matches": [],
+            }
+            original = repository.save_draft(definition, "app.admin")
+            saved = repository.save_draft(definition, "app.admin")
+            version_id = saved["employee_template_version_id"]
+            data_version_id = original["employee_template_version_id"]
+            connection = engine_connect(database)
+            object_type_id = connection.execute(
+                "SELECT object_type_id FROM engine_v2_object_types WHERE object_type_key = 'EMPLOYEE_PROFILE'"
+            ).fetchone()[0]
+            connection.execute(
+                "INSERT INTO engine_v2_object_template_types VALUES (?, ?)", (data_version_id, object_type_id)
+            )
+            connection.execute(
+                "INSERT INTO engine_v2_object_template_approvals VALUES (?, ?, ?)",
+                (data_version_id, "app.admin", "2026-10-29T12:00:00Z"),
+            )
+            connection.execute(
+                """INSERT INTO engine_v2_batches
+                   (batch_id, source_id, source_version_id, object_template_version_id, source_file,
+                    source_checksum, status, started_at_utc)
+                   VALUES ('batch-1', 'SOURCE_A', 'SOURCE_A_V1', ?, 'sample.csv', 'checksum', 'COMPLETED', 'now')""",
+                (data_version_id,),
+            )
+            connection.execute(
+                """INSERT INTO engine_v2_objects
+                   (object_id, object_type_id, object_template_version_id, created_at_utc)
+                   VALUES ('object-1', ?, ?, 'now')""", (object_type_id, data_version_id),
+            )
+            connection.execute(
+                """INSERT INTO engine_v2_evidence
+                   (evidence_id, batch_id, row_number, raw_json, normalized_json, status, created_at_utc)
+                   VALUES ('evidence-1', 'batch-1', 1, '{}', '{}', 'STAGED', 'now')"""
+            )
+            connection.execute(
+                """INSERT INTO engine_v2_source_facts
+                   (fact_id, object_id, evidence_id, batch_id, object_template_version_id, source_id,
+                    source_version_id, source_file, source_checksum, row_number, recorded_at_utc)
+                   VALUES ('fact-1', 'object-1', 'evidence-1', 'batch-1', ?, 'SOURCE_A',
+                           'SOURCE_A_V1', 'sample.csv', 'checksum', 1, 'now')""", (data_version_id,),
+            )
+            connection.execute(
+                "INSERT INTO engine_v2_object_evidence VALUES ('object-1', 'evidence-1', '{}', 'now')"
+            )
+            connection.commit()
+            connection.close()
+
+            modal_url = f"/admin/ingestion-sources/library/template-object/{version_id}/delete"
+            modal = client.get(modal_url)
+            self.assertEqual(modal.status_code, 200)
+            self.assertIn(b'name="csrf_token" value="', modal.data)
+            self.assertIn(b'X-CSRF-Token', modal.data)
+            self.assertIn(b"2 Object Template version(s)", modal.data)
+            self.assertIn(b"1 object instance(s)", modal.data)
+            self.assertIn(b"DELETE OBJECT TEMPLATE", modal.data)
+            csrf = self.csrf(client)
+            impact_token = re.search(rb'name="impact_token" value="([0-9a-f]+)"', modal.data).group(1).decode()
+            missing_csrf = client.post(
+                modal_url, data={"confirmation": "DELETE OBJECT TEMPLATE", "impact_token": impact_token},
+                headers={"HX-Request": "true"},
+            )
+            self.assertEqual(missing_csrf.status_code, 400)
+            rejected = client.post(
+                modal_url, data={"confirmation": "DELETE", "impact_token": impact_token},
+                headers={"X-CSRF-Token": csrf, "HX-Request": "true"},
+            )
+            self.assertEqual(rejected.status_code, 200)
+            self.assertIn(b"Type DELETE OBJECT TEMPLATE exactly", rejected.data)
+            blocked = engine_connect(database)
+            other_version_id = "other-object-v1"
+            other_type_id = "other-object-type"
+            blocked.execute(
+                """INSERT INTO employee_template_versions
+                   VALUES (?, 'OTHER_OBJECT', 1, 'DRAFT', '{}', 'app.admin', 'now', 'app.admin', 'now')""",
+                (other_version_id,),
+            )
+            blocked.execute(
+                "INSERT INTO engine_v2_object_types VALUES (?, 'OTHER_OBJECT', 'Other Object', 'now')",
+                (other_type_id,),
+            )
+            blocked.execute(
+                """INSERT INTO engine_v2_objects
+                   (object_id, object_type_id, object_template_version_id, created_at_utc)
+                   VALUES ('other-object-1', ?, ?, 'now')""", (other_type_id, other_version_id),
+            )
+            blocked.execute(
+                "INSERT INTO engine_v2_object_evidence VALUES ('other-object-1', 'evidence-1', '{}', 'now')"
+            )
+            blocked.commit()
+            blocked.close()
+            cross_link = client.post(
+                modal_url, data={"confirmation": "DELETE OBJECT TEMPLATE", "impact_token": impact_token},
+                headers={"X-CSRF-Token": csrf, "HX-Request": "true"},
+            )
+            self.assertEqual(cross_link.status_code, 200)
+            self.assertIn(b"affected data changed after the preview", cross_link.data)
+            fresh_token = re.search(rb'name="impact_token" value="([0-9a-f]+)"', cross_link.data).group(1).decode()
+            blocked = client.post(
+                modal_url, data={"confirmation": "DELETE OBJECT TEMPLATE", "impact_token": fresh_token},
+                headers={"X-CSRF-Token": csrf, "HX-Request": "true"},
+            )
+            self.assertEqual(blocked.status_code, 200)
+            self.assertIn(b"1 evidence link(s) connect this object type to another type", blocked.data)
+            check = engine_connect(database)
+            self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_objects WHERE object_id = 'object-1'").fetchone()[0], 1)
+            check.execute("DELETE FROM engine_v2_object_evidence WHERE object_id = 'other-object-1'")
+            check.commit()
+            check.close()
+            final_preview = client.get(modal_url)
+            final_token = re.search(rb'name="impact_token" value="([0-9a-f]+)"', final_preview.data).group(1).decode()
+            check = engine_connect(database)
+            try:
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_objects").fetchone()[0], 2)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_objects WHERE object_id = 'object-1'").fetchone()[0], 1)
+            finally:
+                check.close()
+
+            removed = client.post(
+                modal_url, data={"confirmation": "DELETE OBJECT TEMPLATE", "impact_token": final_token},
+                headers={"X-CSRF-Token": csrf, "HX-Request": "true"},
+            )
+            self.assertEqual(removed.status_code, 204)
+            self.assertEqual(removed.headers.get("HX-Redirect"), "/admin/ingestion-sources/library")
+            check = engine_connect(database)
+            try:
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_objects").fetchone()[0], 1)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_objects WHERE object_id = 'object-1'").fetchone()[0], 0)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_objects WHERE object_id = 'other-object-1'").fetchone()[0], 1)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_batches").fetchone()[0], 0)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_evidence").fetchone()[0], 0)
+                self.assertEqual(check.execute("SELECT status FROM employee_template_versions WHERE employee_template_version_id = ?", (data_version_id,)).fetchone()[0], "DRAFT")
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_object_template_deletions").fetchone()[0], 2)
+            finally:
+                check.close()
+            self.assertIsNone(repository.latest())
+            self.assertEqual(TemplateRepository(database).deletion_impact("SOURCE_A")["object_references"], ())
+            self.assertIn(b"Object Template removed", client.get("/admin/ingestion-sources/library").data)
+            audit_files = list((Path(tmp) / "sharepoint" / "audit").glob("audit_*.jsonl"))
+            self.assertTrue(audit_files)
+            self.assertIn(b"OBJECT_TEMPLATE_DELETED", audit_files[0].read_bytes())
+
+            # Recreate source-owned runtime rows to exercise the report-template cascade.
+            check = engine_connect(database)
+            object_type_id = check.execute(
+                "SELECT object_type_id FROM engine_v2_object_types WHERE object_type_key = 'EMPLOYEE_PROFILE'"
+            ).fetchone()[0]
+            check.execute(
+                """INSERT INTO engine_v2_batches
+                   (batch_id, source_id, source_version_id, object_template_version_id, source_file,
+                    source_checksum, status, started_at_utc)
+                   VALUES ('report-batch', 'SOURCE_A', 'SOURCE_A_V1', ?, 'report.csv', 'report-checksum', 'COMPLETED', 'now')""",
+                (data_version_id,),
+            )
+            check.execute(
+                """INSERT INTO engine_v2_objects
+                   (object_id, object_type_id, object_template_version_id, created_at_utc)
+                   VALUES ('report-object', ?, ?, 'now')""", (object_type_id, data_version_id),
+            )
+            check.execute(
+                """INSERT INTO engine_v2_evidence
+                   (evidence_id, batch_id, row_number, raw_json, normalized_json, status, created_at_utc)
+                   VALUES ('report-evidence', 'report-batch', 1, '{}', '{}', 'STAGED', 'now')"""
+            )
+            check.execute(
+                """INSERT INTO engine_v2_source_facts
+                   (fact_id, object_id, evidence_id, batch_id, object_template_version_id, source_id,
+                    source_version_id, source_file, source_checksum, row_number, recorded_at_utc)
+                   VALUES ('report-fact', 'report-object', 'report-evidence', 'report-batch', ?, 'SOURCE_A',
+                           'SOURCE_A_V1', 'report.csv', 'report-checksum', 1, 'now')""", (data_version_id,),
+            )
+            check.execute(
+                "INSERT INTO engine_v2_object_evidence VALUES ('report-object', 'report-evidence', '{}', 'now')"
+            )
+            check.execute(
+                """INSERT INTO source_definition_versions
+                   (definition_version_id, source_id, version_number, status, definition_json,
+                    content_sha256, created_by, created_at_utc, updated_by, updated_at_utc)
+                   VALUES ('SOURCE_B_V1', 'SOURCE_B', 1, 'APPROVED', '{}', 'sha256-b', 'app.admin', 'now', 'app.admin', 'now')"""
+            )
+            check.execute(
+                """INSERT INTO engine_v2_batches
+                   (batch_id, source_id, source_version_id, object_template_version_id, source_file,
+                    source_checksum, status, started_at_utc)
+                   VALUES ('shared-batch', 'SOURCE_B', 'SOURCE_B_V1', ?, 'other.csv', 'other-checksum', 'COMPLETED', 'now')""",
+                (data_version_id,),
+            )
+            check.execute(
+                """INSERT INTO engine_v2_evidence
+                   (evidence_id, batch_id, row_number, raw_json, normalized_json, status, created_at_utc)
+                   VALUES ('shared-evidence', 'shared-batch', 1, '{}', '{}', 'STAGED', 'now')"""
+            )
+            check.execute(
+                "INSERT INTO engine_v2_object_evidence VALUES ('report-object', 'shared-evidence', '{}', 'now')"
+            )
+            check.commit()
+            check.close()
+
+            report_delete_url = "/admin/ingestion-sources/library/SOURCE_A/delete"
+            report_modal = client.get(report_delete_url)
+            self.assertEqual(report_modal.status_code, 200)
+            self.assertIn(b"permanently deleting", report_modal.data)
+            self.assertIn(b"DELETE REPORT TEMPLATE", report_modal.data)
+            unconfirmed = client.post(
+                report_delete_url,
+                headers={"X-CSRF-Token": csrf, "HX-Request": "true"},
+            )
+            self.assertEqual(unconfirmed.status_code, 200)
+            self.assertIn(b"Type DELETE REPORT TEMPLATE to confirm", unconfirmed.data.replace(b"<strong>", b"").replace(b"</strong>", b""))
+            removed_report = client.post(
+                report_delete_url,
+                data={"confirmation": "DELETE REPORT TEMPLATE"},
+                headers={"X-CSRF-Token": csrf, "HX-Request": "true"},
+            )
+            self.assertEqual(removed_report.status_code, 200)
+            self.assertEqual(removed_report.headers.get("HX-Trigger"), "libraryTemplateDeleted")
+            check = sqlite3.connect(database)
+            try:
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM source_definition_versions WHERE source_id = 'SOURCE_A'").fetchone()[0], 0)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM source_template_lifecycle_events WHERE source_id = 'SOURCE_A'").fetchone()[0], 0)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM source_template_deletions WHERE source_id = 'SOURCE_A'").fetchone()[0], 0)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_batches WHERE source_id = 'SOURCE_A'").fetchone()[0], 0)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_batches WHERE source_id = 'SOURCE_B'").fetchone()[0], 1)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_evidence WHERE evidence_id = 'report-evidence'").fetchone()[0], 0)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_evidence WHERE evidence_id = 'shared-evidence'").fetchone()[0], 1)
+                self.assertEqual(check.execute("SELECT COUNT(*) FROM engine_v2_objects WHERE object_id = 'report-object'").fetchone()[0], 1)
+            finally:
+                check.close()
 
     def test_draft_contract_preserves_identifier_as_string(self):
         draft = DraftSourceDefinition(

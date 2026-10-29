@@ -324,6 +324,36 @@ class ParallelEngineTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT status FROM engine_v2_file_observations WHERE path=?", (str(file_path.resolve()),)).fetchone()[0], "PROCESSED")
         connection.close()
 
+    def test_dashboard_hides_observations_from_outdated_source_template_versions(self):
+        self._approve_object()
+        file_path = self.root / "source-a" / "same-file.csv"
+        file_path.write_text("Employee ID,Account\n00123,A-1\n", encoding="utf-8")
+        ParallelFileWatcher(ParallelIngestionEngine(self.database, self.root)).scan_once()
+        with sqlite3.connect(self.database) as connection:
+            current_observation_id = connection.execute(
+                "SELECT observation_id FROM engine_v2_file_observations WHERE source_id=? AND source_version_id=? AND path=?",
+                ("SOURCE_A", self.source_a_id, str(file_path.resolve())),
+            ).fetchone()[0]
+            connection.execute(
+                """INSERT INTO engine_v2_file_observations
+                   (observation_id, source_id, source_version_id, path, signature, status,
+                    first_seen_at_utc, last_seen_at_utc, last_error)
+                   VALUES ('stale-observation-id', 'SOURCE_A', 'source-a-v0', ?, 'old-checksum',
+                           'PENDING_AUTHORIZATION', '2026-01-01', '2026-01-01', 'Outdated version')""",
+                (str(file_path.resolve()),),
+            )
+
+        app = create_parallel_engine_app(self.database, self.root, shared_secret="test-secret")
+        client = app.test_client()
+        with client.session_transaction() as session:
+            session["iam_user"] = "approver"
+            session["iam_roles"] = ["APPLICATION_ADMIN"]
+            session["parallel_engine_csrf_token"] = "valid-token"
+        dashboard = client.get("/dashboard")
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn(current_observation_id.encode(), dashboard.data)
+        self.assertNotIn(b"stale-observation-id", dashboard.data)
+
     def test_object_template_approval_route_requires_role_and_csrf(self):
         app = create_parallel_engine_app(self.database, self.root, shared_secret="test-secret")
         client = app.test_client()
