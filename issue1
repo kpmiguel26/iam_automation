@@ -1,0 +1,296 @@
+PROYECTO: INGENIERÍA INVERSA Y DOCUMENTACIÓN INTEGRAL DEL STAFFING PLAN
+
+1. Rol que debes asumir
+
+Actúa como un equipo multidisciplinario compuesto por:
+
+* Arquitecto sénior de Workforce Management (WFM).
+* Especialista en planificación estratégica de capacidad.
+* Ingeniero de software especializado en ingeniería inversa.
+* Analista financiero de operaciones BPO.
+* Especialista en modelos matemáticos y estadísticos.
+* Analista de procesos y documentación técnica.
+* Especialista en gobernanza, control de cambios y gestión del conocimiento.
+
+Tu misión es analizar el archivo Excel adjunto, comprender su arquitectura, reconstruir sus cálculos y generar documentación técnica, funcional, matemática y operativa.
+
+IMPORTANTE: No debes modificar el archivo original.
+
+No debes asumir que todas las fórmulas son correctas ni inventar explicaciones sobre decisiones de diseño que no estén documentadas.
+
+El objetivo principal es convertir un modelo complejo, cuyo conocimiento depende principalmente de su creador, en un sistema completamente documentado, verificable, reproducible y mantenible.
+
+⸻
+
+2. Contexto del modelo
+
+El archivo corresponde a un modelo empresarial de planificación estratégica de fuerza laboral.
+
+Actualmente contempla aproximadamente 500 agentes distribuidos entre dos proveedores externos.
+
+Entre sus capacidades conocidas se encuentran:
+
+* Forecast operativo proveniente de IEX.
+* Planificación semanal y mensual.
+* Proyecciones y tendencias de 30, 60 y 90 días.
+* Históricos operativos.
+* Modelos Erlang C y cálculos basados en carga de trabajo.
+* Requerimientos de FTE.
+* Capacidad disponible y proyectada.
+* Planificación de contratación.
+* Cronogramas de horas.
+* Attrition.
+* Ramp-up y ramp-down.
+* Transferencias de capacidad entre proveedores.
+* Escenarios de migración de vendors.
+* Costos y tarifas diferenciadas por agente.
+* Proyecciones financieras.
+* Evaluación de escenarios futuros.
+
+Debes verificar cómo están implementadas estas capacidades en el archivo.
+
+⸻
+
+FASE 1. INVENTARIO Y ARQUITECTURA DEL MODELO
+
+Analiza el libro de Excel e identifica:
+
+1. Todas las hojas y sus funciones.
+2. Tablas, rangos y nombres definidos.
+3. Fuentes de información.
+4. Datos importados de IEX.
+5. Parámetros configurables.
+6. Fórmulas y cálculos principales.
+7. Dependencias entre hojas.
+8. Conexiones externas.
+9. Celdas con valores manuales.
+10. Hojas, filas o columnas ocultas.
+11. Macros, Power Query y automatizaciones, si están accesibles.
+12. Resultados operativos y financieros.
+
+Genera un mapa de arquitectura que permita entender cómo fluye la información desde las fuentes originales hasta las decisiones finales.
+
+Incluye referencias exactas a hojas, tablas, rangos y celdas.
+
+Si no puedes inspeccionar algún elemento, indícalo expresamente.
+
+Entregable A: Documento de arquitectura del Staffing Plan.
+
+⸻
+
+FASE 2. INGENIERÍA INVERSA DE FÓRMULAS
+
+Analiza sistemáticamente las fórmulas utilizadas.
+
+Para cada fórmula relevante, documenta:
+
+* Identificador único.
+* Hoja y celda de origen.
+* Fórmula exacta de Excel.
+* Traducción a notación matemática.
+* Variables utilizadas.
+* Unidades de medida.
+* Fuente de cada variable.
+* Objetivo del cálculo.
+* Explicación paso a paso.
+* Fundamento matemático.
+* Supuestos utilizados.
+* Dependencias.
+* Ejemplo numérico reproducible.
+* Resultado esperado.
+* Condiciones que podrían producir errores.
+* Método de validación.
+
+Explica cada concepto desde sus fundamentos.
+
+No basta con indicar que una fórmula calcula FTE. Debes explicar por qué se utiliza esa operación matemática, qué representa y bajo qué condiciones es válida.
+
+Diferencia claramente entre:
+
+* Fórmula técnicamente identificada.
+* Fundamento matemático comprobado.
+* Interpretación de negocio inferida.
+* Regla de negocio pendiente de confirmar.
+
+Entregable B: Diccionario técnico y matemático de fórmulas.
+
+⸻
+
+FASE 3. RECONSTRUCCIÓN END-TO-END
+
+Reconstruye el funcionamiento completo del modelo.
+
+Investiga cómo se relacionan:
+
+1. Forecast y demanda.
+2. Históricos y tendencias.
+3. Proyecciones semanales y mensuales.
+4. Requerimientos de personal.
+5. Horas productivas y disponibles.
+6. Shrinkage.
+7. Attrition.
+8. Contrataciones.
+9. Entrenamiento y productividad.
+10. Ramp-up y ramp-down.
+11. Migraciones entre proveedores.
+12. Tarifas diferenciadas.
+13. Costos operativos.
+14. Escenarios financieros.
+15. Resultados y decisiones finales.
+
+Para cada componente, explica qué recibe, qué transforma, qué produce y cómo afecta a los demás componentes.
+
+Genera diagramas de flujo y mapas de dependencias.
+
+Entregable C: Manual funcional end-to-end.
+
+⸻
+
+FASE 4. EXTRACCIÓN DEL CONOCIMIENTO DE MARCELO
+
+Este es uno de los objetivos más importantes del proyecto.
+
+Marcelo es el arquitecto original del modelo y posee conocimiento histórico, técnico y operativo que posiblemente no está documentado.
+
+Debes generar un cuestionario de entrevistas que permita extraer ese conocimiento de forma organizada.
+
+No quiero preguntas genéricas.
+
+Quiero preguntas específicas basadas en las fórmulas, las dependencias, los supuestos y las decisiones reales identificadas en el Excel.
+
+Para cada pregunta incluye:
+
+* ID de pregunta.
+* Módulo correspondiente.
+* Hoja y celda relacionada.
+* Hallazgo técnico identificado.
+* Información que ya conocemos.
+* Información que falta.
+* Pregunta exacta para Marcelo.
+* Por qué necesitamos esa respuesta.
+* Riesgo de no documentarla.
+* Prioridad.
+* Espacio para la respuesta.
+* Evidencia requerida.
+* Estado de validación.
+
+Investiga especialmente las razones detrás de decisiones como:
+
+* ¿Por qué se seleccionó determinada metodología?
+* ¿Qué alternativas fueron descartadas?
+* ¿Cómo se definieron los supuestos?
+* ¿Qué condiciones históricas justifican los parámetros?
+* ¿Cómo se determina el momento de contratar?
+* ¿Cómo se modela la pérdida de productividad?
+* ¿Cómo se evita duplicar capacidad durante una migración?
+* ¿Cómo se aplican tarifas individuales?
+* ¿Qué sucede cuando cambian las condiciones contractuales?
+* ¿Cómo se determina si un escenario es financieramente viable?
+
+Organiza las preguntas en sesiones temáticas de 30 a 45 minutos.
+
+Prioriza las preguntas que bloquean la comprensión de otros componentes.
+
+Entregable D: Cuestionario técnico para Marcelo y registro de conocimiento.
+
+⸻
+
+FASE 5. ANÁLISIS DE RIESGOS Y VALIDACIÓN
+
+Identifica posibles problemas relacionados con:
+
+* Errores matemáticos.
+* Referencias incorrectas.
+* Datos desactualizados.
+* Supuestos no documentados.
+* Doble contabilización.
+* Desviaciones de forecast.
+* Errores en attrition.
+* Ramp-up y ramp-down.
+* Migraciones entre vendors.
+* Fechas de vigencia de tarifas.
+* Costos financieros.
+* Dependencias ocultas.
+* Modificaciones manuales.
+* Falta de controles.
+* Dependencia de conocimiento individual.
+
+Clasifica cada hallazgo como:
+
+1. Error confirmado.
+2. Riesgo potencial.
+3. Supuesto pendiente de validación.
+4. Oportunidad de mejora.
+
+No declares errores sin evidencia verificable.
+
+Entregable E: Registro de riesgos, hallazgos y oportunidades.
+
+⸻
+
+FASE 6. SOP Y GOBERNANZA
+
+Propón un procedimiento operativo estándar que explique cómo:
+
+1. Preparar las fuentes de datos.
+2. Actualizar el modelo.
+3. Validar las entradas.
+4. Ejecutar los cálculos.
+5. Revisar los resultados.
+6. Analizar desviaciones.
+7. Actualizar escenarios.
+8. Validar costos.
+9. Aprobar resultados.
+10. Publicar el Staffing Plan.
+11. Registrar cambios.
+12. Recuperar versiones anteriores.
+
+Incluye:
+
+* Matriz RACI.
+* Responsables por componente.
+* Criterios de aceptación.
+* Controles de calidad.
+* Procedimientos de revisión.
+* Gestión de versiones.
+* Registro de decisiones.
+* Control de cambios.
+* Plan de transferencia de conocimiento.
+
+Entregable F: SOP y marco de gobernanza del Staffing Plan.
+
+⸻
+
+REQUISITOS DE CALIDAD
+
+Toda la documentación debe cumplir las siguientes condiciones:
+
+1. Estar escrita en español claro, profesional y didáctico.
+2. Explicar los conceptos desde cero.
+3. Permitir que una persona sin experiencia previa comprenda progresivamente el modelo.
+4. Incluir ejemplos numéricos.
+5. Referenciar las fórmulas originales.
+6. Distinguir hechos de hipótesis.
+7. Registrar dudas y decisiones pendientes.
+8. Mantener trazabilidad entre fuentes, fórmulas y resultados.
+9. Utilizar identificadores únicos para los componentes.
+10. Evitar documentación redundante.
+11. Proponer una estructura modular que facilite el mantenimiento.
+12. No exponer información financiera sensible en ejemplos de capacitación.
+13. No declarar una sección como validada sin evidencia o revisión del responsable.
+
+INSTRUCCIÓN DE EJECUCIÓN
+
+Comienza exclusivamente con la Fase 1.
+
+Primero genera:
+
+* Inventario del libro.
+* Mapa inicial de dependencias.
+* Identificación de los principales motores de cálculo.
+* Lista de componentes que requieren investigación.
+* Las primeras 15 preguntas prioritarias para Marcelo.
+
+No avances a las siguientes fases hasta que revisemos y aprobemos el inventario.
+
+El objetivo final es crear un framework de planificación estratégica de WFM que permita comprender, construir, operar, auditar y mantener modelos de Staffing Plan desde cero.
